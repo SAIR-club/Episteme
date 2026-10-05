@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@episteme/agent": "workspace:*",
-    "@episteme/app-learn": "workspace:*",
     "@episteme/core": "workspace:*",
     "@episteme/domain-learn": "workspace:*",
     "@episteme/embeddings-http": "workspace:*",

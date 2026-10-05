@@ -9,7 +9,6 @@
   },
   "include": ["**/*.ts"],
   "references": [
-    { "path": "../apps/learn" },
     { "path": "../packages/core" },
     { "path": "../packages/storage-memory" },
     { "path": "../packages/storage-local" },
