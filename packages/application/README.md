@@ -36,6 +36,12 @@ second scene exists would be an abstraction without a second case to fit.
   a value a caller supplies. **Modify** commits the human's own value, of the same kind and under the same
   checks, as authored. **Dismiss** removes the draft and commits nothing. What is committed goes through the
   graph's validated path, and its source names the suggestion, the agent and the channel (ADR 0008).
+- **A decision lands once, across a crash.** An accept or modify first writes a write-ahead record to the
+  drafts file: an operation id and the ids it will create. Then it writes the graph, then removes the
+  draft and the record in one write. Opening a session settles any record a crash left behind. The draft is
+  completed if the graph holds the change, and rolled back to pending if not; `session.recovered` says
+  which. Deciding a draft whose earlier attempt failed mid-write settles that attempt first, so a retry
+  never commits twice.
 
 ## Layout
 
