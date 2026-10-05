@@ -15,7 +15,9 @@ message then says which file to delete.
 
 The web surface is also the graph's **MCP host**: it serves the endpoint at `/mcp`, so an agent can recall
 the learner's understanding and propose changes to it while the learner works here. See
-[`@episteme/mcp`](../../packages/mcp/README.md).
+[`@episteme/mcp`](../../packages/mcp/README.md). What agents propose appears at the top of the page as a
+**review queue**, with who proposed it and why. Nothing in it changes the graph or the learner's
+understanding until the learner decides.
 
 ```bash
 pnpm learn --help

@@ -209,10 +209,19 @@ async function handle(
       // Sent with the state rather than behind its own route: it is derived from the same reads, so two
       // requests could disagree, and a panel that disagrees with the graph beside it is worse than no panel.
       progress: session.progress(),
+      // What agents proposed and the learner has not decided. Nothing here is the learner's state yet.
+      suggestions: session.pendingSuggestions(),
       events: session.eventCount,
       retriever: session.retrieverName,
       rules: session.rules,
     })
+    return
+  }
+
+  // The review queue on its own, so the page can notice an agent's proposal while the learner is working
+  // without re-reading the whole surface.
+  if (path === '/api/suggestions' && request.method === 'GET') {
+    sendJson(response, 200, { suggestions: session.pendingSuggestions() })
     return
   }
 
