@@ -7,7 +7,10 @@
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../../packages/application" },
-    { "path": "../../packages/domain-learn" }
+    { "path": "../core" },
+    { "path": "../storage-local" },
+    { "path": "../domain-learn" },
+    { "path": "../agent" },
+    { "path": "../sdk" }
   ]
 }

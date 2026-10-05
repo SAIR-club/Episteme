@@ -9,10 +9,6 @@
       "types": "./dist/cli.d.ts",
       "default": "./dist/cli.js"
     },
-    "./session": {
-      "types": "./dist/session.d.ts",
-      "default": "./dist/session.js"
-    },
     "./seed": {
       "types": "./dist/seed.d.ts",
       "default": "./dist/seed.js"
@@ -36,10 +32,7 @@
     "serve": "tsc -b && node dist/serve.js"
   },
   "dependencies": {
-    "@episteme/agent": "workspace:*",
-    "@episteme/core": "workspace:*",
-    "@episteme/domain-learn": "workspace:*",
-    "@episteme/sdk": "workspace:*",
-    "@episteme/storage-local": "workspace:*"
+    "@episteme/application": "workspace:*",
+    "@episteme/domain-learn": "workspace:*"
   }
 }

@@ -167,15 +167,17 @@ and a ranked number would imply a precision that a reading of four settable dime
 
 ## Layout
 
-| File                   | Contents                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `src/session.ts`       | `LearnSession` — open, ask, record, add a node, list, flush. Shared by both surfaces |
-| `src/cli.ts`           | the terminal surface, including the command table                                    |
-| `src/server.ts`        | the HTTP surface and its JSON API                                                    |
-| `src/serve.ts`         | starts the web surface and prints where it is                                        |
-| `src/seed.ts`          | the starting topic, so a learner does not face an empty graph                        |
-| `public/index.html`    | the web interface: one file, no build step                                           |
-| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below)                               |
+| File                   | Contents                                                      |
+| ---------------------- | ------------------------------------------------------------- |
+| `src/cli.ts`           | the terminal surface, including the command table             |
+| `src/server.ts`        | the HTTP surface and its JSON API                             |
+| `src/serve.ts`         | starts the web surface and prints where it is                 |
+| `src/seed.ts`          | the starting topic, so a learner does not face an empty graph |
+| `public/index.html`    | the web interface: one file, no build step                    |
+| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below)        |
+
+`LearnSession` — open, ask, record, add a node, list, flush — is shared by both surfaces and lives in
+[`@episteme/application`](../../packages/application/README.md), so that no surface depends on another.
 
 ## Two defects the surface found
 
@@ -199,7 +201,7 @@ evaluation cases.
 ## Why the answer text is Chinese and the code is not
 
 `learnerResponder` in `@episteme/domain-learn` stays English, because that package's demos, tests and docs are
-English. `apps/learn/src/responder.ts` is the Chinese counterpart, and it reproduces the same **three
+English. `packages/application/src/responder.ts` is the Chinese counterpart, and it reproduces the same **three
 structural branches** rather than rewording the English ones:
 
 | situation                           | what the answer does                                           |

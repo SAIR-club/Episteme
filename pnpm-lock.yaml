@@ -38,21 +38,12 @@ importers:
 
   apps/learn:
     dependencies:
-      '@episteme/agent':
+      '@episteme/application':
         specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/application
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../../packages/domain-learn
-      '@episteme/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-      '@episteme/storage-local':
-        specifier: workspace:*
-        version: link:../../packages/storage-local
 
   examples/learn-session:
     dependencies:
@@ -111,6 +102,24 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/application:
+    dependencies:
+      '@episteme/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@episteme/core':
+        specifier: workspace:*
+        version: link:../core
+      '@episteme/domain-learn':
+        specifier: workspace:*
+        version: link:../domain-learn
+      '@episteme/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@episteme/storage-local':
+        specifier: workspace:*
+        version: link:../storage-local
+
   packages/core: {}
 
   packages/domain-learn:
@@ -157,6 +166,9 @@ importers:
       '@episteme/app-learn':
         specifier: workspace:*
         version: link:../apps/learn
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../packages/application
       '@episteme/core':
         specifier: workspace:*
         version: link:../packages/core

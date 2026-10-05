@@ -1,0 +1,29 @@
+{
+  "name": "@episteme/application",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The use-case layer every surface drives: ask, record, add, list, progress, over one learner's graph.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/agent": "workspace:*",
+    "@episteme/core": "workspace:*",
+    "@episteme/domain-learn": "workspace:*",
+    "@episteme/sdk": "workspace:*",
+    "@episteme/storage-local": "workspace:*"
+  }
+}
