@@ -70,6 +70,14 @@ export {
 } from './ontology/tags.js'
 export type { Tag, CoreTagNamespace } from './ontology/tags.js'
 
+// ── Standard Epistemic Pack (Optional, Orthogonal) ───────────────────────────
+export {
+  standardEpistemicPack,
+  STANDARD_NODE_TYPES,
+  STANDARD_EDGE_TYPES,
+  STANDARD_STATE_DIMENSIONS,
+} from './ontology/standard-pack.js'
+
 // ── Registries: the only way vocabulary enters the system ────────────────────
 export {
   NodeTypeRegistry,
@@ -85,12 +93,23 @@ export type {
   TagNamespaceDefinition,
 } from './graph/definitions.js'
 
-export { createRegistries, defineDomainPack, applyDomainPacks } from './graph/registries.js'
+export {
+  createRegistries,
+  defineDomainPack,
+  applyDomainPacks,
+  definePackFromConfig,
+  loadPackFromJson,
+} from './graph/registries.js'
 export type {
   Registries,
   DomainPack,
   DomainPackContext,
   DomainPackDefinitions,
+  DeclarativeOntologyConfig,
+  DeclarativeNodeTypeConfig,
+  DeclarativeEdgeTypeConfig,
+  DeclarativeStateDimensionConfig,
+  DeclarativeTagNamespaceConfig,
 } from './graph/registries.js'
 
 // ── Graph ────────────────────────────────────────────────────────────────────
@@ -149,9 +168,17 @@ export type {
 export type { SerializedStateEvent } from './events/serialization.js'
 export { toSerializedEvent, fromSerializedEvent } from './events/serialization.js'
 
-// ── Projection: one graph, many views ────────────────────────────────────────
+// ── Projection & Canvas Export: one graph, many views & tool-agnostic export ──
 export { project, selectSeeds, dimensionsOf, toSubGraph } from './projection/index.js'
 export type { Projection, ProjectionFilter } from './projection/index.js'
+export { exportJsonCanvas, exportTopology } from './projection/canvas.js'
+export type {
+  JsonCanvas,
+  JsonCanvasNode,
+  JsonCanvasEdge,
+  CanvasLayoutOptions,
+  GraphTopology,
+} from './projection/canvas.js'
 
 // ── Retrieval: getting previous understanding back ───────────────────────────
 export { retrieve, termsOf, matchedTermsIn, isStopWord } from './retrieval/index.js'
