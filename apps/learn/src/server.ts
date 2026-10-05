@@ -97,6 +97,17 @@ function asString(value: unknown, field: string): string {
 export async function startLearnServer(options: ServerOptions = {}): Promise<LearnServer> {
   const filePath = options.filePath ?? process.env.EPISTEME_FILE ?? DEFAULT_PATH
   const session = await LearnSession.open({ filePath })
+  // From here the session owns the graph file. Every path out of this function either hands that ownership
+  // to the returned server or releases it, so a failed start cannot leave the graph locked.
+  try {
+    return await serve(session, options)
+  } catch (error) {
+    await session.close()
+    throw error
+  }
+}
+
+async function serve(session: LearnSession, options: ServerOptions): Promise<LearnServer> {
   // Seeded before the socket opens, so the first request cannot race it and see an empty graph.
   const seed = await seedTopic(session, options.topic)
   const topic = options.topic ?? TRANSFORMERS
@@ -129,10 +140,14 @@ export async function startLearnServer(options: ServerOptions = {}): Promise<Lea
   return {
     url: `http://${host}:${boundPort}`,
     port: boundPort,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    // The socket first, so no request arrives at a session that is closing; then the session, which writes
+    // what is pending and gives up the graph.
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
-      }),
+      })
+      await session.close()
+    },
   }
 }
 

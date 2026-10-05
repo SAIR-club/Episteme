@@ -164,6 +164,8 @@ export async function runSessionOne(filePath: string): Promise<SessionStep[]> {
 
   await episteme.persist()
   await storage.save()
+  // Stopping gives up the graph, so the next session can own it.
+  await storage.close()
 
   steps.push({
     title: 'Session 1 · writing to disk and stopping',

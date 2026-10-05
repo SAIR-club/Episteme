@@ -146,6 +146,7 @@ describe('it survives a restart like everything else', () => {
     await first.record('q_why_order', { confidence: 'high', articulation: 'high' })
     await first.record('c_rope', { confidence: 'low' })
     const before = first.progress()
+    await first.close()
 
     const second = await LearnSession.open({ filePath })
     const after = second.progress()

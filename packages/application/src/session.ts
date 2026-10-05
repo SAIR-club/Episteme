@@ -248,14 +248,10 @@ export class LearnSession {
   readonly #episteme: Episteme
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
-  readonly #store: { save(state?: unknown): Promise<void> } | undefined
+  readonly #store: Store | undefined
   #saveChain: Promise<void> = Promise.resolve()
 
-  private constructor(
-    episteme: Episteme,
-    retriever: Retriever,
-    store?: { save(state?: unknown): Promise<void> },
-  ) {
+  private constructor(episteme: Episteme, retriever: Retriever, store?: Store) {
     this.#episteme = episteme
     this.#retriever = retriever
     this.#store = store
@@ -287,7 +283,14 @@ export class LearnSession {
     }
 
     const storage = await openLocalStorage(options.filePath)
-    const episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
+    let episteme: Episteme
+    try {
+      episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
+    } catch (error) {
+      // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
+      await storage.close()
+      throw error
+    }
     return new LearnSession(
       episteme,
       new HybridRetriever(
@@ -670,6 +673,17 @@ export class LearnSession {
     return next
   }
 
+  /**
+   * Writes what is pending and gives up ownership of the graph file, so another surface can open it.
+   *
+   * Every surface that opens a session closes it on the way out. A session that is never closed holds the
+   * graph until its process exits.
+   */
+  async close(): Promise<void> {
+    await this.flush()
+    await this.#store?.close()
+  }
+
   async #persistNow(): Promise<void> {
     if (this.#store === undefined) return
     await this.#episteme.persist()
@@ -685,6 +699,12 @@ export class LearnSession {
       tags: [...node.tags],
     }
   }
+}
+
+/** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
+interface Store {
+  save(state?: unknown): Promise<void>
+  close(): Promise<void>
 }
 
 /** Turns the retrieval's recorded contributions into something a view can render. */

@@ -21,6 +21,7 @@ episteme.log.commit(/* ... */)
 
 await episteme.log.persist() // hands the event history to the store
 await storage.save() // writes the file, atomically
+await storage.close() // gives up the graph, so the next session can open it
 
 // Session 2 — a new process, the same file
 const reopened = await openLocalStorage('graph.jsonl')
@@ -48,19 +49,26 @@ and the subject index are rebuilt on load, never persisted.
 
 ## API
 
-| Member                                                        | Purpose                                                                      |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `open()`                                                      | reads the file into memory; a missing file is an empty history, not an error |
-| `save(state?)`                                                | absorbs event-log state if given, then writes the whole file atomically      |
-| `load()`                                                      | the persisted history, or `undefined` when there is none                     |
-| `getNode` / `getEdge` / `listNodes` / `listEdges` / `edgesOf` | the graph read port                                                          |
-| `putNode` / `putEdge` / `revokeNode` / `revokeEdge`           | the graph write port                                                         |
+| Member                                                        | Purpose                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `open()`                                                      | takes ownership, then reads the file; a missing file is an empty history |
+| `close()`                                                     | releases ownership; does not save                                        |
+| `save(state?)`                                                | absorbs event-log state if given, then writes the whole file atomically  |
+| `load()`                                                      | the persisted history, or `undefined` when there is none                 |
+| `getNode` / `getEdge` / `listNodes` / `listEdges` / `edgesOf` | the graph read port                                                      |
+| `putNode` / `putEdge` / `revokeNode` / `revokeEdge`           | the graph write port                                                     |
 
 `load()` returning `undefined` rather than an empty state is load-bearing: an empty _state_ would be
 "restored" and fail, whereas `undefined` correctly means "start a new history".
 
 ## Properties worth knowing
 
+- **One owner per file.** `open()` creates `<file>.lock` atomically and refuses with `GraphLockedError`
+  while another adapter holds it, in this process or another. Two owners would each resume their own id
+  counter and rewrite the whole file, so they would collide on ids and overwrite each other without any
+  error ([ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md)). The lock is released by `close()`,
+  or at process exit. Only a process killed outright leaves it behind. Such a lock is never reclaimed
+  automatically, because two processes could both decide it was stale; the error names the file to delete.
 - **Atomic writes.** A temporary file plus a rename, so a crash mid-write leaves the previous complete
   history intact. Losing the last session is survivable; reading a truncated history as if it were
   complete is not.
@@ -80,5 +88,5 @@ and the subject index are rebuilt on load, never persisted.
   go if it ever becomes one.
 - No compaction: retracted records and superseded nodes accumulate. Forgiving for now, and bounded by
   human-scale writing.
-- Single file, last writer wins. Concurrent processes on one file are not supported.
+- One owner at a time. A second surface over the same graph is refused rather than coordinated.
 - No encryption at rest. Personal cognitive history is sensitive, so this matters before any real use.
