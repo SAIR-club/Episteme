@@ -21,10 +21,18 @@ second scene exists would be an abstraction without a second case to fit.
   the human, and Core's guards would refuse anything else.
 - **Writes are ordered.** `flush()` serialises persistence behind one chain, so concurrent callers in one
   process cannot interleave a read of the log with a partial write.
+- **One owner.** A session owns its graph file from `open()` until `close()`, and a second session over the
+  same file is refused with `GraphLockedError`.
+- **An agent only proposes.** `propose()` keeps an agent's claim, link or state change as a pending draft in
+  `<graph>.suggestions.jsonl`, beside the graph and outside it. It never changes the graph or the history.
+  A proposal that could never be accepted is refused at once, as a value: unknown nodes, a link the graph's
+  own preview rejects, or a dimension or level the learner could not record. Accepting a draft is the human's
+  act, and is not part of this layer yet (ADR 0008).
 
 ## Layout
 
-| File               | Contents                                                                      |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `src/session.ts`   | `LearnSession`, the recordable dimensions, and the view types surfaces render |
-| `src/responder.ts` | the Chinese answer templates the session's scripted agent uses                |
+| File                 | Contents                                                                      |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `src/session.ts`     | `LearnSession`, the recordable dimensions, and the view types surfaces render |
+| `src/responder.ts`   | the Chinese answer templates the session's scripted agent uses                |
+| `src/suggestions.ts` | `SuggestionStore` and the `Proposal` kinds an agent can make                  |

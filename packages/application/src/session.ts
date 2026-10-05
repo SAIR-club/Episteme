@@ -2,9 +2,12 @@ import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
   asId,
+  systemClock,
   type ActorId,
   type DimensionId,
   type EdgeId,
+  type EdgeTypeId,
+  type MutationRefusal,
   type EmbeddingAdapter,
   type GraphNode,
   type NodeId,
@@ -24,6 +27,7 @@ import {
 } from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { chineseLearnerResponder } from './responder.js'
+import { SuggestionStore, type Proposal, type Suggestion } from './suggestions.js'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
 
@@ -249,11 +253,18 @@ export class LearnSession {
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
   readonly #store: Store | undefined
+  readonly #suggestions: SuggestionStore
   #saveChain: Promise<void> = Promise.resolve()
 
-  private constructor(episteme: Episteme, retriever: Retriever, store?: Store) {
+  private constructor(
+    episteme: Episteme,
+    retriever: Retriever,
+    suggestions: SuggestionStore,
+    store?: Store,
+  ) {
     this.#episteme = episteme
     this.#retriever = retriever
+    this.#suggestions = suggestions
     this.#store = store
   }
 
@@ -279,13 +290,17 @@ export class LearnSession {
           new InMemoryEmbeddingCache(),
           ...(options.weights === undefined ? [] : [options.weights]),
         ),
+        await SuggestionStore.open(),
       )
     }
 
     const storage = await openLocalStorage(options.filePath)
     let episteme: Episteme
+    let suggestions: SuggestionStore
     try {
       episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
+      // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
+      suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
     } catch (error) {
       // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
       await storage.close()
@@ -300,6 +315,7 @@ export class LearnSession {
         new InMemoryEmbeddingCache(),
         ...(options.weights === undefined ? [] : [options.weights]),
       ),
+      suggestions,
       storage,
     )
   }
@@ -674,6 +690,109 @@ export class LearnSession {
   }
 
   /**
+   * Keeps an agent's proposal as a pending draft, for a human to decide later.
+   *
+   * Nothing here changes the graph or the history. What can be checked now is checked now, so an agent learns
+   * at once that a proposal could never be accepted, rather than leaving the learner a draft that fails when
+   * they try to take it: the nodes it names must exist, a claim and a link must pass the graph's own preview,
+   * and a state change must use a dimension and level the learner could record themselves. A refusal is
+   * returned as a value, as `previewNode` does, because proposing something unacceptable is an ordinary
+   * outcome.
+   *
+   * `proposedBy` must be an agent. The human does not propose to themselves; they record.
+   */
+  async propose(
+    proposal: Proposal,
+    from: { readonly proposedBy: string; readonly rationale: string },
+  ): Promise<ProposeResult> {
+    const refusal = this.#refusalOf(proposal, from)
+    if (refusal !== undefined) return { ok: false, refusal }
+
+    const suggestion = await this.#suggestions.add({
+      proposal,
+      rationale: from.rationale.trim(),
+      proposedBy: from.proposedBy,
+      proposedAt: systemClock.now(),
+    })
+    return { ok: true, suggestion }
+  }
+
+  /** Every draft still waiting for the learner, oldest first. */
+  pendingSuggestions(): readonly Suggestion[] {
+    return this.#suggestions.list()
+  }
+
+  /** Why a proposal could never be accepted, or `undefined` when it could be. */
+  #refusalOf(
+    proposal: Proposal,
+    from: { readonly proposedBy: string; readonly rationale: string },
+  ): MutationRefusal | undefined {
+    if (from.rationale.trim() === '') {
+      return { code: 'missing_rationale', message: 'a suggestion must say why it is proposed' }
+    }
+    if (from.proposedBy.trim() === '' || from.proposedBy === HUMAN) {
+      return {
+        code: 'not_an_agent',
+        message: 'only an agent proposes; the human records their own understanding directly',
+      }
+    }
+
+    const missing = (id: string): MutationRefusal | undefined =>
+      this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
+        ? { code: 'unknown_node', message: `node "${id}" does not exist` }
+        : undefined
+
+    switch (proposal.kind) {
+      case 'claim': {
+        const label = proposal.label.trim()
+        if (label === '') return { code: 'missing_property', message: 'a claim needs a label' }
+        for (const id of proposal.about ?? []) {
+          const refusal = missing(id)
+          if (refusal !== undefined) return refusal
+        }
+        const preview = this.#episteme.graph.previewNode({
+          id: asId<NodeId>(this.#nextId('claim')),
+          type: NODE.claim,
+          label,
+          properties: { text: label },
+          tags: learnTags('general'),
+          tier: 'thought',
+        })
+        return preview.ok ? undefined : preview.refusal
+      }
+      case 'link': {
+        const preview = this.#episteme.graph.previewEdge({
+          id: asId<EdgeId>(`edge_proposed_${slug(proposal.from)}_${slug(proposal.to)}`),
+          type: asId<EdgeTypeId>(proposal.relation),
+          from: asId<NodeId>(proposal.from),
+          to: asId<NodeId>(proposal.to),
+        })
+        return preview.ok ? undefined : preview.refusal
+      }
+      case 'state': {
+        const refusal = missing(proposal.target)
+        if (refusal !== undefined) return refusal
+        const dimension = RECORDABLE_DIMENSIONS.find(
+          (candidate) => candidate.id === proposal.dimension,
+        )
+        if (dimension === undefined) {
+          return {
+            code: 'unregistered_dimension',
+            message: `"${proposal.dimension}" is not a dimension the learner records. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
+          }
+        }
+        if (!dimension.levels.includes(proposal.level)) {
+          return {
+            code: 'invalid_dimension_value',
+            message: `"${proposal.level}" is not a level of ${dimension.id}. Available: ${dimension.levels.join(', ')}`,
+          }
+        }
+        return undefined
+      }
+    }
+  }
+
+  /**
    * Writes what is pending and gives up ownership of the graph file, so another surface can open it.
    *
    * Every surface that opens a session closes it on the way out. A session that is never closed holds the
@@ -699,6 +818,15 @@ export class LearnSession {
       tags: [...node.tags],
     }
   }
+}
+
+export type ProposeResult =
+  | { readonly ok: true; readonly suggestion: Suggestion }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** Drafts live beside the graph file they are about, and are owned with it. */
+function suggestionsPathFor(graphPath: string): string {
+  return `${graphPath}.suggestions.jsonl`
 }
 
 /** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
