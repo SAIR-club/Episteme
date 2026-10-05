@@ -93,6 +93,29 @@ given host delivers is measured host by host, not assumed (ADR 0008, Consequence
 - **Compatibility with specific MCP hosts.** No real host or model has been run against the endpoint, so
   whether a given host calls the tools at useful moments, and shows the decision form, is unverified.
 
+### Hardening backlog
+
+The Phase 3 self-review found these. None of them blocks merging: each is a known limitation with a
+bounded consequence, and each needs its own design before it is built.
+
+- **Atomic batch preview.** Accepting a claim adds the node, then checks its links. If a link is refused, the
+  node is revoked, which leaves a revoked node in the history on every failed attempt. A batch that previews
+  every mutation before applying any would leave nothing behind. A failed `batch()` (seeding) can also leave
+  partial in-memory changes that the next write persists.
+- **What "modify" may change.** A modification may change a proposal's target, endpoints or dimension, not
+  only its value. The result is still recorded as coming from the suggestion. Whether modify should be limited
+  to the value is a decision semantics question.
+- **A storage port for drafts.** `SuggestionStore` does its own file I/O inside the application layer. That
+  ties drafts to the local JSONL adapter and keeps them outside ADR 0003's storage abstraction.
+- **Splitting `LearnSession`.** It carries retrieval, recording, node creation, proposals, decisions,
+  recovery, persistence and lifecycle. It needs dividing before a second scene uses it. The MCP surface also
+  depends on Learn's recordable dimensions.
+- **A stale lock that tells the truth.** The lock records only a pid. After a reboot, a reused pid can make a
+  stale lock look held by a running process. Recording the hostname and the process start time would tell
+  the two apart.
+- **stdio shim**, for hosts that only launch stdio servers.
+- **Cognitive Access Control / Scoped Recall**, the follow-up ADR (Phase 4).
+
 Still open, and answered by using it rather than in advance:
 
 - **Vocabulary across agents.** The Learn pack is topic-independent already; whether one pack is enough for
