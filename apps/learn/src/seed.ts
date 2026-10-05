@@ -1,5 +1,5 @@
 import { EDGE, NODE } from '@episteme/domain-learn'
-import type { LearnSession } from '@episteme/application'
+import type { LearnSession, SessionWriter } from '@episteme/application'
 
 /**
  * A starting topic, so a learner is not staring at an empty graph.
@@ -94,63 +94,66 @@ export async function seedTopic(
   session: LearnSession,
   topic: SeedTopic = TRANSFORMERS,
 ): Promise<{ readonly seeded: boolean; readonly nodeCount: number; readonly edgeCount: number }> {
-  const existing = new Set(session.listNodes().map((node) => node.nodeId))
-  // Every kind counts for the "already seeded" check, not just concepts: a topic file may contain only
-  // questions or claims, and checking concepts alone would re-seed it on every start.
-  const alreadyThere = [...topic.concepts, ...topic.questions, ...topic.claims].some((node) =>
-    existing.has(node.id),
-  )
-  if (alreadyThere) return { seeded: false, nodeCount: 0, edgeCount: 0 }
-
-  let nodeCount = 0
-  for (const concept of topic.concepts) {
-    session.addNodeSync({
-      id: concept.id,
-      label: concept.label,
-      type: NODE.concept,
-      tier: 'reference',
-      topic: topic.id,
-      source: topic.source,
-    })
-    nodeCount += 1
-  }
-  for (const question of topic.questions) {
-    session.addNodeSync({
-      id: question.id,
-      label: question.label,
-      type: NODE.question,
-      tier: 'reference',
-      topic: topic.id,
-      source: topic.source,
-    })
-    nodeCount += 1
-  }
-  // A claim from a topic file is material the learner was *given*, so it stays `reference`. The tier decides
-  // whether a node counts as the learner's own understanding, and seeding an authored claim as `thought`
-  // would put words in their mouth before they had said anything.
-  for (const claim of topic.claims) {
-    session.addNodeSync({
-      id: claim.id,
-      label: claim.label,
-      type: NODE.claim,
-      tier: 'reference',
-      topic: topic.id,
-      source: topic.source,
-    })
-    nodeCount += 1
-  }
-
-  let edgeCount = 0
-  for (const edge of topic.edges) {
-    session.linkSync(
-      edge.from,
-      edge.to,
-      edge.type as Parameters<LearnSession['linkSync']>[2],
-      `seed_${edge.from}_${edge.to}`,
+  // One mutation: the "already seeded" check and the additions cannot be interleaved with another writer,
+  // and the whole topic is written once.
+  return session.batch((writer) => {
+    const existing = new Set(session.listNodes().map((node) => node.nodeId))
+    // Every kind counts for the "already seeded" check, not just concepts: a topic file may contain only
+    // questions or claims, and checking concepts alone would re-seed it on every start.
+    const alreadyThere = [...topic.concepts, ...topic.questions, ...topic.claims].some((node) =>
+      existing.has(node.id),
     )
-    edgeCount += 1
-  }
+    if (alreadyThere) return { seeded: false, nodeCount: 0, edgeCount: 0 }
 
-  await session.flush()
-  return { seeded: true, nodeCount, edgeCount }
+    let nodeCount = 0
+    for (const concept of topic.concepts) {
+      writer.addNode({
+        id: concept.id,
+        label: concept.label,
+        type: NODE.concept,
+        tier: 'reference',
+        topic: topic.id,
+        source: topic.source,
+      })
+      nodeCount += 1
+    }
+    for (const question of topic.questions) {
+      writer.addNode({
+        id: question.id,
+        label: question.label,
+        type: NODE.question,
+        tier: 'reference',
+        topic: topic.id,
+        source: topic.source,
+      })
+      nodeCount += 1
+    }
+    // A claim from a topic file is material the learner was *given*, so it stays `reference`. The tier decides
+    // whether a node counts as the learner's own understanding, and seeding an authored claim as `thought`
+    // would put words in their mouth before they had said anything.
+    for (const claim of topic.claims) {
+      writer.addNode({
+        id: claim.id,
+        label: claim.label,
+        type: NODE.claim,
+        tier: 'reference',
+        topic: topic.id,
+        source: topic.source,
+      })
+      nodeCount += 1
+    }
+
+    let edgeCount = 0
+    for (const edge of topic.edges) {
+      writer.link(
+        edge.from,
+        edge.to,
+        edge.type as Parameters<SessionWriter['link']>[2],
+        `seed_${edge.from}_${edge.to}`,
+      )
+      edgeCount += 1
+    }
+
+    return { seeded: true, nodeCount, edgeCount }
+  })
 }

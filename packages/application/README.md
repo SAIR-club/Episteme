@@ -19,8 +19,11 @@ second scene exists would be an abstraction without a second case to fit.
   from the same call, so they cannot disagree.
 - **Only the human records.** `record()` has no actor parameter. Every state event it commits is authored by
   the human, and Core's guards would refuse anything else.
-- **Writes are ordered.** `flush()` serialises persistence behind one chain, so concurrent callers in one
-  process cannot interleave a read of the log with a partial write.
+- **Mutations are serialised.** Every method that changes the graph, the history or the drafts (`record`,
+  `addNode`, `link`, `batch`, `propose`, `decide`, `flush`, `close`) runs in one queue per session, each
+  after the one before it, including its write. Two decisions on one draft therefore cannot both commit:
+  the first one queued wins, and the other finds the draft already decided. Reads are not queued. A closed
+  session refuses every further change.
 - **One owner.** A session owns its graph file from `open()` until `close()`, and a second session over the
   same file is refused with `GraphLockedError`.
 - **An agent only proposes.** `propose()` keeps an agent's claim, link or state change as a pending draft in
