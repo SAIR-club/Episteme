@@ -43,7 +43,10 @@ export interface MockAgentOptions {
 }
 
 export type Capability =
-  'respond' | 'suggestStructure' | 'suggestStateChange' | 'suggestConnections'
+  | 'respond'
+  | 'suggestStructure'
+  | 'suggestStateChange'
+  | 'suggestConnections'
 
 export interface AgentInvocation {
   readonly capability: Capability
