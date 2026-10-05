@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import { EpistemeError, asId, fromSerializedEvent, toSerializedEvent } from '@episteme/core'
 import type {
   Branch,
@@ -179,7 +180,7 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
   async save(state?: EventLogState): Promise<void> {
     if (state !== undefined) this.#absorb(state)
     this.#assertOpen()
-    const { writeFile, rename } = await import('node:fs/promises')
+    const { writeFile, rename, mkdir } = await import('node:fs/promises')
 
     const lines: string[] = []
     for (const node of this.#nodes.values()) {
@@ -221,6 +222,7 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
     // A temporary file plus a rename: a crash mid-write leaves the previous complete history
     // intact rather than a half-written one.
     const temporary = `${this.#filePath}.tmp`
+    await mkdir(dirname(this.#filePath), { recursive: true })
     await writeFile(temporary, lines.length === 0 ? '' : `${lines.join('\n')}\n`, 'utf8')
     await rename(temporary, this.#filePath)
   }
