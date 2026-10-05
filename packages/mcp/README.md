@@ -55,10 +55,18 @@ not authentication.
 
 ## The network boundary
 
-The endpoint binds to `127.0.0.1` and rejects a request whose `Host` is not a localhost name or whose
-`Origin` is a non-local web page, before the SDK sees it. Without both checks, any web page could reach it
-through DNS rebinding. That is a network boundary, not authorization: any local process can still connect, and
-`recall` is unscoped until the follow-up ADR on scoped recall is accepted.
+The Learn host serves this endpoint and its own pages behind one boundary (`boundaryRefusal` in
+`apps/learn/src/server.ts`). It binds to `127.0.0.1`, and it refuses a request in any of these cases:
+
+- `Host` is not a loopback name with the host's port.
+- `Origin` is present and is not the host's own origin.
+- `Sec-Fetch-Site` marks the request as coming from another site.
+- The request changes something and is not sent as `application/json`.
+
+The endpoint also repeats the SDK's Host and Origin checks before the SDK sees a request. Without these checks, a
+web page could reach the surface through DNS rebinding or a cross-site POST. That is a network boundary, not
+authorization: any local process can still connect, and `recall` is unscoped until the follow-up ADR on scoped
+recall is accepted.
 
 ## Dependencies
 
