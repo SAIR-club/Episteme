@@ -3,8 +3,10 @@ import {
   McpServer,
   fromJsonSchema,
   type CallToolResult,
+  type RequestStateCodec,
   type ServerContext,
 } from '@modelcontextprotocol/server'
+import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } from './confirm.js'
 import {
   RECORDABLE_DIMENSIONS,
   type LearnSession,
@@ -18,7 +20,8 @@ import {
  *
  * There is deliberately no tool that confirms a suggestion and none that writes a node, an edge or a state
  * event. An agent that could confirm would be confirming itself. Everything it wants to change is proposed,
- * and becomes the learner's only when the learner accepts it.
+ * and becomes the learner's only when the learner accepts it, in a form the host shows them or in the review
+ * queue. The answer to such a form comes from the learner, never from the tool's arguments.
  *
  * Text is addressed to the agent, in English, with the same data as `structuredContent` so a host can use
  * either. The learner-facing Chinese of the Learn surface stays there.
@@ -115,8 +118,15 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
 })
 
 /** One MCP server over one session. Built per request by the HTTP endpoint; it holds no state of its own. */
-export function createEpistemeMcpServer(session: LearnSession): McpServer {
-  const server = new McpServer({ name: 'episteme', version: '0.0.0' })
+export function createEpistemeMcpServer(
+  session: LearnSession,
+  codec: RequestStateCodec<PendingDecisionState>,
+): McpServer {
+  // Every echoed `requestState` is verified before a handler runs. A forged or expired one never reaches it.
+  const server = new McpServer(
+    { name: 'episteme', version: '0.0.0' },
+    { requestState: { verify: (state, context) => codec.verify(state, context) } },
+  )
 
   server.registerTool(
     'recall',
@@ -138,11 +148,16 @@ export function createEpistemeMcpServer(session: LearnSession): McpServer {
     {
       title: 'Propose a change to the learner’s understanding',
       description:
-        'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the learner accepts it themselves; you cannot accept it. A proposal that could never be accepted is refused with the reason.',
+        'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the learner decides on it themselves; you cannot decide for them. If your host can show the learner a form, they are asked right away; otherwise it waits in their review queue. A proposal that could never be accepted is refused with the reason.',
       inputSchema: PROPOSE_INPUT,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async (input, context) => {
+      // A retry carrying the learner's answer to a form this tool asked for. The signed state, not the
+      // arguments, says which draft it is about.
+      const answered = context.mcpReq.requestState<PendingDecisionState>()
+      if (answered !== undefined) return resolveAnswer(session, answered, context)
+
       const proposal = proposalFrom(input)
       if (typeof proposal === 'string') return refused('invalid_proposal', proposal)
 
@@ -153,6 +168,7 @@ export function createEpistemeMcpServer(session: LearnSession): McpServer {
       if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
 
       const { suggestion } = outcome
+      if (canAskLearner(server)) return askLearner(session, suggestion, codec, context)
       return result(
         `Kept as pending suggestion ${suggestion.id}. It changes nothing until the learner accepts it; ` +
           `do not tell them it has been recorded.`,

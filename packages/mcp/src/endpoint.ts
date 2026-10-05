@@ -10,6 +10,7 @@ import {
   localhostAllowedOrigins,
   originValidationResponse,
 } from '@modelcontextprotocol/server'
+import { createDecisionCodec } from './confirm.js'
 import { createEpistemeMcpServer } from './server.js'
 
 /**
@@ -35,7 +36,10 @@ export interface McpEndpoint {
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
 export function createMcpEndpoint(session: LearnSession): McpEndpoint {
-  const handler = createMcpHandler(() => createEpistemeMcpServer(session))
+  // One codec for the endpoint's lifetime: a server is built per request, and the round that verifies a
+  // learner's answer is a different request from the one that asked.
+  const codec = createDecisionCodec()
+  const handler = createMcpHandler(() => createEpistemeMcpServer(session, codec))
 
   const fetch = async (request: Request): Promise<Response> =>
     hostHeaderValidationResponse(request, localhostAllowedHostnames()) ??

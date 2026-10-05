@@ -22,9 +22,29 @@ graph, so the terminal surface cannot open the same file.
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
 that could confirm would be confirming itself. Accepting a suggestion is the learner's act, on a channel the
-agent cannot answer. That channel is the next round of work (ADR 0008).
+agent cannot answer.
 
 Every result carries the same data twice: as text addressed to the agent, and as `structuredContent`.
+
+## Asking the learner
+
+If the client declared that it can show the user a form (`elicitation`), `propose` asks the learner right
+away, using the multi-round-trip model of MCP 2026-07-28 (ADR 0008):
+
+1. `propose` keeps the draft and returns `input_required`. The result carries a form offering accept, modify
+   or dismiss, plus the one field a modification of this kind changes, and a `requestState` naming the draft.
+2. The host shows the form to the user and retries the original call, with the answer in `inputResponses`.
+3. The retry hands the answer to `LearnSession.decide()`, the same path the Learn review queue uses.
+
+Both values that come back are treated as untrusted. `requestState` is sealed with an HMAC under a key held
+only by the host process, expires after fifteen minutes, and is bound to the method. A forged or expired
+state is rejected before the tool runs. The draft comes from that state, never from the retried arguments.
+`inputResponses` is validated against the schema the form was built from. Content that fails it, and a
+declined or cancelled form, are not decisions, and the draft stays in the review queue.
+
+A client that declared no such capability is not asked, and gets a pending draft. That includes 2025-era
+clients over this host's stateless HTTP leg, which cannot carry the request. Over a connection that can carry
+it, the SDK's legacy shim serves the same result as a 2025-style elicitation, so there is one implementation.
 
 ## Identity
 
@@ -49,7 +69,8 @@ stdio shim, if one is ever built. The v1 `@modelcontextprotocol/sdk` is not used
 
 ## Layout
 
-| File              | Contents                                                      |
-| ----------------- | ------------------------------------------------------------- |
-| `src/server.ts`   | the three tools, their input schemas and the agent identity   |
-| `src/endpoint.ts` | the HTTP endpoint: Host and Origin checks, `node:http` bridge |
+| File              | Contents                                                              |
+| ----------------- | --------------------------------------------------------------------- |
+| `src/server.ts`   | the three tools, their input schemas and the agent identity           |
+| `src/confirm.ts`  | the decision form, the sealed state, and reading the learner's answer |
+| `src/endpoint.ts` | the HTTP endpoint: Host and Origin checks, `node:http` bridge         |
