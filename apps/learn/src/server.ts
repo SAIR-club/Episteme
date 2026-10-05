@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
-import { RECORDABLE_DIMENSIONS, LearnSession } from '@episteme/application'
+import { RECORDABLE_DIMENSIONS, LearnSession, type Decision } from '@episteme/application'
 import { createMcpEndpoint, type McpEndpoint } from '@episteme/mcp'
 import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
 
@@ -83,6 +83,62 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
     throw new Error('request body must be a JSON object')
   }
   return parsed as Record<string, unknown>
+}
+
+/**
+ * Reads a decision from the page's request body.
+ *
+ * Only the shape is checked here. Whether a modified value could ever be committed is the application's
+ * question, answered the same way for every channel.
+ */
+function decisionFrom(body: Record<string, unknown>): Decision {
+  const action = body['action']
+  if (action === 'accept' || action === 'dismiss') return { action }
+  if (action !== 'modify') {
+    throw new TypeError('"action" must be one of accept, modify, dismiss')
+  }
+  const proposal = body['proposal']
+  if (typeof proposal !== 'object' || proposal === null || Array.isArray(proposal)) {
+    throw new TypeError('"proposal" must be an object when the action is modify')
+  }
+  const fields = proposal as Record<string, unknown>
+  const text = (name: string): string => asString(fields[name], `proposal.${name}`)
+  switch (fields['kind']) {
+    case 'claim': {
+      const about = fields['about']
+      if (
+        about !== undefined &&
+        !(Array.isArray(about) && about.every((id) => typeof id === 'string'))
+      ) {
+        throw new TypeError('"proposal.about" must be a list of node ids')
+      }
+      return {
+        action,
+        proposal: {
+          kind: 'claim',
+          label: text('label'),
+          ...(about === undefined ? {} : { about }),
+        },
+      }
+    }
+    case 'link':
+      return {
+        action,
+        proposal: { kind: 'link', from: text('from'), to: text('to'), relation: text('relation') },
+      }
+    case 'state':
+      return {
+        action,
+        proposal: {
+          kind: 'state',
+          target: text('target'),
+          dimension: text('dimension'),
+          level: text('level'),
+        },
+      }
+    default:
+      throw new TypeError('"proposal.kind" must be one of claim, link, state')
+  }
 }
 
 function asString(value: unknown, field: string): string {
@@ -222,6 +278,24 @@ async function handle(
   // without re-reading the whole surface.
   if (path === '/api/suggestions' && request.method === 'GET') {
     sendJson(response, 200, { suggestions: session.pendingSuggestions() })
+    return
+  }
+
+  // The learner's decision on one suggestion. This surface only collects it; what accept, modify and dismiss
+  // mean lives in the application layer, shared with every other channel (ADR 0008).
+  if (path === '/api/suggestions/decide' && request.method === 'POST') {
+    const body = await readJson(request)
+    const id = asString(body['id'], 'id')
+    const result = await session.decide(id, decisionFrom(body), 'learn-review')
+    if (!result.ok) {
+      sendJson(response, 422, { error: result.refusal.message, code: result.refusal.code })
+      return
+    }
+    sendJson(response, 200, {
+      result,
+      suggestions: session.pendingSuggestions(),
+      events: session.eventCount,
+    })
     return
   }
 

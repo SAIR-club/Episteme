@@ -2,6 +2,7 @@ import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
   asId,
+  isEpistemeError,
   systemClock,
   type ActorId,
   type DimensionId,
@@ -521,7 +522,10 @@ export class LearnSession {
       const suffix = Number.parseInt(node.id.slice(prefix.length), 10)
       if (Number.isFinite(suffix) && suffix > highest) highest = suffix
     }
-    return `${prefix}${highest + 1}`
+    // `listNodes` leaves out revoked nodes, but their ids are still taken.
+    let next = highest + 1
+    while (this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined) next += 1
+    return `${prefix}${next}`
   }
 
   /**
@@ -586,12 +590,14 @@ export class LearnSession {
     to: string,
     type: Parameters<Episteme['graph']['addEdge']>[0]['type'] = EDGE.refersTo,
     id?: string,
+    source?: string,
   ): { readonly edgeId: string } {
     const edge = this.#episteme.graph.addEdge({
       id: asId<EdgeId>(id ?? `edge_${this.#episteme.log.eventCount}_${slug(from)}_${slug(to)}`),
       type,
       from: asId<NodeId>(from),
       to: asId<NodeId>(to),
+      ...(source === undefined ? {} : { source }),
     })
     return { edgeId: edge.id }
   }
@@ -743,6 +749,151 @@ export class LearnSession {
     return this.#suggestions.list()
   }
 
+  /**
+   * Applies the learner's decision on a pending suggestion: the one path from a human decision to the graph
+   * (ADR 0008).
+   *
+   * Every channel (the Learn review queue, MCP elicitation) collects the decision and calls this. None of
+   * them commits on its own, so accept, modify and dismiss mean the same thing wherever they were chosen.
+   *
+   * - **accept** commits the agent's proposed value. A state change is committed as `confirmed`, and
+   *   `confirmedBy` is this session's human. There is no parameter for it: the confirming human is the one
+   *   whose graph this is, never a value a caller, a client or an agent supplies.
+   * - **modify** commits the human's own value instead, of the same kind, checked as the agent's was. The
+   *   human wrote it, so it is authored rather than confirmed.
+   * - **dismiss** removes the draft and commits nothing. No cognitive event records it, because the graph
+   *   never saw the draft.
+   *
+   * Everything committed goes through the ordinary validated path, and its source names the suggestion, the
+   * agent that proposed it and the channel that resolved it. A refusal (an unknown suggestion, a modified
+   * value that could never be committed, or a commit the graph rejects) is returned as a value and leaves
+   * the draft pending.
+   */
+  async decide(
+    suggestionId: string,
+    decision: Decision,
+    channel: DecisionChannel,
+  ): Promise<DecisionResult> {
+    const suggestion = this.#suggestions.get(suggestionId)
+    if (suggestion === undefined) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'unknown_suggestion',
+          message: `suggestion "${suggestionId}" is not pending; it may already have been decided`,
+        },
+      }
+    }
+
+    if (decision.action === 'dismiss') {
+      await this.#suggestions.remove(suggestion.id)
+      return { ok: true, outcome: 'dismissed', suggestion }
+    }
+
+    const proposal = decision.action === 'accept' ? suggestion.proposal : decision.proposal
+    if (proposal.kind !== suggestion.proposal.kind) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'kind_changed',
+          message: `a ${suggestion.proposal.kind} suggestion can only be modified into another ${suggestion.proposal.kind}`,
+        },
+      }
+    }
+    const refusal = this.#contentRefusalOf(proposal)
+    if (refusal !== undefined) return { ok: false, refusal }
+
+    const confirmed = decision.action === 'accept'
+    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${confirmed ? 'accepted' : 'modified'} via ${channel}`
+    let committed: Committed | MutationRefusal
+    try {
+      committed = this.#commitDecided(proposal, suggestion, { confirmed, source })
+    } catch (error) {
+      // Only the graph's own refusals become a value. Anything else is a bug and keeps propagating.
+      if (!isEpistemeError(error)) throw error
+      committed = { code: error.code, message: error.message }
+    }
+    if ('code' in committed) {
+      // A revoked claim may be pending; it is written like any other change, and the draft stays.
+      await this.flush()
+      return { ok: false, refusal: committed }
+    }
+
+    await this.flush()
+    await this.#suggestions.remove(suggestion.id)
+    return { ok: true, outcome: confirmed ? 'accepted' : 'modified', suggestion, committed }
+  }
+
+  /**
+   * Commits a decided proposal through the validated graph and log.
+   *
+   * Throws the graph's own refusals, except one it has to detect itself: an edge of an accepted claim that
+   * cannot be added, which it returns after withdrawing the claim.
+   */
+  #commitDecided(
+    proposal: Proposal,
+    suggestion: Suggestion,
+    provenance: { readonly confirmed: boolean; readonly source: string },
+  ): Committed | MutationRefusal {
+    switch (proposal.kind) {
+      case 'state': {
+        const value: StateValue = provenance.confirmed
+          ? {
+              level: proposal.level,
+              authority: 'confirmed',
+              confirmedBy: HUMAN,
+              sourceOf: suggestion.id,
+            }
+          : { level: proposal.level, sourceOf: suggestion.id }
+        const event = this.#episteme.log.commit({
+          target: asId<NodeId>(proposal.target),
+          actorId: HUMAN,
+          dimensions: new Map([[asId<DimensionId>(proposal.dimension), value]]),
+          reason: suggestion.rationale,
+          source: provenance.source,
+        })
+        return { kind: 'event', id: event.id }
+      }
+      case 'link': {
+        const edge = this.linkSync(
+          proposal.from,
+          proposal.to,
+          asId<EdgeTypeId>(proposal.relation),
+          undefined,
+          provenance.source,
+        )
+        return { kind: 'edge', id: edge.edgeId }
+      }
+      case 'claim': {
+        const node = this.addNodeSync({
+          id: this.#nextId('claim'),
+          label: proposal.label,
+          type: NODE.claim,
+          tier: 'thought',
+          source: provenance.source,
+        })
+        // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
+        // is how the graph withdraws something, so nothing half-accepted stays standing.
+        const edges = (proposal.about ?? []).map((target) => ({
+          id: asId<EdgeId>(`edge_${slug(node.nodeId)}_${slug(target)}`),
+          type: EDGE.refersTo,
+          from: asId<NodeId>(node.nodeId),
+          to: asId<NodeId>(target),
+          source: provenance.source,
+        }))
+        for (const edge of edges) {
+          const preview = this.#episteme.graph.previewEdge(edge)
+          if (!preview.ok) {
+            this.#episteme.graph.revokeNode(node.nodeId)
+            return preview.refusal
+          }
+        }
+        for (const edge of edges) this.#episteme.graph.addEdge(edge)
+        return { kind: 'node', id: node.nodeId }
+      }
+    }
+  }
+
   /** Why a proposal could never be accepted, or `undefined` when it could be. */
   #refusalOf(
     proposal: Proposal,
@@ -757,7 +908,16 @@ export class LearnSession {
         message: 'only an agent proposes; the human records their own understanding directly',
       }
     }
+    return this.#contentRefusalOf(proposal)
+  }
 
+  /**
+   * Why a proposal's content could never be committed, or `undefined` when it could be.
+   *
+   * Shared by proposing and by a human's modification, so a value the human edits meets exactly the checks
+   * the agent's value met.
+   */
+  #contentRefusalOf(proposal: Proposal): MutationRefusal | undefined {
     const missing = (id: string): MutationRefusal | undefined =>
       this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
         ? { code: 'unknown_node', message: `node "${id}" does not exist` }
@@ -840,6 +1000,31 @@ export class LearnSession {
     }
   }
 }
+
+/** Where a human made a decision, recorded with whatever it committed. */
+export type DecisionChannel = 'learn-review' | 'mcp-elicitation'
+
+/** What a human decided about a pending suggestion. */
+export type Decision =
+  | { readonly action: 'accept' }
+  | { readonly action: 'modify'; readonly proposal: Proposal }
+  | { readonly action: 'dismiss' }
+
+/** What a decision committed: one state event, one edge, or one claim node. */
+export interface Committed {
+  readonly kind: 'event' | 'edge' | 'node'
+  readonly id: string
+}
+
+export type DecisionResult =
+  | {
+      readonly ok: true
+      readonly outcome: 'accepted' | 'modified'
+      readonly suggestion: Suggestion
+      readonly committed: Committed
+    }
+  | { readonly ok: true; readonly outcome: 'dismissed'; readonly suggestion: Suggestion }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
 
 export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }
