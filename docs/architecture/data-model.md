@@ -34,6 +34,12 @@ type NodeId = Brand<string, 'NodeId'>
 node and edge ids come from the caller's draft, and event and branch ids come from an `IdFactory`, so
 a history is reproducible and a test can assert on exact output.
 
+**An id names one node or one edge for good.** Adding a node or an edge whose id is already taken is
+refused with `duplicate_id`, even when the record holding it is revoked. Otherwise the addition would
+replace the earlier record in place, and the node or edge it named would leave the graph without a
+revocation. A caller that supplies ids therefore needs a scheme that cannot repeat. The application layer
+uses random edge ids, and short counted ids for the nodes a learner types by hand.
+
 ## Time
 
 `EpochMillis`, always supplied by a `Clock`. `systemClock` in production, `createFixedClock` in tests

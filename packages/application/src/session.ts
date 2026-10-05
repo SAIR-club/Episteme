@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
@@ -606,7 +607,7 @@ export class LearnSession {
     source?: string,
   ): { readonly edgeId: string } {
     const edge = this.#episteme.graph.addEdge({
-      id: asId<EdgeId>(id ?? `edge_${this.#episteme.log.eventCount}_${slug(from)}_${slug(to)}`),
+      id: asId<EdgeId>(id ?? newEdgeId()),
       type,
       from: asId<NodeId>(from),
       to: asId<NodeId>(to),
@@ -761,7 +762,7 @@ export class LearnSession {
       if (refusal !== undefined) return { ok: false, refusal }
 
       const suggestion = await this.#suggestions.add({
-        proposal,
+        proposal: normalized(proposal),
         rationale: from.rationale.trim(),
         proposedBy: from.proposedBy,
         proposedAt: systemClock.now(),
@@ -826,7 +827,9 @@ export class LearnSession {
       return { ok: true, outcome: 'dismissed', suggestion }
     }
 
-    const proposal = decision.action === 'accept' ? suggestion.proposal : decision.proposal
+    const proposal = normalized(
+      decision.action === 'accept' ? suggestion.proposal : decision.proposal,
+    )
     if (proposal.kind !== suggestion.proposal.kind) {
       return {
         ok: false,
@@ -911,7 +914,7 @@ export class LearnSession {
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
         // is how the graph withdraws something, so nothing half-accepted stays standing.
         const edges = (proposal.about ?? []).map((target) => ({
-          id: asId<EdgeId>(`edge_${slug(node.nodeId)}_${slug(target)}`),
+          id: asId<EdgeId>(newEdgeId()),
           type: EDGE.refersTo,
           from: asId<NodeId>(node.nodeId),
           to: asId<NodeId>(target),
@@ -978,8 +981,23 @@ export class LearnSession {
         return preview.ok ? undefined : preview.refusal
       }
       case 'link': {
+        // Two edges of one type between the same nodes say the same thing twice.
+        const existing = this.#episteme.graph
+          .listEdges()
+          .find(
+            (edge) =>
+              edge.from === proposal.from &&
+              edge.to === proposal.to &&
+              edge.type === proposal.relation,
+          )
+        if (existing !== undefined) {
+          return {
+            code: 'duplicate_edge',
+            message: `"${proposal.from}" already ${proposal.relation} "${proposal.to}" (edge ${existing.id})`,
+          }
+        }
         const preview = this.#episteme.graph.previewEdge({
-          id: asId<EdgeId>(`edge_proposed_${slug(proposal.from)}_${slug(proposal.to)}`),
+          id: asId<EdgeId>(newEdgeId()),
           type: asId<EdgeTypeId>(proposal.relation),
           from: asId<NodeId>(proposal.from),
           to: asId<NodeId>(proposal.to),
@@ -1093,6 +1111,23 @@ export interface SessionWriter {
   ): { readonly edgeId: string }
 }
 
+/**
+ * A new edge id: unique without depending on anything that can repeat.
+ *
+ * Edge ids were once derived from the event count and the endpoints, which repeats whenever two edges join
+ * the same nodes with no event in between, as accepting two links does. Core now refuses a repeated id, so a
+ * repeating scheme would turn into refusals rather than overwrites. Nothing types an edge id by hand.
+ */
+function newEdgeId(): string {
+  return `edge_${randomUUID()}`
+}
+
+/** A proposal with what it names said once: a claim about the same node twice is about it once. */
+function normalized(proposal: Proposal): Proposal {
+  if (proposal.kind !== 'claim' || proposal.about === undefined) return proposal
+  return { ...proposal, about: [...new Set(proposal.about)] }
+}
+
 /** Drafts live beside the graph file they are about, and are owned with it. */
 function suggestionsPathFor(graphPath: string): string {
   return `${graphPath}.suggestions.jsonl`
@@ -1200,16 +1235,6 @@ function explainSignalZh(signal: string, value: number, matchedTerms: readonly s
     default:
       return signal
   }
-}
-
-function slug(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, '_')
-      .replace(/^_+|_+$/gu, '')
-      .slice(0, 40) || 'node'
-  )
 }
 
 /**
