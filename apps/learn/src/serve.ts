@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { optionValue } from './cli.js'
+import { GraphLockedError } from '@episteme/application'
+import { lockedMessage, optionValue } from './cli.js'
 import { startLearnServer } from './server.js'
 import type { SeedTopic } from './seed.js'
 import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
@@ -60,11 +61,19 @@ try {
   process.exit(1)
 }
 
-const server = await startLearnServer({
-  port,
-  filePath,
-  ...(topic === undefined ? {} : { topic }),
-})
+let server: Awaited<ReturnType<typeof startLearnServer>>
+try {
+  server = await startLearnServer({
+    port,
+    filePath,
+    ...(topic === undefined ? {} : { topic }),
+  })
+} catch (error) {
+  // Only the one failure a learner can act on is translated. Anything else is a bug and keeps its stack.
+  if (!(error instanceof GraphLockedError)) throw error
+  process.stderr.write(`${lockedMessage(error)}\n`)
+  process.exit(1)
+}
 
 process.stdout.write(
   `\nEPISTEME · Learn\n` +

@@ -8,7 +8,10 @@ pnpm learn        # terminal
 pnpm learn:web    # local web surface at http://127.0.0.1:4321
 ```
 
-Both run the same loop, over the same graph file, through the same `LearnSession`.
+Both run the same loop, over the same graph file, through the same `LearnSession`. They cannot have it open
+at the same time: a graph has one owner, and the second surface refuses to start and names the process that
+holds it. Ctrl+C and `quit` release the graph; only a process killed outright leaves its lock behind, and the
+message then says which file to delete.
 
 ```bash
 pnpm learn --help

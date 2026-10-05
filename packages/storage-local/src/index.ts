@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { EpistemeError, asId, fromSerializedEvent, toSerializedEvent } from '@episteme/core'
 import type {
   Branch,
@@ -94,6 +96,71 @@ function isKnownKind(value: unknown): value is PersistedRecordKind {
   )
 }
 
+/**
+ * Another owner holds the graph, so this adapter refused to open it.
+ *
+ * One graph file has exactly one owner (ADR 0008). Two adapters over one file, in two processes or in one,
+ * each resume their own id counter and each rewrite the whole file on save, so they would mint the same event
+ * ids for different moments and overwrite each other's history without any error. Refusing to open is the
+ * only safe answer. Waiting would hang a second surface indefinitely, and a private copy is that same silent
+ * divergence.
+ *
+ * A lock whose holder is no longer running is **not** reclaimed automatically. Two processes that both found
+ * it stale could both reclaim it, so the error says how to remove it instead.
+ */
+export class GraphLockedError extends Error {
+  readonly lockPath: string
+  /** The process recorded as the owner, when the lock file could be read. */
+  readonly holderPid: number | undefined
+  /** Whether that process is still running, as far as this machine can tell. */
+  readonly holderRunning: boolean
+
+  constructor(graphPath: string, lockPath: string, holderPid: number | undefined) {
+    const holderRunning = holderPid !== undefined && isRunning(holderPid)
+    super(
+      holderRunning
+        ? `the graph "${graphPath}" is already open in process ${holderPid}. Use that process (for example the running Learn surface) or stop it first.`
+        : `the graph "${graphPath}" is locked by ${holderPid === undefined ? 'an unreadable lock' : `process ${holderPid}, which is no longer running`}. If nothing else is using this graph, delete "${lockPath}" and try again.`,
+    )
+    this.name = 'GraphLockedError'
+    this.lockPath = lockPath
+    this.holderPid = holderPid
+    this.holderRunning = holderRunning
+  }
+}
+
+/** Signal 0 checks for existence without signalling. `EPERM` means it exists but belongs to someone else. */
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === 'EPERM'
+  }
+}
+
+/** Locks this process holds and has not released through `close()`. */
+const HELD_LOCKS = new Set<string>()
+let releaseOnExitRegistered = false
+
+/**
+ * Remembers a lock so it is released when the process ends without `close()`: an uncaught error or
+ * `process.exit`.
+ *
+ * One listener for the whole process rather than one per adapter, so a process that opens many graphs does
+ * not accumulate listeners. Release is synchronous, because nothing asynchronous runs during `exit`. A
+ * process killed outright still leaves its lock behind, and `GraphLockedError` then says so. That is the only
+ * way a stale lock arises.
+ */
+function holdLock(lockPath: string): void {
+  HELD_LOCKS.add(lockPath)
+  if (releaseOnExitRegistered) return
+  releaseOnExitRegistered = true
+  process.once('exit', () => {
+    for (const held of HELD_LOCKS) rmSync(held, { force: true })
+  })
+}
+
 /** What a load produced, grouped by kind. */
 export interface LoadedState {
   readonly nodes: readonly GraphNode[]
@@ -130,6 +197,7 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
   readonly #revocations = new Map<string, Revocation>()
   readonly #filePath: string
   #loaded = false
+  #ownsLock = false
 
   constructor(filePath: string) {
     this.#filePath = filePath
@@ -139,8 +207,72 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
     return this.#filePath
   }
 
-  /** Reads the file into memory. A missing file is an empty history, not an error. */
+  /** The lock file that marks this adapter as the graph's one owner while it is open. */
+  get lockPath(): string {
+    return `${this.#filePath}.lock`
+  }
+
+  /**
+   * Takes ownership of the file and reads it into memory. A missing file is an empty history, not an error.
+   *
+   * Ownership is taken before reading, so what is read cannot be changed underneath by another owner. It is
+   * released again if the read fails, so a corrupt file does not also leave an orphaned lock behind.
+   * Throws `GraphLockedError` when another adapter owns the file.
+   */
   async open(): Promise<LoadedState> {
+    await this.#acquireLock()
+    try {
+      return await this.#read()
+    } catch (error) {
+      await this.close()
+      throw error
+    }
+  }
+
+  /**
+   * Releases ownership. After this, the adapter cannot be written through, and another one may open the file.
+   *
+   * Does not save. Durability stays an explicit act (ADR 0006), so a caller that wants its last changes on
+   * disk saves first. Closing twice, or closing an adapter that never opened, is a no-op.
+   */
+  async close(): Promise<void> {
+    this.#loaded = false
+    if (!this.#ownsLock) return
+    HELD_LOCKS.delete(this.lockPath)
+    const { rm } = await import('node:fs/promises')
+    await rm(this.lockPath, { force: true })
+    this.#ownsLock = false
+  }
+
+  async #acquireLock(): Promise<void> {
+    const { mkdir, readFile, writeFile } = await import('node:fs/promises')
+
+    // The directory has to exist for the lock to be created in it, and it would have had to exist for the
+    // first save anyway. Without this, a fresh default path failed on the first write rather than up front.
+    await mkdir(dirname(this.#filePath), { recursive: true })
+
+    try {
+      // `wx` fails if the file exists, so taking the lock is one atomic step rather than a check and a write.
+      await writeFile(this.lockPath, `${JSON.stringify({ pid: process.pid })}\n`, {
+        encoding: 'utf8',
+        flag: 'wx',
+      })
+      this.#ownsLock = true
+      holdLock(this.lockPath)
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'EEXIST') throw error
+      let holderPid: number | undefined
+      try {
+        const recorded = JSON.parse(await readFile(this.lockPath, 'utf8')) as { pid?: unknown }
+        if (typeof recorded.pid === 'number') holderPid = recorded.pid
+      } catch {
+        // An unreadable lock still holds the graph. The error reports it as unreadable.
+      }
+      throw new GraphLockedError(this.#filePath, this.lockPath, holderPid)
+    }
+  }
+
+  async #read(): Promise<LoadedState> {
     const { readFile } = await import('node:fs/promises')
     let contents = ''
     try {
@@ -375,7 +507,7 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
     if (!this.#loaded) {
       throw new EpistemeError(
         'guard_rejected',
-        `storage "${this.#filePath}" was used before open(); call open() first`,
+        `storage "${this.#filePath}" was used before open() or after close(); call open() first`,
       )
     }
   }

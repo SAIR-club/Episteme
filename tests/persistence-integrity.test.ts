@@ -120,6 +120,8 @@ describe('recovery integrity', () => {
     const ancestryBefore = session1.log.branchAncestry(forked.branch.id)
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const session2 = await openEpisteme(await openLocalStorage(filePath))
 
@@ -154,6 +156,8 @@ describe('recovery integrity', () => {
     const visibleBefore = session1.log.history({ target: CLAIM_ID, actorId: session1.humanId })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const session2 = await openEpisteme(await openLocalStorage(filePath))
 
@@ -192,6 +196,8 @@ describe('recovery integrity', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const session2 = await openEpisteme(await openLocalStorage(filePath))
 
@@ -234,6 +240,8 @@ describe('recovery integrity', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const session2 = await openEpisteme(await openLocalStorage(filePath))
     const stateAfter = [...session2.log.stateOf(CLAIM_ID, session2.humanId).entries()]
@@ -265,6 +273,8 @@ describe('recovery integrity', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const cold = await askIn(
       session1,
@@ -293,6 +303,8 @@ describe('recovery integrity', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     // Simulate a crash that left a half-written final line.
     const contents = await readFile(filePath, 'utf8')
@@ -333,6 +345,8 @@ describe('recovery integrity', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const session2 = await openEpisteme(await openLocalStorage(filePath))
     const humanBranch = session2.log.getEvent(humanEvent.id)?.branchId
