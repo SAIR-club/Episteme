@@ -277,3 +277,66 @@ describe('routing', () => {
     expect(list<{ nodeId: string }>(body, 'nodes').map((node) => node.nodeId)).toContain(target)
   })
 })
+
+describe('the review queue', () => {
+  /** An agent's proposal, sent the way an MCP host sends it. */
+  async function proposeOverMcp(args: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'tools/call',
+        'mcp-name': 'propose',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'propose',
+          arguments: args,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'queue-test', version: '1' },
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      }),
+    })
+    expect(response.status).toBe(200)
+  }
+
+  it('is empty until an agent proposes something', async () => {
+    const { body } = await get('/api/state')
+    expect(list(body, 'suggestions')).toEqual([])
+  })
+
+  it('shows an agent’s proposal, who made it and why, without changing the learner’s state', async () => {
+    const before = field<number>((await get('/api/state')).body, 'events')
+    await proposeOverMcp({
+      kind: 'state',
+      target: 'q_why_order',
+      dimension: 'confidence',
+      level: 'medium',
+      rationale: 'they answered it but hedged',
+    })
+
+    const { body } = await get('/api/suggestions')
+    const [suggestion] = list<{
+      proposedBy: string
+      rationale: string
+      proposal: { kind: string }
+    }>(body, 'suggestions')
+    expect(suggestion).toMatchObject({
+      proposedBy: 'actor_agent_queue-test',
+      rationale: 'they answered it but hedged',
+      proposal: { kind: 'state' },
+    })
+
+    const state = (await get('/api/state')).body
+    expect(list(state, 'suggestions')).toHaveLength(1)
+    expect(field<number>(state, 'events')).toBe(before)
+  })
+})

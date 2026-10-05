@@ -439,6 +439,46 @@
         margin-top: 0;
       }
 
+      /* ── review queue ───────────────────────────────────────────────────── */
+      .review {
+        background: var(--warn-soft);
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 13px 15px;
+      }
+      .review .lead {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .review .suggestion {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px 12px;
+        margin-top: 8px;
+      }
+      .review .kind {
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.03em;
+        color: var(--warn);
+      }
+      .review .what {
+        font-size: 13.5px;
+        margin: 3px 0 5px;
+      }
+      .review .why {
+        font-size: 12.5px;
+        color: var(--ink);
+      }
+      .review .who {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--faint);
+        margin-top: 5px;
+      }
+
       /* ── record panel ───────────────────────────────────────────────────── */
       .record {
         background: var(--teal-soft);
@@ -777,6 +817,11 @@
         </main>
 
         <aside>
+          <section id="reviewsection" hidden>
+            <h2>待你确认的建议<span class="en">Suggestions awaiting you</span></h2>
+            <div id="review"></div>
+          </section>
+
           <section>
             <h2>到目前为止<span class="en">What you have understood</span></h2>
             <div id="progress">
@@ -941,7 +986,86 @@
         renderOpenEnds(payload.openEnds)
         renderProgress(payload.progress)
         renderHints()
+        renderReview(payload.suggestions)
       }
+
+      /**
+       * What agents have proposed and the learner has not decided.
+       *
+       * Shown first because nothing in it is the learner's understanding yet: an agent connected over MCP
+       * may only propose, and a proposal sits here until the learner decides. The panel says who proposed
+       * it and why, because a suggestion that does not say why cannot be judged.
+       */
+      function renderReview(suggestions) {
+        const section = $('reviewsection')
+        const host = $('review')
+        host.innerHTML = ''
+        if (!suggestions || suggestions.length === 0) {
+          section.hidden = true
+          return
+        }
+        section.hidden = false
+
+        const box = el('div', 'review')
+        box.appendChild(
+          el(
+            'div',
+            'lead',
+            `${suggestions.length} 条来自 agent 的建议。在你决定之前，它们不会改变你的图谱或你的理解。`,
+          ),
+        )
+        for (const suggestion of suggestions) {
+          const card = el('div', 'suggestion')
+          card.dataset.suggestion = suggestion.id
+          card.appendChild(el('div', 'kind', SUGGESTION_KINDS[suggestion.proposal.kind]))
+          card.appendChild(el('div', 'what', describeProposal(suggestion.proposal)))
+          card.appendChild(el('div', 'why', `理由：${suggestion.rationale}`))
+          card.appendChild(
+            el('div', 'who', `${agentName(suggestion.proposedBy)} · ${suggestion.id}`),
+          )
+          box.appendChild(card)
+        }
+        host.appendChild(box)
+      }
+
+      const SUGGESTION_KINDS = { claim: '新论断', link: '新连接', state: '理解的变化' }
+
+      const labelOf = (nodeId) =>
+        state.nodes.find((node) => node.nodeId === nodeId)?.label ?? nodeId
+
+      function describeProposal(proposal) {
+        if (proposal.kind === 'claim') {
+          const about = (proposal.about || []).map(labelOf)
+          return about.length === 0
+            ? `「${proposal.label}」`
+            : `「${proposal.label}」—— 关于 ${about.map((label) => `「${label}」`).join('、')}`
+        }
+        if (proposal.kind === 'link') {
+          return `「${labelOf(proposal.from)}」 —${proposal.relation}→ 「${labelOf(proposal.to)}」`
+        }
+        const dimension = state.dimensions.find((candidate) => candidate.id === proposal.dimension)
+        const level =
+          dimension?.levelLabelsZh.find((entry) => entry.level === proposal.level)?.label ??
+          proposal.level
+        return `把你对「${labelOf(proposal.target)}」的${dimension?.labelZh ?? proposal.dimension}记为「${level}」`
+      }
+
+      /** The proposer as the agent named itself. Self-declared, so it is shown as provenance only. */
+      const agentName = (actorId) => `来自 ${actorId.replace(/^actor_agent_/, '')}`
+
+      /**
+       * Agents propose while the learner is working here, so the queue is re-read while the page is
+       * visible. Only the queue: the rest of the surface changes only through the learner's own actions.
+       */
+      setInterval(async () => {
+        if (document.hidden) return
+        try {
+          const payload = await api('/api/suggestions')
+          renderReview(payload.suggestions)
+        } catch (error) {
+          fail(`读取建议失败：${error.message}`)
+        }
+      }, 4000)
 
       /**
        * Suggestion prompts, taken from the learner's own graph.
@@ -1382,6 +1506,7 @@
         renderStats(payload)
         renderOpenEnds(payload.openEnds)
         renderProgress(payload.progress)
+        renderReview(payload.suggestions)
       }
 
       $('go').addEventListener('click', ask)
