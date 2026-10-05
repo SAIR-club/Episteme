@@ -17,7 +17,9 @@ The web surface is also the graph's **MCP host**: it serves the endpoint at `/mc
 the learner's understanding and propose changes to it while the learner works here. See
 [`@episteme/mcp`](../../packages/mcp/README.md). What agents propose appears at the top of the page as a
 **review queue**, with who proposed it and why. Nothing in it changes the graph or the learner's
-understanding until the learner decides.
+understanding until the learner decides: accept it, modify it into their own value, or dismiss it. The page
+only collects the decision. What each choice commits is `LearnSession.decide()`, the same path an agent's
+host uses.
 
 ```bash
 pnpm learn --help

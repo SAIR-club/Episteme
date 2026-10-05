@@ -26,8 +26,13 @@ second scene exists would be an abstraction without a second case to fit.
 - **An agent only proposes.** `propose()` keeps an agent's claim, link or state change as a pending draft in
   `<graph>.suggestions.jsonl`, beside the graph and outside it. It never changes the graph or the history.
   A proposal that could never be accepted is refused at once, as a value: unknown nodes, a link the graph's
-  own preview rejects, or a dimension or level the learner could not record. Accepting a draft is the human's
-  act, and is not part of this layer yet (ADR 0008).
+  own preview rejects, or a dimension or level the learner could not record.
+- **Only the human decides, through one path.** `decide()` is the single use case from a human decision to
+  the graph, and every channel calls it: the Learn review queue and MCP elicitation. **Accept** commits the
+  agent's value; a state change is `confirmed`, with `confirmedBy` set here to this session's human, never to
+  a value a caller supplies. **Modify** commits the human's own value, of the same kind and under the same
+  checks, as authored. **Dismiss** removes the draft and commits nothing. What is committed goes through the
+  graph's validated path, and its source names the suggestion, the agent and the channel (ADR 0008).
 
 ## Layout
 
