@@ -5,20 +5,21 @@ import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
 import { LearnSession } from '@episteme/application'
 import { agentActorFor, createMcpEndpoint } from '@episteme/mcp'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mcpWire, type ToolResult, type WireOptions } from './mcp-wire.js'
 
 /**
- * The MCP surface (ADR 0008), over a real socket on the Learn host, in raw JSON-RPC.
- *
- * Raw rather than through an MCP client library, so what is tested is the wire an arbitrary agent host would
- * speak — including the Host and Origin checks that keep a localhost endpoint from being reached by a web page.
+ * The MCP surface (ADR 0008), over a real socket on the Learn host, in raw JSON-RPC — including the Host and
+ * Origin checks that keep a localhost endpoint from being reached by a web page.
  */
 
-const PROTOCOL = '2026-07-28'
 const CLIENT = { name: 'Test Agent', version: '1.0.0' }
 
 let directory: string
 let server: LearnServer
-let nextId = 1
+const wire = mcpWire(() => server.mcpUrl, CLIENT)
+const { rpc } = wire
+const call = (name: string, args: Record<string, unknown>, options: WireOptions = {}) =>
+  wire.call(name, args, {}, options)
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-mcp-'))
@@ -29,67 +30,6 @@ afterEach(async () => {
   await server.close()
   await rm(directory, { recursive: true, force: true })
 })
-
-interface ToolResult {
-  readonly content: readonly { readonly type: string; readonly text: string }[]
-  readonly structuredContent?: Record<string, unknown>
-  readonly isError?: boolean
-}
-
-/** One JSON-RPC exchange with the endpoint, in the current protocol revision unless `legacy` is set. */
-async function rpc(
-  method: string,
-  params: Record<string, unknown> = {},
-  options: { readonly legacy?: boolean; readonly headers?: Record<string, string> } = {},
-): Promise<{ status: number; body: Record<string, unknown> }> {
-  const modern = options.legacy !== true
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-    accept: 'application/json, text/event-stream',
-    ...(modern ? { 'mcp-protocol-version': PROTOCOL, 'mcp-method': method } : {}),
-    ...(modern && method === 'tools/call' ? { 'mcp-name': String(params['name']) } : {}),
-    ...options.headers,
-  }
-  const envelope = {
-    'io.modelcontextprotocol/protocolVersion': PROTOCOL,
-    'io.modelcontextprotocol/clientInfo': CLIENT,
-    'io.modelcontextprotocol/clientCapabilities': {},
-  }
-  const response = await fetch(server.mcpUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: nextId++,
-      method,
-      params: modern ? { ...params, _meta: envelope } : params,
-    }),
-  })
-  const text = await response.text()
-  // A response may be one JSON body or a server-sent event stream carrying it.
-  const json = response.headers.get('content-type')?.includes('text/event-stream')
-    ? text
-        .split('\n')
-        .filter((line) => line.startsWith('data: '))
-        .map((line) => line.slice('data: '.length))
-        .at(-1)
-    : text
-  return {
-    status: response.status,
-    body: json === undefined || json === '' ? {} : (JSON.parse(json) as Record<string, unknown>),
-  }
-}
-
-async function call(
-  name: string,
-  args: Record<string, unknown>,
-  options: { readonly legacy?: boolean } = {},
-): Promise<ToolResult> {
-  const { body } = await rpc('tools/call', { name, arguments: args }, options)
-  if (body['result'] === undefined)
-    throw new Error(`no result for ${name}: ${JSON.stringify(body)}`)
-  return body['result'] as ToolResult
-}
 
 async function events(): Promise<number> {
   const state = (await (await fetch(`${server.url}/api/state`)).json()) as { events: number }
@@ -115,7 +55,7 @@ describe('recall', () => {
     const recalled = await call('recall', { question: '为什么 Transformer 必须被告知序列顺序？' })
     expect(recalled.isError).toBeUndefined()
     expect(recalled.structuredContent?.['known']).toEqual([])
-    expect(recalled.content[0]?.text).toContain('recorded nothing')
+    expect(recalled.content?.[0]?.text).toContain('recorded nothing')
   })
 
   it('returns what the human recorded, and whether it can be built on', async () => {
@@ -131,7 +71,7 @@ describe('recall', () => {
     const recalled = await call('recall', { question: '为什么 Transformer 必须被告知序列顺序？' })
     const known = recalled.structuredContent?.['known'] as { nodeId: string; settled: boolean }[]
     expect(known).toContainEqual(expect.objectContaining({ nodeId: 'q_why_order', settled: true }))
-    expect(recalled.content[0]?.text).toContain('settled: build on it')
+    expect(recalled.content?.[0]?.text).toContain('settled: build on it')
   })
 })
 
@@ -171,7 +111,7 @@ describe('propose', () => {
   it('says which fields a kind of proposal is missing', async () => {
     const refused = await call('propose', { kind: 'link', from: 'c_rope', rationale: 'r' })
     expect(refused.isError).toBe(true)
-    expect(refused.content[0]?.text).toContain('link needs to, relation')
+    expect(refused.content?.[0]?.text).toContain('link needs to, relation')
   })
 
   it('marks an agent that sent no identity as unidentified rather than inventing one', async () => {
