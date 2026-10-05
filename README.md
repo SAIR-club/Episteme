@@ -193,6 +193,7 @@ opt-in.
 - [ADR 0005 — Fork lineage](docs/decisions/0005-fork-lineage.md)
 - [ADR 0006 — Persistence format](docs/decisions/0006-persistence-format.md)
 - [ADR 0007 — Semantic retrieval](docs/decisions/0007-semantic-retrieval.md)
+- [ADR 0008 — Episteme as a plugin for other agents](docs/decisions/0008-agent-plugin-surface.md)
 - [Phase 1 report](PHASE1_REPORT.md)
 - [Phase 2 report](PHASE2_REPORT.md)
 
