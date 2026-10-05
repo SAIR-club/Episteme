@@ -36,24 +36,6 @@ importers:
         specifier: ^2.1.8
         version: 2.1.8(@types/node@22.20.5)
 
-  apps/learn:
-    dependencies:
-      '@episteme/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-      '@episteme/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-      '@episteme/storage-local':
-        specifier: workspace:*
-        version: link:../../packages/storage-local
-
   examples/learn-session:
     dependencies:
       '@episteme/agent':
@@ -154,9 +136,6 @@ importers:
       '@episteme/agent':
         specifier: workspace:*
         version: link:../packages/agent
-      '@episteme/app-learn':
-        specifier: workspace:*
-        version: link:../apps/learn
       '@episteme/core':
         specifier: workspace:*
         version: link:../packages/core
@@ -641,10 +620,6 @@ packages:
   ansi-regex@6.4.0:
     resolution: {integrity: sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw==}
     engines: {node: '>=12'}
-
-  ansi-styles@4.0.0:
-    resolution: {integrity: sha512-8zjUtFJ3db/QoPXuuEMloS2AUf79/yeyttJ7Abr3hteopJu9HK8vsgGviGUMq+zyA6cZZO6gAyZoMTF6TgaEjA==}
-    engines: {node: '>=8'}
 
   ansi-styles@4.1.0:
     resolution: {integrity: sha512-Qts4KCLKG+waHc9C4m07weIY8qyeixoS0h6RnbsNVD6Fw+pEZGW3vTyObL3WXpE09Mq4Oi7/lBEyLmOiLtlYWQ==}
@@ -1132,6 +1107,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -1626,10 +1602,6 @@ snapshots:
   ansi-regex@5.0.1: {}
 
   ansi-regex@6.4.0: {}
-
-  ansi-styles@4.0.0:
-    dependencies:
-      color-convert: 2.0.1
 
   ansi-styles@4.1.0:
     dependencies:
@@ -2210,7 +2182,7 @@ snapshots:
 
   wrap-ansi@7.0.0:
     dependencies:
-      ansi-styles: 4.0.0
+      ansi-styles: 4.1.0
       string-width: 4.2.0
       strip-ansi: 6.0.1
 
