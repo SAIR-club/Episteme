@@ -20,8 +20,10 @@ import {
  *
  * There is deliberately no tool that confirms a suggestion and none that writes a node, an edge or a state
  * event. An agent that could confirm would be confirming itself. Everything it wants to change is proposed,
- * and becomes the learner's only when the learner accepts it, in a form the host shows them or in the review
- * queue. The answer to such a form comes from the learner, never from the tool's arguments.
+ * and becomes the learner's only through the one human-decision path: the Learn review queue, which Episteme
+ * controls, or a form the host shows its user, which Episteme can validate but cannot prove a person answered
+ * (ADR 0008, Trust boundaries). The decision never comes from the tool's arguments, and nothing a client sends
+ * names who confirmed.
  *
  * Text is addressed to the agent, in English, with the same data as `structuredContent` so a host can use
  * either. The learner-facing Chinese of the Learn surface stays there.
