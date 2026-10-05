@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { RECORDABLE_DIMENSIONS, LearnSession } from '@episteme/application'
+import { createMcpEndpoint, type McpEndpoint } from '@episteme/mcp'
 import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
 
 /**
@@ -38,11 +39,14 @@ export interface ServerOptions {
 
 export interface LearnServer {
   readonly url: string
+  /** Where an agent connects over MCP (Streamable HTTP). */
+  readonly mcpUrl: string
   readonly port: number
   close(): Promise<void>
 }
 
 const DEFAULT_PATH = join(homedir(), '.episteme', 'learn.jsonl')
+const MCP_PATH = '/mcp'
 
 /** A JSON response, with no-store so a reload never shows a stale answer. */
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -111,9 +115,11 @@ async function serve(session: LearnSession, options: ServerOptions): Promise<Lea
   // Seeded before the socket opens, so the first request cannot race it and see an empty graph.
   const seed = await seedTopic(session, options.topic)
   const topic = options.topic ?? TRANSFORMERS
+  // The same session, so an agent reads and proposes against exactly the graph this surface shows.
+  const mcp = createMcpEndpoint(session)
 
   const server: Server = createServer((request, response) => {
-    handle(request, response, session, topic, seed.seeded).catch((error: unknown) => {
+    handle(request, response, session, mcp, topic, seed.seeded).catch((error: unknown) => {
       // Every handler that can fail is awaited inside `handle`, so a rejection here is a bug in this file
       // rather than bad input. Reported as 500 with the message, never swallowed: a surface that fails
       // quietly is worse than one that fails visibly.
@@ -139,10 +145,13 @@ async function serve(session: LearnSession, options: ServerOptions): Promise<Lea
 
   return {
     url: `http://${host}:${boundPort}`,
+    mcpUrl: `http://${host}:${boundPort}${MCP_PATH}`,
     port: boundPort,
-    // The socket first, so no request arrives at a session that is closing; then the session, which writes
-    // what is pending and gives up the graph.
+    // In-flight agent exchanges first, since an open stream would hold the socket open; then the socket, so no
+    // request arrives at a session that is closing; then the session, which writes what is pending and gives
+    // up the graph.
     close: async () => {
+      await mcp.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
       })
@@ -155,11 +164,18 @@ async function handle(
   request: IncomingMessage,
   response: ServerResponse,
   session: LearnSession,
+  mcp: McpEndpoint,
   topic: SeedTopic,
   seeded: boolean,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const path = url.pathname
+
+  // The agent surface (ADR 0008). It validates Host and Origin itself, before anything else reads the request.
+  if (path === MCP_PATH) {
+    await mcp.handle(request, response)
+    return
+  }
 
   if (path === '/' || path === '/index.html') {
     try {

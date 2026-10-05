@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@episteme/application": "workspace:*",
-    "@episteme/domain-learn": "workspace:*"
+    "@episteme/domain-learn": "workspace:*",
+    "@episteme/mcp": "workspace:*"
   }
 }

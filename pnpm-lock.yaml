@@ -44,6 +44,9 @@ importers:
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../../packages/domain-learn
+      '@episteme/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
 
   examples/learn-session:
     dependencies:
@@ -136,6 +139,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../application
       '@modelcontextprotocol/server':
         specifier: ^2.3.0
         version: 2.3.0
@@ -184,6 +190,9 @@ importers:
       '@episteme/embeddings-http':
         specifier: workspace:*
         version: link:../packages/embeddings-http
+      '@episteme/mcp':
+        specifier: workspace:*
+        version: link:../packages/mcp
       '@episteme/sdk':
         specifier: workspace:*
         version: link:../packages/sdk

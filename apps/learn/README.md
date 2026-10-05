@@ -13,6 +13,10 @@ at the same time: a graph has one owner, and the second surface refuses to start
 holds it. Ctrl+C and `quit` release the graph; only a process killed outright leaves its lock behind, and the
 message then says which file to delete.
 
+The web surface is also the graph's **MCP host**: it serves the endpoint at `/mcp`, so an agent can recall
+the learner's understanding and propose changes to it while the learner works here. See
+[`@episteme/mcp`](../../packages/mcp/README.md).
+
 ```bash
 pnpm learn --help
 pnpm learn:web --file /tmp/chemistry.jsonl --port 4400

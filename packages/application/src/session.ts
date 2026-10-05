@@ -169,16 +169,20 @@ export interface UnderstandingView {
   readonly dimensions: readonly { readonly id: string; readonly level: string }[]
 }
 
-export interface AskResult {
+/** The evidence for a question: what was retrieved, why, and what the learner has recorded about it. */
+export interface RecallResult {
   readonly question: string
-  readonly answer: string
-  /** Whether the answer was shaped by recorded prior understanding. Data, not prose. */
-  readonly usedContext: boolean
   readonly retriever: string
   readonly summary: string
   readonly known: readonly UnderstandingView[]
   readonly ranked: readonly RankedView[]
   readonly rules: readonly RankRule[]
+}
+
+export interface AskResult extends RecallResult {
+  readonly answer: string
+  /** Whether the answer was shaped by recorded prior understanding. Data, not prose. */
+  readonly usedContext: boolean
 }
 
 /** The scoring model, echoed so the surface can be honest about how relevance was decided. */
@@ -365,20 +369,37 @@ export class LearnSession {
    * two cannot disagree.
    */
   async ask(question: string): Promise<AskResult> {
-    const context = await retrieveWith(
-      this.#retriever,
-      this.#episteme.graph,
-      this.#episteme.log,
-      question,
-      { actorId: HUMAN, depth: 1, limit: 8 },
-    )
-
+    const context = await this.#retrieve(question)
     const response = await this.#agent.respond({ text: question }, toAgentContext(context))
-
     return {
-      question,
+      ...this.#recallView(question, context),
       answer: response.text,
       usedContext: response.usedContext,
+    }
+  }
+
+  /**
+   * What the learner already understands that bears on a question, and why each item was retrieved, without
+   * an answer.
+   *
+   * For a surface whose own agent writes the answer, such as an MCP host. It is the same retrieval `ask`
+   * uses, so an agent recalling a question sees exactly the evidence the Learn surface would show for it.
+   */
+  async recall(question: string): Promise<RecallResult> {
+    return this.#recallView(question, await this.#retrieve(question))
+  }
+
+  #retrieve(question: string): Promise<RelevantContext> {
+    return retrieveWith(this.#retriever, this.#episteme.graph, this.#episteme.log, question, {
+      actorId: HUMAN,
+      depth: 1,
+      limit: 8,
+    })
+  }
+
+  #recallView(question: string, context: RelevantContext): RecallResult {
+    return {
+      question,
       retriever: context.retriever,
       // The Chinese display form, decided here so every surface reads the same and no view invents its own
       // wording for "nothing recorded". `contextSummary` is the English one, used by the English demos.

@@ -20,6 +20,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@episteme/application": "workspace:*",
     "@modelcontextprotocol/server": "^2.3.0"
   }
 }

@@ -4,4 +4,5 @@
  * See ADR 0008. An agent can recall, propose and reflect. It cannot confirm, and it cannot write nodes,
  * edges or state events.
  */
-export {}
+export { createMcpEndpoint, type McpEndpoint } from './endpoint.js'
+export { agentActorFor, createEpistemeMcpServer } from './server.js'

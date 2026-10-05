@@ -14,6 +14,7 @@
     "@episteme/core": "workspace:*",
     "@episteme/domain-learn": "workspace:*",
     "@episteme/embeddings-http": "workspace:*",
+    "@episteme/mcp": "workspace:*",
     "@episteme/sdk": "workspace:*",
     "@episteme/storage-local": "workspace:*",
     "@episteme/storage-memory": "workspace:*"
