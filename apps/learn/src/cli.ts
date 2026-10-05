@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { RECORDABLE_DIMENSIONS, LearnSession, type AskResult } from './session.js'
+import { RECORDABLE_DIMENSIONS, LearnSession, type AskResult } from '@episteme/application'
 import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
 import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
 

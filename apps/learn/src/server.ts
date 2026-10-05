@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
-import { RECORDABLE_DIMENSIONS, LearnSession } from './session.js'
+import { RECORDABLE_DIMENSIONS, LearnSession } from '@episteme/application'
 import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
 
 /**

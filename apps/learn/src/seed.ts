@@ -1,5 +1,5 @@
 import { EDGE, NODE } from '@episteme/domain-learn'
-import type { LearnSession } from './session.js'
+import type { LearnSession } from '@episteme/application'
 
 /**
  * A starting topic, so a learner is not staring at an empty graph.

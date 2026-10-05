@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession } from '@episteme/app-learn/session'
+import { LearnSession } from '@episteme/application'
 import { seedTopic, TRANSFORMERS } from '@episteme/app-learn/seed'
 import { BLANK_TOPIC, loadTopicFile } from '@episteme/app-learn/topic-file'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'

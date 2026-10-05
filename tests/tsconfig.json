@@ -16,6 +16,7 @@
     { "path": "../packages/domain-learn" },
     { "path": "../packages/agent" },
     { "path": "../packages/sdk" },
+    { "path": "../packages/application" },
     { "path": "../packages/embeddings-http" }
   ]
 }
