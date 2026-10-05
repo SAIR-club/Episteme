@@ -78,6 +78,7 @@ try {
 process.stdout.write(
   `\nEPISTEME · Learn\n` +
     `\n  界面：  ${server.url}\n` +
+    `  MCP：   ${server.mcpUrl}  （让 agent 读取你的理解、提出建议；它不能替你确认）\n` +
     `  图谱：  ${filePath}\n` +
     (topic === undefined ? '' : `  主题：  ${topic.title}\n`) +
     `\n  这是你自己认知图谱上的一个本地界面。你记录的一切都会写入磁盘，关掉进程也不会丢。\n` +
