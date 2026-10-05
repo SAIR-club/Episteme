@@ -21,6 +21,16 @@ understanding until the learner decides: accept it, modify it into their own val
 only collects the decision. What each choice commits is `LearnSession.decide()`, the same path an agent's
 host uses.
 
+There is no login, so the page, its API and `/mcp` sit behind one boundary instead. A request is refused when:
+
+- it is addressed to any host name but a loopback name with this port, which defeats DNS rebinding;
+- it comes from another web page's `Origin`, or is marked cross-site by `Sec-Fetch-Site`;
+- it changes something without being sent as `application/json`, which a page cannot send cross-site without
+  a preflight this server never answers.
+
+A web page the learner visits therefore cannot record understanding, accept a suggestion, or read the graph.
+Any local process still can: this is a network boundary, not authorization.
+
 ```bash
 pnpm learn --help
 pnpm learn:web --file /tmp/chemistry.jsonl --port 4400
