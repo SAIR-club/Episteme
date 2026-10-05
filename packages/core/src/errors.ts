@@ -17,6 +17,7 @@ export type CoreErrorCode =
   | 'invalid_edge_endpoint'
   | 'unknown_node'
   | 'unknown_edge'
+  | 'duplicate_id'
   | 'guard_rejected'
 
 export class EpistemeError extends Error {

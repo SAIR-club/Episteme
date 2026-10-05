@@ -116,6 +116,14 @@ export function validateStructure(mutation: GraphMutation, context: GuardContext
 
   switch (mutation.kind) {
     case 'node.add': {
+      // An id names one node for good. Adding over an existing one would replace it in place, losing the
+      // node it named from the graph without a revocation; a revoked node's id stays taken for the same reason.
+      if (graph.getNode(mutation.node.id) !== undefined) {
+        throw new EpistemeError(
+          'duplicate_id',
+          `a node with id "${mutation.node.id}" already exists`,
+        )
+      }
       const definition = registries.nodeTypes.require(mutation.node.type)
       assertProperties(mutation.node, definition.requiredProperties ?? [])
       for (const tag of mutation.node.tags) {
@@ -132,6 +140,12 @@ export function validateStructure(mutation: GraphMutation, context: GuardContext
     }
 
     case 'edge.add': {
+      if (graph.getEdge(mutation.edge.id) !== undefined) {
+        throw new EpistemeError(
+          'duplicate_id',
+          `an edge with id "${mutation.edge.id}" already exists`,
+        )
+      }
       const definition = registries.edgeTypes.require(mutation.edge.type)
       const from = graph.getNode(mutation.edge.from)
       if (from === undefined) {
