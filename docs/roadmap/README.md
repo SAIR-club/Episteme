@@ -8,14 +8,14 @@ to.
 
 Each phase proved one claim, and each claim is held by tests rather than by narrative:
 
-| phase | claim                                                           | proven by                                                                      |
-| ----- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 0     | understanding changes, and the change affects the next answer   | `tests/northstar.test.ts`, `tests/critical-loop.test.ts`                       |
-| 1     | understanding survives a process restart                        | `tests/restart-recovery.test.ts`, `tests/persistence-integrity.test.ts`        |
-| 2     | a paraphrased question reaches stored cognition                 | `tests/paraphrase-critical-loop.test.ts`, `tests/retrieval-evaluation.test.ts` |
-| —     | a learner can use the loop, in Chinese or English, on any topic | `apps/learn`, `tests/learn-*.test.ts`                                          |
-| —     | retrieval stays correct among hundreds of unrelated nodes       | `tests/retrieval-at-scale.test.ts`                                             |
-| 3     | an agent can propose, and only the learner decides what is kept | `tests/confirmation-flow.test.ts`, `tests/mcp-elicitation.test.ts`             |
+| phase | claim                                                                   | proven by                                                                      |
+| ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 0     | understanding changes, and the change affects the next answer           | `tests/northstar.test.ts`, `tests/critical-loop.test.ts`                       |
+| 1     | understanding survives a process restart                                | `tests/restart-recovery.test.ts`, `tests/persistence-integrity.test.ts`        |
+| 2     | a paraphrased question reaches stored cognition                         | `tests/paraphrase-critical-loop.test.ts`, `tests/retrieval-evaluation.test.ts` |
+| —     | a learner can use the loop, in Chinese or English, on any topic         | `apps/learn`, `tests/learn-*.test.ts`                                          |
+| —     | retrieval stays correct among hundreds of unrelated nodes               | `tests/retrieval-at-scale.test.ts`                                             |
+| 3     | an agent can propose; what is kept goes through one human-decision path | `tests/confirmation-flow.test.ts`, `tests/mcp-elicitation.test.ts`             |
 
 The details are in [`PHASE1_REPORT.md`](../../PHASE1_REPORT.md) and [`PHASE2_REPORT.md`](../../PHASE2_REPORT.md).
 
@@ -64,18 +64,18 @@ given host delivers is measured host by host, not assumed (ADR 0008, Consequence
 
 ### Done
 
-| capability                           | where                                                                                      |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| shared application layer             | `@episteme/application`: `LearnSession`, driven by the Learn surfaces and the MCP endpoint |
-| single-owner graph host and lock     | `@episteme/storage-local`: `<graph>.lock`, `GraphLockedError`, release on close and exit   |
-| pending suggestion draft store       | `<graph>.suggestions.jsonl`, outside the graph and the event log                           |
-| MCP `recall` / `propose` / `reflect` | `@episteme/mcp`, served at `/mcp` by the Learn web host over Streamable HTTP               |
-| Learn web review queue               | `apps/learn`: accept, modify or dismiss each pending suggestion                            |
-| one human confirmation path          | `LearnSession.decide()`; `confirmedBy` injected by the host, never taken from input        |
-| MCP 2026-07-28 elicitation           | `inputRequired` with an HMAC-sealed `requestState` and schema-validated `inputResponses`   |
-| provenance                           | every resolved suggestion records the draft, the proposing agent and the channel           |
-| Origin and Host protection           | checked before the SDK sees a request                                                      |
-| end-to-end confirmation tests        | `tests/confirmation-flow.test.ts`, across both channels, the event file and host restarts  |
+| capability                           | where                                                                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared application layer             | `@episteme/application`: `LearnSession`, driven by the Learn surfaces and the MCP endpoint                                                                     |
+| single-owner graph host and lock     | `@episteme/storage-local`: `<graph>.lock`, `GraphLockedError`, release on close and exit                                                                       |
+| pending suggestion draft store       | `<graph>.suggestions.jsonl`, outside the graph and the event log                                                                                               |
+| MCP `recall` / `propose` / `reflect` | `@episteme/mcp`, served at `/mcp` by the Learn web host over Streamable HTTP                                                                                   |
+| Learn web review queue               | `apps/learn`: accept, modify or dismiss each pending suggestion                                                                                                |
+| one human confirmation path          | `LearnSession.decide()`; `confirmedBy` injected by the host, never taken from input                                                                            |
+| MCP 2026-07-28 elicitation           | `inputRequired` with an HMAC-sealed `requestState` and schema-validated `inputResponses`; a trusted-host boundary, not proof that a person answered (ADR 0008) |
+| provenance                           | every resolved suggestion records the draft, the proposing agent and the channel                                                                               |
+| Origin and Host protection           | checked before the SDK sees a request                                                                                                                          |
+| end-to-end confirmation tests        | `tests/confirmation-flow.test.ts`, across both channels, the event file and host restarts                                                                      |
 
 ### Not done, and deliberately deferred
 

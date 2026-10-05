@@ -21,8 +21,9 @@ graph, so the terminal surface cannot open the same file.
 | `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending  | no               |
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
-that could confirm would be confirming itself. Accepting a suggestion is the learner's act, on a channel the
-agent cannot answer.
+that could confirm would be confirming itself. A suggestion is accepted through the one human-decision path,
+from the Learn review queue or from an elicitation form answered in the host. See _Trust_ below for what each
+of these can and cannot guarantee.
 
 Every result carries the same data twice: as text addressed to the agent, and as `structuredContent`.
 
@@ -45,6 +46,19 @@ declined or cancelled form, are not decisions, and the draft stays in the review
 A client that declared no such capability is not asked, and gets a pending draft. That includes 2025-era
 clients over this host's stateless HTTP leg, which cannot carry the request. Over a connection that can carry
 it, the SDK's legacy shim serves the same result as a 2025-style elicitation, so there is one implementation.
+
+## Trust
+
+The two ways a suggestion gets decided offer different guarantees (ADR 0008, _Trust boundaries_).
+
+- **The Learn review queue** is the human-decision channel Episteme controls. No MCP tool can reach it.
+- **Elicitation is a trusted-host boundary.** Episteme verifies that a retry carries state it sealed and an
+  answer that fits its form. It cannot verify that a person gave the answer: any process that speaks MCP can
+  declare the capability and answer its own form.
+
+On both channels, nothing a client sends can name who confirmed. That is always the session's own human.
+Until authentication exists, rely on an elicitation confirmation only in a single-user, local setup with MCP
+clients you trust.
 
 ## Identity
 
