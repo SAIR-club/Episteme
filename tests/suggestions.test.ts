@@ -185,7 +185,9 @@ describe('the draft file', () => {
     await session.close()
     await writeFile(`${filePath}.suggestions.jsonl`, '{"schemaVersion":99}\n', 'utf8')
 
-    await expect(LearnSession.open({ filePath })).rejects.toThrow(/version 1 suggestion/)
+    await expect(LearnSession.open({ filePath })).rejects.toThrow(
+      /not a suggestions record this build reads/,
+    )
     const lockLeft = await access(`${filePath}.lock`).then(
       () => true,
       () => false,

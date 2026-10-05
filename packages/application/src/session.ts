@@ -29,7 +29,7 @@ import {
 } from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { chineseLearnerResponder } from './responder.js'
-import { SuggestionStore, type Proposal, type Suggestion } from './suggestions.js'
+import { SuggestionStore, type Proposal, type Resolution, type Suggestion } from './suggestions.js'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
 
@@ -263,6 +263,7 @@ export class LearnSession {
   /** The tail of the mutation queue. See `#exclusive`. */
   #mutations: Promise<unknown> = Promise.resolve()
   #closed = false
+  readonly #recovered: RecoveredDecision[] = []
 
   private constructor(
     episteme: Episteme,
@@ -314,7 +315,7 @@ export class LearnSession {
       await storage.close()
       throw error
     }
-    return new LearnSession(
+    const session = new LearnSession(
       episteme,
       new HybridRetriever(
         episteme.graph,
@@ -326,6 +327,14 @@ export class LearnSession {
       suggestions,
       storage,
     )
+    try {
+      // Before anyone can use it: a decision a crash left half-done is finished or undone first.
+      await session.#recover()
+    } catch (error) {
+      await storage.close()
+      throw error
+    }
+    return session
   }
 
   get actorId(): ActorId {
@@ -811,6 +820,11 @@ export class LearnSession {
     decision: Decision,
     channel: DecisionChannel,
   ): Promise<DecisionResult> {
+    // A decision on this draft that started before and was never settled (its write failed) is settled first,
+    // so deciding again cannot commit a second time.
+    const unsettled = this.#suggestions.resolutionOf(suggestionId)
+    if (unsettled !== undefined) await this.#settle(unsettled)
+
     const suggestion = this.#suggestions.get(suggestionId)
     if (suggestion === undefined) {
       return {
@@ -822,6 +836,7 @@ export class LearnSession {
       }
     }
 
+    // One write of one file, so it needs no record of its own: it happened or it did not.
     if (decision.action === 'dismiss') {
       await this.#suggestions.remove(suggestion.id)
       return { ok: true, outcome: 'dismissed', suggestion }
@@ -842,41 +857,133 @@ export class LearnSession {
     const refusal = this.#contentRefusalOf(proposal)
     if (refusal !== undefined) return { ok: false, refusal }
 
-    const confirmed = decision.action === 'accept'
-    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${confirmed ? 'accepted' : 'modified'} via ${channel}`
+    // Recorded before anything is committed, with the ids it will create, so a crash at any point after this
+    // leaves enough behind to tell whether the decision landed.
+    const operationId = `dec_${randomUUID()}`
+    const resolution: Resolution = {
+      operationId,
+      suggestionId: suggestion.id,
+      outcome: decision.action === 'accept' ? 'accepted' : 'modified',
+      proposal,
+      planned: this.#plan(proposal, operationId),
+      channel,
+    }
+    await this.#suggestions.begin(resolution)
+
     let committed: Committed | MutationRefusal
     try {
-      committed = this.#commitDecided(proposal, suggestion, { confirmed, source })
+      committed = this.#commitDecided(resolution, suggestion)
     } catch (error) {
-      // Only the graph's own refusals become a value. Anything else is a bug and keeps propagating.
+      // Only the graph's own refusals become a value. Anything else is a bug: it propagates, and the record
+      // stays for the next decision on this draft, or the next start, to settle.
       if (!isEpistemeError(error)) throw error
       committed = { code: error.code, message: error.message }
     }
     if ('code' in committed) {
       // A revoked claim may be pending; it is written like any other change, and the draft stays.
       await this.#persist()
+      await this.#suggestions.abandon(operationId)
       return { ok: false, refusal: committed }
     }
 
     await this.#persist()
-    await this.#suggestions.remove(suggestion.id)
-    return { ok: true, outcome: confirmed ? 'accepted' : 'modified', suggestion, committed }
+    // The draft and the record go together, in one write, once the graph holds the change.
+    await this.#suggestions.complete(operationId)
+    return { ok: true, outcome: resolution.outcome, suggestion, committed, operationId }
   }
 
   /**
-   * Commits a decided proposal through the validated graph and log.
+   * The ids a decision will create, chosen before it commits.
+   *
+   * Derived from the operation id, so they are unique and can be looked for in the graph afterwards. A
+   * claim's node keeps the short counted id a learner types; it is chosen inside the mutation queue, so
+   * nothing else can take it before the decision commits.
+   */
+  #plan(proposal: Proposal, operationId: string): Resolution['planned'] {
+    switch (proposal.kind) {
+      case 'state':
+        return { edgeIds: [] }
+      case 'link':
+        return { edgeIds: [`edge_${operationId}_0`] }
+      case 'claim':
+        return {
+          nodeId: this.#nextId('claim'),
+          edgeIds: (proposal.about ?? []).map((_, index) => `edge_${operationId}_${index}`),
+        }
+    }
+  }
+
+  /**
+   * Whether a decision's change is in the graph.
+   *
+   * A state change is found by the suggestion it names (`sourceOf`), which no other event can name, because a
+   * draft is decided at most once. A claim or a link is found by the id planned for it, and only counts while
+   * it is not revoked: a claim withdrawn because its links were refused did not land.
+   */
+  #landed(resolution: Resolution): boolean {
+    const { proposal, planned } = resolution
+    switch (proposal.kind) {
+      case 'state':
+        return this.#episteme.log
+          .history({ target: asId<NodeId>(proposal.target), actorId: HUMAN })
+          .some((event) =>
+            [...event.dimensions.values()].some(
+              (value) => value.sourceOf === resolution.suggestionId,
+            ),
+          )
+      case 'link': {
+        const [edgeId] = planned.edgeIds
+        const edge = edgeId === undefined ? undefined : this.#episteme.graph.getEdge(edgeId)
+        return edge !== undefined && edge.revoked !== true
+      }
+      case 'claim': {
+        const node =
+          planned.nodeId === undefined ? undefined : this.#episteme.graph.getNode(planned.nodeId)
+        return node !== undefined && node.revoked !== true
+      }
+    }
+  }
+
+  /**
+   * Settles a decision that started and was not finished: completes it if its change landed, drops its record
+   * otherwise. Only ever called inside the mutation queue, or while opening.
+   */
+  async #settle(resolution: Resolution): Promise<RecoveredDecision> {
+    if (this.#landed(resolution)) {
+      // If a write failed, the change may so far exist only in memory. It is written before the draft goes.
+      await this.#persist()
+      await this.#suggestions.complete(resolution.operationId)
+      return { ...identify(resolution), settled: 'completed' }
+    }
+    await this.#suggestions.abandon(resolution.operationId)
+    return { ...identify(resolution), settled: 'rolled_back' }
+  }
+
+  /** Decisions found unsettled when this session opened, and how each was settled. */
+  get recovered(): readonly RecoveredDecision[] {
+    return this.#recovered
+  }
+
+  /** Settles every decision a previous session left unfinished. Runs once, before the session is handed out. */
+  async #recover(): Promise<void> {
+    for (const resolution of this.#suggestions.resolutions()) {
+      this.#recovered.push(await this.#settle(resolution))
+    }
+  }
+
+  /**
+   * Commits a decided proposal through the validated graph and log, with the ids planned for it.
    *
    * Throws the graph's own refusals, except one it has to detect itself: an edge of an accepted claim that
    * cannot be added, which it returns after withdrawing the claim.
    */
-  #commitDecided(
-    proposal: Proposal,
-    suggestion: Suggestion,
-    provenance: { readonly confirmed: boolean; readonly source: string },
-  ): Committed | MutationRefusal {
+  #commitDecided(resolution: Resolution, suggestion: Suggestion): Committed | MutationRefusal {
+    const { proposal, planned } = resolution
+    const confirmed = resolution.outcome === 'accepted'
+    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})`
     switch (proposal.kind) {
       case 'state': {
-        const value: StateValue = provenance.confirmed
+        const value: StateValue = confirmed
           ? {
               level: proposal.level,
               authority: 'confirmed',
@@ -889,7 +996,7 @@ export class LearnSession {
           actorId: HUMAN,
           dimensions: new Map([[asId<DimensionId>(proposal.dimension), value]]),
           reason: suggestion.rationale,
-          source: provenance.source,
+          source,
         })
         return { kind: 'event', id: event.id }
       }
@@ -898,27 +1005,27 @@ export class LearnSession {
           proposal.from,
           proposal.to,
           asId<EdgeTypeId>(proposal.relation),
-          undefined,
-          provenance.source,
+          planned.edgeIds[0],
+          source,
         )
         return { kind: 'edge', id: edge.edgeId }
       }
       case 'claim': {
         const node = this.#addNodeNow({
-          id: this.#nextId('claim'),
+          id: planned.nodeId ?? this.#nextId('claim'),
           label: proposal.label,
           type: NODE.claim,
           tier: 'thought',
-          source: provenance.source,
+          source,
         })
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
         // is how the graph withdraws something, so nothing half-accepted stays standing.
-        const edges = (proposal.about ?? []).map((target) => ({
-          id: asId<EdgeId>(newEdgeId()),
+        const edges = (proposal.about ?? []).map((target, index) => ({
+          id: asId<EdgeId>(planned.edgeIds[index] ?? newEdgeId()),
           type: EDGE.refersTo,
           from: asId<NodeId>(node.nodeId),
           to: asId<NodeId>(target),
-          source: provenance.source,
+          source,
         }))
         for (const edge of edges) {
           const preview = this.#episteme.graph.previewEdge(edge)
@@ -1082,9 +1189,23 @@ export type DecisionResult =
       readonly outcome: 'accepted' | 'modified'
       readonly suggestion: Suggestion
       readonly committed: Committed
+      /** Names this decision in the graph's provenance and in the write-ahead record. */
+      readonly operationId: string
     }
   | { readonly ok: true; readonly outcome: 'dismissed'; readonly suggestion: Suggestion }
   | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** A decision found unfinished when a session opened, and what was done about it. */
+export interface RecoveredDecision {
+  readonly operationId: string
+  readonly suggestionId: string
+  /** `completed`: it had landed, so its draft was removed. `rolled_back`: it had not, so the draft waits. */
+  readonly settled: 'completed' | 'rolled_back'
+}
+
+function identify(resolution: Resolution): Omit<RecoveredDecision, 'settled'> {
+  return { operationId: resolution.operationId, suggestionId: resolution.suggestionId }
+}
 
 export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }

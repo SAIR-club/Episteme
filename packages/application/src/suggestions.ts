@@ -44,14 +44,38 @@ export interface Suggestion {
   readonly proposedAt: EpochMillis
 }
 
-/** Bump only together with a migration, as for the graph file. */
-export const SUGGESTIONS_SCHEMA_VERSION = 1
+/**
+ * The version this build writes. Bump only together with a migration, as for the graph file.
+ *
+ * Version 2 added resolution records. A version 1 file holds only suggestions and reads unchanged.
+ */
+export const SUGGESTIONS_SCHEMA_VERSION = 2
+const READABLE_VERSIONS: readonly number[] = [1, 2]
 
-interface SuggestionRecord {
-  readonly schemaVersion: number
-  readonly kind: 'suggestion'
-  readonly suggestion: Suggestion
+/**
+ * A decision that has started committing and has not been settled: a write-ahead record.
+ *
+ * The graph and the drafts are two files, and no write covers both. So before a decision commits anything,
+ * it records here what it is about to commit, under a stable operation id, with the ids of the nodes and
+ * edges it will create chosen in advance. Once the graph is written, one write of this file removes the draft
+ * and this record together. A crash in between leaves this record behind, and the graph itself then says
+ * whether the decision landed: if it did, the draft is removed; if not, the record is dropped and the draft
+ * waits to be decided again. Either way the decision lands once.
+ */
+export interface Resolution {
+  readonly operationId: string
+  readonly suggestionId: string
+  readonly outcome: 'accepted' | 'modified'
+  /** What the decision commits: the agent's proposal, or the human's modification of it. */
+  readonly proposal: Proposal
+  /** Ids chosen before committing, so the graph can be asked whether they are there. */
+  readonly planned: { readonly nodeId?: string; readonly edgeIds: readonly string[] }
+  readonly channel: string
 }
+
+type StoreRecord =
+  | { readonly schemaVersion: number; readonly kind: 'suggestion'; readonly suggestion: Suggestion }
+  | { readonly schemaVersion: number; readonly kind: 'resolution'; readonly resolution: Resolution }
 
 /**
  * The drafts of one graph, in proposal order.
@@ -62,6 +86,7 @@ interface SuggestionRecord {
 export class SuggestionStore {
   readonly #filePath: string | undefined
   readonly #pending = new Map<string, Suggestion>()
+  readonly #resolutions = new Map<string, Resolution>()
   #writeChain: Promise<void> = Promise.resolve()
 
   private constructor(filePath: string | undefined) {
@@ -89,8 +114,9 @@ export class SuggestionStore {
     for (const [index, raw] of contents.split('\n').entries()) {
       const line = raw.trim()
       if (line === '') continue
-      const suggestion = parseRecord(line, index + 1, filePath)
-      store.#pending.set(suggestion.id, suggestion)
+      const record = parseRecord(line, index + 1, filePath)
+      if (record.kind === 'suggestion') store.#pending.set(record.suggestion.id, record.suggestion)
+      else store.#resolutions.set(record.resolution.operationId, record.resolution)
     }
     return store
   }
@@ -128,6 +154,37 @@ export class SuggestionStore {
     return removed
   }
 
+  /** Decisions that started and were not settled, oldest first. Empty unless a write failed or the host died. */
+  resolutions(): readonly Resolution[] {
+    return [...this.#resolutions.values()]
+  }
+
+  /** The unsettled decision on a draft, if there is one. */
+  resolutionOf(suggestionId: string): Resolution | undefined {
+    return this.resolutions().find((resolution) => resolution.suggestionId === suggestionId)
+  }
+
+  /** Records, before anything is committed, what a decision is about to commit. */
+  async begin(resolution: Resolution): Promise<void> {
+    this.#resolutions.set(resolution.operationId, resolution)
+    await this.#write()
+  }
+
+  /** The decision landed: removes its draft and its record in one write. */
+  async complete(operationId: string): Promise<void> {
+    const resolution = this.#resolutions.get(operationId)
+    if (resolution === undefined) return
+    this.#pending.delete(resolution.suggestionId)
+    this.#resolutions.delete(operationId)
+    await this.#write()
+  }
+
+  /** The decision did not land: drops its record and keeps the draft pending. */
+  async abandon(operationId: string): Promise<void> {
+    if (!this.#resolutions.delete(operationId)) return
+    await this.#write()
+  }
+
   /** Writes the whole file atomically, one write at a time, so concurrent changes cannot interleave. */
   #write(): Promise<void> {
     const next = this.#writeChain.then(() => this.#writeNow())
@@ -141,20 +198,29 @@ export class SuggestionStore {
 
   async #writeNow(): Promise<void> {
     if (this.#filePath === undefined) return
-    const lines = this.list().map((suggestion) =>
-      JSON.stringify({
-        schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
-        kind: 'suggestion',
-        suggestion,
-      } satisfies SuggestionRecord),
-    )
+    const lines = [
+      ...this.list().map((suggestion) =>
+        JSON.stringify({
+          schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
+          kind: 'suggestion',
+          suggestion,
+        } satisfies StoreRecord),
+      ),
+      ...this.resolutions().map((resolution) =>
+        JSON.stringify({
+          schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
+          kind: 'resolution',
+          resolution,
+        } satisfies StoreRecord),
+      ),
+    ]
     const temporary = `${this.#filePath}.tmp`
     await writeFile(temporary, lines.length === 0 ? '' : `${lines.join('\n')}\n`, 'utf8')
     await rename(temporary, this.#filePath)
   }
 }
 
-function parseRecord(line: string, lineNumber: number, filePath: string): Suggestion {
+function parseRecord(line: string, lineNumber: number, filePath: string): StoreRecord {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
@@ -163,14 +229,23 @@ function parseRecord(line: string, lineNumber: number, filePath: string): Sugges
       `suggestion on line ${lineNumber} of "${filePath}" is not valid JSON: ${(error as Error).message}`,
     )
   }
-  const record = parsed as Partial<SuggestionRecord> | null
-  if (record?.schemaVersion !== SUGGESTIONS_SCHEMA_VERSION || record.kind !== 'suggestion') {
+  const record = parsed as {
+    schemaVersion?: unknown
+    kind?: unknown
+    suggestion?: Suggestion
+    resolution?: Resolution
+  } | null
+  const version = record?.schemaVersion
+  if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version)) {
     throw new Error(
-      `suggestion on line ${lineNumber} of "${filePath}" is not a version ${SUGGESTIONS_SCHEMA_VERSION} suggestion record`,
+      `line ${lineNumber} of "${filePath}" is not a suggestions record this build reads (version ${READABLE_VERSIONS.join(' or ')})`,
     )
   }
-  if (record.suggestion === undefined) {
-    throw new Error(`suggestion on line ${lineNumber} of "${filePath}" has no suggestion`)
+  if (record?.kind === 'suggestion' && record.suggestion !== undefined) {
+    return { schemaVersion: version, kind: 'suggestion', suggestion: record.suggestion }
   }
-  return record.suggestion
+  if (version >= 2 && record?.kind === 'resolution' && record.resolution !== undefined) {
+    return { schemaVersion: version, kind: 'resolution', resolution: record.resolution }
+  }
+  throw new Error(`line ${lineNumber} of "${filePath}" is neither a suggestion nor a resolution`)
 }

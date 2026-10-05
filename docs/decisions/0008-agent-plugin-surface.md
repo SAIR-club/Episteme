@@ -96,6 +96,13 @@ the draft.
 
 Losing the suggestions file costs pending drafts, never understanding. Corrupting it cannot corrupt the graph.
 
+A decision writes two files, and no single write covers both. Before an accepted or modified decision commits
+anything, its write-ahead record goes into the suggestions file. The record carries a stable operation id and
+the ids the decision will create. After the graph is written, a single write removes the draft and the record
+together. A start that finds a record left behind asks the graph whether the change landed. If it did, the
+draft is removed. If it did not, the record is dropped and the draft stays pending. Either way the decision
+lands at most once. Dismissing touches only the suggestions file, so it needs no record.
+
 ### One decision path, two channels outside the agent's reach
 
 The decision itself (_human decision → resolve the draft → `validateMutation` → graph or event log_) is **one
