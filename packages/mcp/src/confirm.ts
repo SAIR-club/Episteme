@@ -166,13 +166,9 @@ export async function resolveAnswer(
   const suggestion = session
     .pendingSuggestions()
     .find((candidate) => candidate.id === state.suggestionId)
-  if (suggestion === undefined) {
-    // Decided meanwhile, for example in the review queue. The first decision stands.
-    return answer(
-      `Suggestion ${state.suggestionId} is no longer pending; the learner already decided on it.`,
-      { status: 'not_pending', suggestionId: state.suggestionId },
-    )
-  }
+  // Read here only to build the form's schema and a modification. Whether the draft is still pending when
+  // the decision runs is answered by `decide` itself, inside the session's mutation queue.
+  if (suggestion === undefined) return alreadyDecided(state.suggestionId)
 
   const view = inputResponse(context.mcpReq.inputResponses, DECISION_KEY)
   if (view.kind !== 'elicit' || view.action !== 'accept') {
@@ -196,6 +192,9 @@ export async function resolveAnswer(
   }
 
   const result = await session.decide(suggestion.id, decision, 'mcp-elicitation')
+  // Decided by another channel between the read above and this decision's turn in the queue.
+  if (!result.ok && result.refusal.code === 'unknown_suggestion')
+    return alreadyDecided(suggestion.id)
   if (!result.ok) {
     return {
       content: [
@@ -264,6 +263,14 @@ function describeForLearner(session: LearnSession, suggestion: Suggestion): stri
   return (
     `一个 agent 建议：${what}。\n理由：${suggestion.rationale}\n\n` +
     `在你决定之前，它不会改变你的理解。你也可以稍后在 Learn 页面的建议队列里处理。`
+  )
+}
+
+/** Decided meanwhile, for example in the review queue. The first decision stands. */
+function alreadyDecided(suggestionId: string): CallToolResult {
+  return answer(
+    `Suggestion ${suggestionId} is no longer pending; the learner already decided on it.`,
+    { status: 'not_pending', suggestionId },
   )
 }
 

@@ -259,7 +259,9 @@ export class LearnSession {
   readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
   readonly #store: Store | undefined
   readonly #suggestions: SuggestionStore
-  #saveChain: Promise<void> = Promise.resolve()
+  /** The tail of the mutation queue. See `#exclusive`. */
+  #mutations: Promise<unknown> = Promise.resolve()
+  #closed = false
 
   private constructor(
     episteme: Episteme,
@@ -451,25 +453,25 @@ export class LearnSession {
       }
     }
 
-    const event = this.#episteme.log.commit({
-      target: asId<NodeId>(target),
-      actorId: HUMAN,
-      dimensions: new Map(
-        entries.map(([dimension, level]): [DimensionId, StateValue] => [
-          asId<DimensionId>(dimension),
-          { level },
-        ]),
-      ),
-      ...(options.reason === undefined ? {} : { reason: options.reason }),
-      source: 'learn-surface',
+    return this.#exclusive(async () => {
+      const event = this.#episteme.log.commit({
+        target: asId<NodeId>(target),
+        actorId: HUMAN,
+        dimensions: new Map(
+          entries.map(([dimension, level]): [DimensionId, StateValue] => [
+            asId<DimensionId>(dimension),
+            { level },
+          ]),
+        ),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+        source: 'learn-surface',
+      })
+      await this.#persist()
+      return {
+        eventId: event.id,
+        recorded: entries.map(([id, level]) => ({ id, level })),
+      }
     })
-
-    await this.flush()
-
-    return {
-      eventId: event.id,
-      recorded: entries.map(([id, level]) => ({ id, level })),
-    }
   }
 
   /**
@@ -487,23 +489,26 @@ export class LearnSession {
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
   }): Promise<NodeView> {
-    const node = this.addNodeSync({
-      id: input.id ?? this.#nextId(input.kind),
-      label: input.label,
-      type:
-        input.kind === 'claim'
-          ? NODE.claim
-          : input.kind === 'concept'
-            ? NODE.concept
-            : NODE.question,
-      // A concept the learner introduces is reference material; a claim is their own thinking. The tier
-      // decides whether it counts as understanding, so it is not a cosmetic field.
-      tier: input.kind === 'concept' ? 'reference' : 'thought',
-      ...(input.topic === undefined ? {} : { topic: input.topic }),
-      ...(input.source === undefined ? {} : { source: input.source }),
+    return this.#exclusive(async () => {
+      // The id is chosen inside the queue, so two concurrent additions cannot both pick the same next id.
+      const node = this.#addNodeNow({
+        id: input.id ?? this.#nextId(input.kind),
+        label: input.label,
+        type:
+          input.kind === 'claim'
+            ? NODE.claim
+            : input.kind === 'concept'
+              ? NODE.concept
+              : NODE.question,
+        // A concept the learner introduces is reference material; a claim is their own thinking. The tier
+        // decides whether it counts as understanding, so it is not a cosmetic field.
+        tier: input.kind === 'concept' ? 'reference' : 'thought',
+        ...(input.topic === undefined ? {} : { topic: input.topic }),
+        ...(input.source === undefined ? {} : { source: input.source }),
+      })
+      await this.#persist()
+      return node
     })
-    await this.flush()
-    return node
   }
 
   /**
@@ -543,19 +548,25 @@ export class LearnSession {
   }
 
   /**
-   * The unflushed half of `addNode`.
+   * Runs several additions as one mutation and one write, such as seeding a topic.
    *
-   * Exists so a batch 鈥?seeding a topic 鈥?is one write rather than one write per node. Callers that use it
-   * must `flush()` themselves; every path in this file that does is listed next to its `flush()` call.
+   * `work` runs inside the mutation queue, so whatever it reads before it writes (for example, whether a
+   * topic is already there) cannot change underneath it. It is synchronous on purpose: nothing else can run
+   * in the middle of it, and the batch is written once when it returns.
    */
-  addNodeSync(input: {
-    readonly id: string
-    readonly label: string
-    readonly type: Parameters<Episteme['graph']['addNode']>[0]['type']
-    readonly tier: 'draft' | 'thought' | 'reference'
-    readonly topic?: string
-    readonly source?: string
-  }): NodeView {
+  batch<T>(work: (writer: SessionWriter) => T): Promise<T> {
+    return this.#exclusive(async () => {
+      const result = work({
+        addNode: (input) => this.#addNodeNow(input),
+        link: (from, to, type, id) => this.#linkNow(from, to, type, id),
+      })
+      await this.#persist()
+      return result
+    })
+  }
+
+  /** Adds one node. Only ever called inside the mutation queue. */
+  #addNodeNow(input: NodeInput): NodeView {
     const label = input.label.trim()
     if (label === '') throw new Error('a node needs a label')
 
@@ -579,13 +590,15 @@ export class LearnSession {
     type = EDGE.refersTo,
     id?: string,
   ): Promise<{ readonly edgeId: string }> {
-    const edge = this.linkSync(from, to, type, id)
-    await this.flush()
-    return edge
+    return this.#exclusive(async () => {
+      const edge = this.#linkNow(from, to, type, id)
+      await this.#persist()
+      return edge
+    })
   }
 
-  /** The unflushed half of `link`. See `addNodeSync`. */
-  linkSync(
+  /** Adds one edge. Only ever called inside the mutation queue. */
+  #linkNow(
     from: string,
     to: string,
     type: Parameters<Episteme['graph']['addEdge']>[0]['type'] = EDGE.refersTo,
@@ -698,22 +711,32 @@ export class LearnSession {
     }
   }
 
-  /**
-   * Writes the history through the store, if there is one.
-   *
-   * Serialised behind a promise chain because two concurrent callers could otherwise interleave a read of
-   * the log with a partial write of the file. `LocalStorageAdapter.save` is already atomic per write; this
-   * keeps the *sequence* ordered too.
-   */
+  /** Writes the history through the store, if there is one, after every mutation already queued. */
   flush(): Promise<void> {
-    const next = this.#saveChain.then(() => this.#persistNow())
-    // The chain must survive a failed write without becoming permanently rejected, while the caller still
-    // sees the failure.
-    this.#saveChain = next.then(
+    return this.#exclusive(() => this.#persist())
+  }
+
+  /**
+   * Runs one mutation of this session's graph, history or drafts, after every mutation queued before it.
+   *
+   * Every method that changes state goes through here, and nothing it runs calls another public mutating
+   * method, which would wait on itself. Reads are not queued: they see the state as it stands between
+   * mutations. Without this, a mutation that awaits a write lets a second one start on the same state; two
+   * decisions on one draft could then both commit.
+   *
+   * A failed mutation rejects for its caller only. The queue carries on with the next one.
+   */
+  #exclusive<T>(work: () => Promise<T> | T): Promise<T> {
+    const run = this.#mutations.then(() => {
+      if (this.#closed)
+        throw new Error('this session is closed; open a new one to change the graph')
+      return work()
+    })
+    this.#mutations = run.then(
       () => undefined,
       () => undefined,
     )
-    return next
+    return run
   }
 
   /**
@@ -732,16 +755,19 @@ export class LearnSession {
     proposal: Proposal,
     from: { readonly proposedBy: string; readonly rationale: string },
   ): Promise<ProposeResult> {
-    const refusal = this.#refusalOf(proposal, from)
-    if (refusal !== undefined) return { ok: false, refusal }
+    return this.#exclusive(async (): Promise<ProposeResult> => {
+      // Checked inside the queue, against the graph as it is when the draft is kept.
+      const refusal = this.#refusalOf(proposal, from)
+      if (refusal !== undefined) return { ok: false, refusal }
 
-    const suggestion = await this.#suggestions.add({
-      proposal,
-      rationale: from.rationale.trim(),
-      proposedBy: from.proposedBy,
-      proposedAt: systemClock.now(),
+      const suggestion = await this.#suggestions.add({
+        proposal,
+        rationale: from.rationale.trim(),
+        proposedBy: from.proposedBy,
+        proposedAt: systemClock.now(),
+      })
+      return { ok: true, suggestion }
     })
-    return { ok: true, suggestion }
   }
 
   /** Every draft still waiting for the learner, oldest first. */
@@ -769,7 +795,17 @@ export class LearnSession {
    * value that could never be committed, or a commit the graph rejects) is returned as a value and leaves
    * the draft pending.
    */
-  async decide(
+  decide(
+    suggestionId: string,
+    decision: Decision,
+    channel: DecisionChannel,
+  ): Promise<DecisionResult> {
+    // One decision at a time, from reading the draft to removing it: of two decisions on the same draft,
+    // whichever is queued first wins, and the second finds it already decided.
+    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel))
+  }
+
+  async #decideNow(
     suggestionId: string,
     decision: Decision,
     channel: DecisionChannel,
@@ -815,11 +851,11 @@ export class LearnSession {
     }
     if ('code' in committed) {
       // A revoked claim may be pending; it is written like any other change, and the draft stays.
-      await this.flush()
+      await this.#persist()
       return { ok: false, refusal: committed }
     }
 
-    await this.flush()
+    await this.#persist()
     await this.#suggestions.remove(suggestion.id)
     return { ok: true, outcome: confirmed ? 'accepted' : 'modified', suggestion, committed }
   }
@@ -855,7 +891,7 @@ export class LearnSession {
         return { kind: 'event', id: event.id }
       }
       case 'link': {
-        const edge = this.linkSync(
+        const edge = this.#linkNow(
           proposal.from,
           proposal.to,
           asId<EdgeTypeId>(proposal.relation),
@@ -865,7 +901,7 @@ export class LearnSession {
         return { kind: 'edge', id: edge.edgeId }
       }
       case 'claim': {
-        const node = this.addNodeSync({
+        const node = this.#addNodeNow({
           id: this.#nextId('claim'),
           label: proposal.label,
           type: NODE.claim,
@@ -979,12 +1015,18 @@ export class LearnSession {
    * Every surface that opens a session closes it on the way out. A session that is never closed holds the
    * graph until its process exits.
    */
-  async close(): Promise<void> {
-    await this.flush()
-    await this.#store?.close()
+  close(): Promise<void> {
+    // Queued like a mutation, so it waits for every change already under way, and nothing queued after it
+    // can change a graph this session no longer owns.
+    return this.#exclusive(async () => {
+      await this.#persist()
+      await this.#store?.close()
+      this.#closed = true
+    })
   }
 
-  async #persistNow(): Promise<void> {
+  /** Writes the graph and history. Only ever called inside the mutation queue. */
+  async #persist(): Promise<void> {
     if (this.#store === undefined) return
     await this.#episteme.persist()
     await this.#store.save()
@@ -1029,6 +1071,27 @@ export type DecisionResult =
 export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }
   | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** A node to add, as a batch or an addition gives it. */
+export interface NodeInput {
+  readonly id: string
+  readonly label: string
+  readonly type: Parameters<Episteme['graph']['addNode']>[0]['type']
+  readonly tier: 'draft' | 'thought' | 'reference'
+  readonly topic?: string
+  readonly source?: string
+}
+
+/** What a batch may do: add nodes and link them, all written together when it returns. */
+export interface SessionWriter {
+  addNode(input: NodeInput): NodeView
+  link(
+    from: string,
+    to: string,
+    type?: Parameters<Episteme['graph']['addEdge']>[0]['type'],
+    id?: string,
+  ): { readonly edgeId: string }
+}
 
 /** Drafts live beside the graph file they are about, and are owned with it. */
 function suggestionsPathFor(graphPath: string): string {
