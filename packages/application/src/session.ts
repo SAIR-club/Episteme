@@ -10,6 +10,7 @@ import {
   type EdgeId,
   type EdgeTypeId,
   type MutationRefusal,
+  type NodeTypeId,
   type EmbeddingAdapter,
   type GraphNode,
   type NodeId,
@@ -29,7 +30,18 @@ import {
 } from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { chineseLearnerResponder } from './responder.js'
-import { SuggestionStore, type Proposal, type Resolution, type Suggestion } from './suggestions.js'
+import {
+  SUGGESTED_NODE_PREFIX,
+  SuggestionStore,
+  type Proposal,
+  type Resolution,
+  type Suggestion,
+  type SuggestionOrigin,
+} from './suggestions.js'
+import { SourceStore, type Source } from './sources.js'
+import { CANDIDATE_PREFIX, type CognitiveAgent } from '@episteme/agent'
+import { RuleBasedDistiller, distill, type DistillationPolicy } from '@episteme/distillation'
+import { learnDistillationPolicy } from '@episteme/domain-learn/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
 
@@ -260,6 +272,7 @@ export class LearnSession {
   readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
   readonly #store: Store | undefined
   readonly #suggestions: SuggestionStore
+  readonly #sources: SourceStore
   /** The tail of the mutation queue. See `#exclusive`. */
   #mutations: Promise<unknown> = Promise.resolve()
   #closed = false
@@ -269,11 +282,13 @@ export class LearnSession {
     episteme: Episteme,
     retriever: Retriever,
     suggestions: SuggestionStore,
+    sources: SourceStore,
     store?: Store,
   ) {
     this.#episteme = episteme
     this.#retriever = retriever
     this.#suggestions = suggestions
+    this.#sources = sources
     this.#store = store
   }
 
@@ -300,16 +315,20 @@ export class LearnSession {
           ...(options.weights === undefined ? [] : [options.weights]),
         ),
         await SuggestionStore.open(),
+        await SourceStore.open(),
       )
     }
 
     const storage = await openLocalStorage(options.filePath)
     let episteme: Episteme
     let suggestions: SuggestionStore
+    let sources: SourceStore
     try {
       episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
       // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
       suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
+      // Material distilled into this graph, kept beside it like the drafts and owned with it.
+      sources = await SourceStore.open(`${options.filePath}.sources.jsonl`)
     } catch (error) {
       // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
       await storage.close()
@@ -325,6 +344,7 @@ export class LearnSession {
         ...(options.weights === undefined ? [] : [options.weights]),
       ),
       suggestions,
+      sources,
       storage,
     )
     try {
@@ -529,7 +549,7 @@ export class LearnSession {
    * `node_0_self_attention_cannot_tell_which_word_ca` 鈥?truncated mid-word and impractical to type. A
    * learner's own vocabulary should not be turned into an identifier they cannot say.
    */
-  #nextId(kind: 'claim' | 'concept' | 'question'): string {
+  #nextId(kind: string): string {
     const prefix = `${kind}_`
     let highest = 0
     for (const node of this.#episteme.graph.listNodes()) {
@@ -584,7 +604,7 @@ export class LearnSession {
       id: asId<NodeId>(input.id),
       type: input.type,
       label,
-      properties: { text: label },
+      properties: { text: label, ...input.properties },
       tags: learnTags(input.topic ?? 'general'),
       tier: input.tier,
       ...(input.source === undefined ? {} : { source: input.source }),
@@ -842,10 +862,10 @@ export class LearnSession {
       return { ok: true, outcome: 'dismissed', suggestion }
     }
 
-    const proposal = normalized(
+    const chosen = normalized(
       decision.action === 'accept' ? suggestion.proposal : decision.proposal,
     )
-    if (proposal.kind !== suggestion.proposal.kind) {
+    if (chosen.kind !== suggestion.proposal.kind) {
       return {
         ok: false,
         refusal: {
@@ -854,6 +874,10 @@ export class LearnSession {
         },
       }
     }
+    // A node suggested alongside it must have been accepted first; it is then named by its id in the graph.
+    const resolved = this.#resolveSuggestedNodes(chosen)
+    if ('code' in resolved) return { ok: false, refusal: resolved }
+    const proposal = resolved
     const refusal = this.#contentRefusalOf(proposal)
     if (refusal !== undefined) return { ok: false, refusal }
 
@@ -905,6 +929,8 @@ export class LearnSession {
         return { edgeIds: [] }
       case 'link':
         return { edgeIds: [`edge_${operationId}_0`] }
+      case 'node':
+        return { nodeId: this.#nextId(proposal.nodeType), edgeIds: [] }
       case 'claim':
         return {
           nodeId: this.#nextId('claim'),
@@ -936,6 +962,7 @@ export class LearnSession {
         const edge = edgeId === undefined ? undefined : this.#episteme.graph.getEdge(edgeId)
         return edge !== undefined && edge.revoked !== true
       }
+      case 'node':
       case 'claim': {
         const node =
           planned.nodeId === undefined ? undefined : this.#episteme.graph.getNode(planned.nodeId)
@@ -1010,6 +1037,17 @@ export class LearnSession {
         )
         return { kind: 'edge', id: edge.edgeId }
       }
+      case 'node': {
+        const node = this.#addNodeNow({
+          id: planned.nodeId ?? this.#nextId(proposal.nodeType),
+          label: proposal.label,
+          type: asId<NodeTypeId>(proposal.nodeType),
+          tier: this.#tierOf(proposal.nodeType),
+          source,
+          properties: { ...proposal.properties, ...provenanceOf(suggestion) },
+        })
+        return { kind: 'node', id: node.nodeId }
+      }
       case 'claim': {
         const node = this.#addNodeNow({
           id: planned.nodeId ?? this.#nextId('claim'),
@@ -1017,6 +1055,7 @@ export class LearnSession {
           type: NODE.claim,
           tier: 'thought',
           source,
+          properties: provenanceOf(suggestion),
         })
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
         // is how the graph withdraws something, so nothing half-accepted stays standing.
@@ -1038,6 +1077,255 @@ export class LearnSession {
         return { kind: 'node', id: node.nodeId }
       }
     }
+  }
+
+  /** Why a reference to a suggested node names nothing: it must name a pending or accepted node suggestion. */
+  #suggestedNodeRefusal(reference: string): MutationRefusal | undefined {
+    const id = reference.slice(SUGGESTED_NODE_PREFIX.length)
+    // A node of the batch being checked: it becomes a suggestion in the same write.
+    if (id === BATCH_PLACEHOLDER) return undefined
+    if (this.#acceptedNodeOf(id) !== undefined) return undefined
+    const pending = this.#suggestions.get(id)
+    if (
+      pending !== undefined &&
+      (pending.proposal.kind === 'node' || pending.proposal.kind === 'claim')
+    ) {
+      return undefined
+    }
+    return { code: 'unknown_suggestion', message: `"${reference}" names no suggested node` }
+  }
+
+  /** The node an accepted suggestion became, found by the provenance it carries. */
+  #acceptedNodeOf(suggestionId: string): string | undefined {
+    return this.#episteme.graph
+      .listNodes()
+      .find((node) => node.properties[PROVENANCE_KEY] === suggestionId)?.id
+  }
+
+  /**
+   * A proposal with every `cand:` end replaced by the node its suggestion became.
+   *
+   * A suggestion that is still pending cannot stand in for a node yet (`depends_on_pending`); one that was
+   * dismissed never will (`unresolved_candidate`).
+   */
+  #resolveSuggestedNodes(proposal: Proposal): Proposal | MutationRefusal {
+    const resolve = (end: string): string | MutationRefusal => {
+      if (!isSuggestedNode(end)) return end
+      const id = end.slice(SUGGESTED_NODE_PREFIX.length)
+      const accepted = this.#acceptedNodeOf(id)
+      if (accepted !== undefined) return accepted
+      if (this.#suggestions.get(id) !== undefined) {
+        return {
+          code: 'depends_on_pending',
+          message: `it depends on suggestion "${id}", which has not been accepted yet; decide that one first`,
+        }
+      }
+      return {
+        code: 'unresolved_candidate',
+        message: `it depends on suggestion "${id}", which was not accepted, so it has nothing to attach to`,
+      }
+    }
+    switch (proposal.kind) {
+      case 'link': {
+        const from = resolve(proposal.from)
+        if (typeof from !== 'string') return from
+        const to = resolve(proposal.to)
+        if (typeof to !== 'string') return to
+        return { ...proposal, from, to }
+      }
+      case 'state': {
+        const target = resolve(proposal.target)
+        return typeof target === 'string' ? { ...proposal, target } : target
+      }
+      default:
+        return proposal
+    }
+  }
+
+  /** The tier a node of this type starts in, as its registered definition says. */
+  #tierOf(nodeType: string): 'draft' | 'thought' | 'reference' {
+    return this.#episteme.registries.nodeTypes.find(nodeType)?.defaultTier ?? 'thought'
+  }
+
+  /** Material this session has distilled, oldest first. */
+  sources(): readonly Source[] {
+    return this.#sources.list()
+  }
+
+  /**
+   * Distils learning material into pending suggestions (ADR 0009). Changes no understanding.
+   *
+   * The material is kept beside the graph, never in it. It is split into episodes, and the distiller's
+   * candidates are checked against the domain's policy. Each kept candidate then becomes a pending suggestion,
+   * through the same checks `propose` applies, carrying the words it came from. A candidate that refers to
+   * another, such as a claim answering a question found with it, refers to that suggestion as
+   * `cand:<id>`, and can be accepted only after it. Nothing reaches the graph or the history until the
+   * learner decides.
+   *
+   * Bounded: material longer than `MAX_MATERIAL` characters, or a queue already holding `MAX_PENDING`
+   * suggestions, is refused as a value, before anything is kept.
+   */
+  distill(
+    material: { readonly title?: string; readonly text: string },
+    options: {
+      readonly requestedBy?: string
+      readonly agent?: CognitiveAgent
+      readonly policy?: DistillationPolicy
+    } = {},
+  ): Promise<DistillOutcome> {
+    return this.#exclusive(async (): Promise<DistillOutcome> => {
+      const text = material.text
+      if (text.trim() === '') {
+        return {
+          ok: false,
+          refusal: { code: 'empty_material', message: 'there is no material to distil' },
+        }
+      }
+      if (text.length > MAX_MATERIAL) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'material_too_long',
+            message: `material of ${text.length} characters is longer than the ${MAX_MATERIAL} one distillation reads; split it`,
+          },
+        }
+      }
+      if (this.#suggestions.list().length >= MAX_PENDING) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'too_many_pending',
+            message: `${MAX_PENDING} suggestions are already waiting; decide on some before distilling more`,
+          },
+        }
+      }
+
+      const policy = options.policy ?? learnDistillationPolicy
+      const agent = options.agent ?? new RuleBasedDistiller({ policy })
+      const sourceId = `src_${randomUUID()}`
+      const result = await distill({
+        material: { sourceId, text },
+        agent,
+        policy,
+        actorId: HUMAN,
+        known: this.#episteme.graph
+          .listNodes()
+          .map((node) => ({ id: node.id, label: node.label, type: node.type })),
+      })
+
+      const proposedBy = `actor_agent_${agent.id}`
+      const refused: DistillRefusal[] = []
+      const accepted: {
+        ref: string
+        proposal: Proposal
+        origin: SuggestionOrigin
+        rationale: string
+      }[] = []
+      const candidates = new Map<string, number>()
+      const refer = (end: string): string | undefined => {
+        if (!end.startsWith(CANDIDATE_PREFIX)) return end
+        const index = candidates.get(end.slice(CANDIDATE_PREFIX.length))
+        return index === undefined ? undefined : `${SUGGESTED_NODE_PREFIX}#${index}`
+      }
+
+      for (const candidate of result.candidates) {
+        const origin: SuggestionOrigin = candidate.origin
+        if (candidate.status === 'refused') {
+          refused.push({
+            ref: candidate.ref,
+            ...(candidate.refusal ?? { code: 'refused', message: '' }),
+            origin,
+          })
+          continue
+        }
+        const suggestion = candidate.suggestion
+        const proposals: Proposal[] = []
+        if (suggestion.kind === 'node') {
+          proposals.push({
+            kind: 'node',
+            nodeType: suggestion.nodeType,
+            label: suggestion.label,
+            ...(suggestion.properties === undefined ? {} : { properties: suggestion.properties }),
+          })
+        } else if (suggestion.kind === 'edge') {
+          const from = refer(suggestion.from)
+          const to = refer(suggestion.to)
+          if (from !== undefined && to !== undefined) {
+            proposals.push({ kind: 'link', from, to, relation: suggestion.edgeType })
+          }
+        } else {
+          const target = refer(suggestion.target)
+          for (const [dimension, value] of Object.entries(suggestion.dimensions)) {
+            if (target !== undefined && value.level !== undefined) {
+              proposals.push({ kind: 'state', target, dimension, level: value.level })
+            }
+          }
+        }
+        if (proposals.length === 0) {
+          refused.push({
+            ref: candidate.ref,
+            code: 'depends_on_refused',
+            message: 'it depends on a candidate that was not kept',
+            origin,
+          })
+          continue
+        }
+        for (const proposal of proposals) {
+          if (suggestion.kind === 'node') candidates.set(candidate.ref, accepted.length)
+          accepted.push({ ref: candidate.ref, proposal, origin, rationale: suggestion.rationale })
+        }
+      }
+
+      // The same checks `propose` applies, with references to this batch's own nodes standing in for nodes.
+      const kept: typeof accepted = []
+      const keptIndex = new Map<number, number>()
+      for (const [index, item] of accepted.entries()) {
+        const local = localReferences(item.proposal)
+        const brokenReference = local.some((reference) => !keptIndex.has(reference))
+        const refusal = brokenReference
+          ? { code: 'depends_on_refused', message: 'it depends on a candidate that was not kept' }
+          : this.#refusalOf(withoutLocalReferences(item.proposal), {
+              proposedBy,
+              rationale: item.rationale,
+            })
+        if (refusal !== undefined) {
+          refused.push({ ref: item.ref, ...refusal, origin: item.origin })
+          continue
+        }
+        keptIndex.set(index, kept.length)
+        kept.push(item)
+      }
+
+      await this.#sources.add({
+        id: sourceId,
+        title: material.title?.trim() || firstLine(text),
+        text,
+        kind: result.episodes[0]?.kind ?? 'prose',
+        episodes: result.episodes.map((episode) => ({
+          id: episode.id,
+          span: episode.span,
+          ...(episode.time === undefined ? {} : { time: episode.time }),
+        })),
+        addedAt: systemClock.now(),
+        ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
+      })
+
+      const proposedAt = systemClock.now()
+      const suggestions = await this.#suggestions.addAll(kept.length, (ids) =>
+        kept.map((item) => ({
+          proposal: bindLocalReferences(item.proposal, (reference) => {
+            const at = keptIndex.get(reference)
+            return at === undefined ? undefined : ids[at]
+          }),
+          rationale: item.rationale,
+          proposedBy,
+          proposedAt,
+          origin: item.origin,
+          ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
+        })),
+      )
+      return { ok: true, sourceId, episodes: result.episodes.length, suggestions, refused }
+    })
   }
 
   /** Why a proposal could never be accepted, or `undefined` when it could be. */
@@ -1064,12 +1352,29 @@ export class LearnSession {
    * the agent's value met.
    */
   #contentRefusalOf(proposal: Proposal): MutationRefusal | undefined {
+    // A node suggested alongside this proposal stands in for its end until it is accepted. Here it only has to
+    // name a suggested node; whether the relation fits is checked once it resolves, at decision time.
     const missing = (id: string): MutationRefusal | undefined =>
-      this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
-        ? { code: 'unknown_node', message: `node "${id}" does not exist` }
-        : undefined
+      isSuggestedNode(id)
+        ? this.#suggestedNodeRefusal(id)
+        : this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
+          ? { code: 'unknown_node', message: `node "${id}" does not exist` }
+          : undefined
 
     switch (proposal.kind) {
+      case 'node': {
+        const label = proposal.label.trim()
+        if (label === '') return { code: 'missing_property', message: 'a node needs a label' }
+        const preview = this.#episteme.graph.previewNode({
+          id: asId<NodeId>(this.#nextId(proposal.nodeType)),
+          type: asId<NodeTypeId>(proposal.nodeType),
+          label,
+          properties: { text: label, ...proposal.properties },
+          tags: learnTags('general'),
+          tier: this.#tierOf(proposal.nodeType),
+        })
+        return preview.ok ? undefined : preview.refusal
+      }
       case 'claim': {
         const label = proposal.label.trim()
         if (label === '') return { code: 'missing_property', message: 'a claim needs a label' }
@@ -1088,6 +1393,15 @@ export class LearnSession {
         return preview.ok ? undefined : preview.refusal
       }
       case 'link': {
+        if (isSuggestedNode(proposal.from) || isSuggestedNode(proposal.to)) {
+          if (!this.#episteme.registries.edgeTypes.has(proposal.relation)) {
+            return {
+              code: 'unregistered_edge_type',
+              message: `edge type "${proposal.relation}" is not registered`,
+            }
+          }
+          return missing(proposal.from) ?? missing(proposal.to)
+        }
         // Two edges of one type between the same nodes say the same thing twice.
         const existing = this.#episteme.graph
           .listEdges()
@@ -1211,6 +1525,93 @@ export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }
   | { readonly ok: false; readonly refusal: MutationRefusal }
 
+/** Material longer than this is split by the learner before it is distilled. */
+export const MAX_MATERIAL = 20_000
+/** A queue holding this many suggestions takes no more distillations until some are decided. */
+export const MAX_PENDING = 500
+
+/** A candidate distillation found and did not offer, with why, and the words it came from. */
+export interface DistillRefusal {
+  readonly ref: string
+  readonly code: string
+  readonly message: string
+  readonly origin: SuggestionOrigin
+}
+
+export type DistillOutcome =
+  | {
+      readonly ok: true
+      readonly sourceId: string
+      readonly episodes: number
+      /** What now waits for the learner. */
+      readonly suggestions: readonly Suggestion[]
+      readonly refused: readonly DistillRefusal[]
+    }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** The property under which an accepted node records the suggestion it came from. */
+const PROVENANCE_KEY = 'suggestion'
+
+/** What an accepted node keeps of its suggestion: which one it was, and the words it came from. */
+function provenanceOf(suggestion: Suggestion): Record<string, unknown> {
+  return {
+    [PROVENANCE_KEY]: suggestion.id,
+    ...(suggestion.origin === undefined ? {} : { origin: suggestion.origin }),
+  }
+}
+
+function isSuggestedNode(id: string): boolean {
+  return id.startsWith(SUGGESTED_NODE_PREFIX)
+}
+
+/** The ends of a proposal that name another candidate of the same distillation, by position. */
+function localReferences(proposal: Proposal): readonly number[] {
+  const ends =
+    proposal.kind === 'link'
+      ? [proposal.from, proposal.to]
+      : proposal.kind === 'state'
+        ? [proposal.target]
+        : []
+  return ends.flatMap((end) =>
+    end.startsWith(`${SUGGESTED_NODE_PREFIX}#`)
+      ? [Number(end.slice(SUGGESTED_NODE_PREFIX.length + 1))]
+      : [],
+  )
+}
+
+/**
+ * A proposal checked as if its references to this distillation's own nodes were already suggestions: they
+ * are replaced by a reference that passes the "names a suggested node" check without naming a real draft.
+ */
+function withoutLocalReferences(proposal: Proposal): Proposal {
+  return bindLocalReferences(proposal, () => undefined, true)
+}
+
+function bindLocalReferences(
+  proposal: Proposal,
+  idOf: (position: number) => string | undefined,
+  placeholder = false,
+): Proposal {
+  const bind = (end: string): string => {
+    if (!end.startsWith(`${SUGGESTED_NODE_PREFIX}#`)) return end
+    if (placeholder) return `${SUGGESTED_NODE_PREFIX}${BATCH_PLACEHOLDER}`
+    const id = idOf(Number(end.slice(SUGGESTED_NODE_PREFIX.length + 1)))
+    return id === undefined ? end : `${SUGGESTED_NODE_PREFIX}${id}`
+  }
+  if (proposal.kind === 'link')
+    return { ...proposal, from: bind(proposal.from), to: bind(proposal.to) }
+  if (proposal.kind === 'state') return { ...proposal, target: bind(proposal.target) }
+  return proposal
+}
+
+/** Stands in, while checking a batch, for a node of the same batch that has no id yet. */
+const BATCH_PLACEHOLDER = '__batch__'
+
+function firstLine(text: string): string {
+  const line = text.trim().split(/\r?\n/u)[0] ?? ''
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line
+}
+
 /** A node to add, as a batch or an addition gives it. */
 export interface NodeInput {
   readonly id: string
@@ -1219,6 +1620,8 @@ export interface NodeInput {
   readonly tier: 'draft' | 'thought' | 'reference'
   readonly topic?: string
   readonly source?: string
+  /** Properties beyond the label's `text`, such as a distilled node's provenance. */
+  readonly properties?: Readonly<Record<string, unknown>>
 }
 
 /** What a batch may do: add nodes and link them, all written together when it returns. */

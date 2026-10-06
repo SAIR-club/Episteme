@@ -43,10 +43,32 @@ second scene exists would be an abstraction without a second case to fit.
   which. Deciding a draft whose earlier attempt failed mid-write settles that attempt first, so a retry
   never commits twice.
 
+## Distillation
+
+`distill({ title, text })` turns learning material into pending suggestions ([ADR 0009](../../docs/decisions/0009-distillation.md)).
+It changes no understanding.
+
+- **The material** is kept in `<graph>.sources.jsonl`, beside the graph and outside it. That file has the same
+  owner and the same atomic writes as the drafts, and `sources()` lists it.
+- **Extraction.** The material is split into episodes and read by a distiller, the rule-based one unless
+  another `CognitiveAgent` is given. What the distiller finds is checked against the domain's policy,
+  `learnDistillationPolicy` unless another is given. Each kept candidate then goes through the checks
+  `propose` applies.
+- **Each suggestion carries its `origin`**: source, episode, character span, excerpt, time. It also records
+  who proposed it (`actor_agent_<distiller>`) and the client that asked (`requestedBy`, provenance only).
+- **References within a batch.** A suggestion found together with a node, such as a claim answering a
+  question or a change in how sure the learner is about it, names that node as `cand:<suggestion id>`. It can
+  be accepted only after that node is: before that, `depends_on_pending`; if the node was dismissed,
+  `unresolved_candidate`.
+- **An accepted node** records `suggestion` (the id it came from) and `origin` among its properties.
+- **Bounded.** Material over `MAX_MATERIAL` characters, or a queue already holding `MAX_PENDING`
+  suggestions, is refused as a value before anything is kept.
+
 ## Layout
 
 | File                 | Contents                                                                      |
 | -------------------- | ----------------------------------------------------------------------------- |
 | `src/session.ts`     | `LearnSession`, the recordable dimensions, and the view types surfaces render |
 | `src/responder.ts`   | the Chinese answer templates the session's scripted agent uses                |
+| `src/sources.ts`     | `SourceStore`: distilled material, kept outside the graph                     |
 | `src/suggestions.ts` | `SuggestionStore` and the `Proposal` kinds an agent can make                  |

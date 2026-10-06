@@ -113,6 +113,9 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+      '@episteme/distillation':
+        specifier: workspace:*
+        version: link:../distillation
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../domain-learn

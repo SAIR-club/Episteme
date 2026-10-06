@@ -11,6 +11,7 @@
     { "path": "../storage-local" },
     { "path": "../domain-learn" },
     { "path": "../agent" },
-    { "path": "../sdk" }
+    { "path": "../sdk" },
+    { "path": "../distillation" }
   ]
 }

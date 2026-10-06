@@ -22,6 +22,7 @@
   "dependencies": {
     "@episteme/agent": "workspace:*",
     "@episteme/core": "workspace:*",
+    "@episteme/distillation": "workspace:*",
     "@episteme/domain-learn": "workspace:*",
     "@episteme/sdk": "workspace:*",
     "@episteme/storage-local": "workspace:*"

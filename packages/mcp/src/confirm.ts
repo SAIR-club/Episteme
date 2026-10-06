@@ -13,6 +13,7 @@ import {
 } from '@modelcontextprotocol/server'
 import {
   RECORDABLE_DIMENSIONS,
+  SUGGESTED_NODE_PREFIX,
   type Decision,
   type LearnSession,
   type Proposal,
@@ -113,6 +114,7 @@ function decisionSchema(proposal: Proposal) {
         required: ['decision'],
       })
     }
+    case 'node':
     case 'claim':
       return fromJsonSchema<DecisionContent>({
         type: 'object',
@@ -224,6 +226,7 @@ function decisionFrom(content: DecisionContent, proposal: Proposal): Decision | 
       return content.level === undefined
         ? undefined
         : { action: 'modify', proposal: { ...proposal, level: content.level } }
+    case 'node':
     case 'claim':
       return content.label === undefined
         ? undefined
@@ -237,7 +240,16 @@ function decisionFrom(content: DecisionContent, proposal: Proposal): Decision | 
 
 /** The form's message, in the learner's language: what is proposed, by whom, and why. */
 function describeForLearner(session: LearnSession, suggestion: Suggestion): string {
-  const label = (id: string): string => session.graph.getNode(id)?.label ?? id
+  // An end may be a node suggested alongside this one, named `cand:<id>`; it is shown by what it proposes.
+  const label = (id: string): string => {
+    if (id.startsWith(SUGGESTED_NODE_PREFIX)) {
+      const named = session
+        .pendingSuggestions()
+        .find((pending) => pending.id === id.slice(SUGGESTED_NODE_PREFIX.length))?.proposal
+      return named !== undefined && 'label' in named ? `${named.label}（待确认）` : id
+    }
+    return session.graph.getNode(id)?.label ?? id
+  }
   const proposal = suggestion.proposal
   let what: string
   switch (proposal.kind) {
@@ -251,6 +263,9 @@ function describeForLearner(session: LearnSession, suggestion: Suggestion): stri
       what = `把你对「${label(proposal.target)}」的${dimension?.labelZh ?? proposal.dimension}记为「${level}」`
       break
     }
+    case 'node':
+      what = `记下「${proposal.label}」（${proposal.nodeType}）`
+      break
     case 'claim': {
       const about = (proposal.about ?? []).map((id) => `「${label(id)}」`).join('、')
       what = `记下一条论断「${proposal.label}」${about === '' ? '' : `，关于 ${about}`}`
