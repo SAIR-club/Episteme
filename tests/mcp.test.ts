@@ -37,10 +37,10 @@ async function events(): Promise<number> {
 }
 
 describe('what an agent can do', () => {
-  it('offers recall, propose and reflect, and nothing that confirms or writes', async () => {
+  it('offers recall, propose, reflect and distill, and nothing that confirms or writes', async () => {
     const { body } = await rpc('tools/list')
     const tools = (body['result'] as { tools: { name: string }[] }).tools.map((tool) => tool.name)
-    expect(tools.sort()).toEqual(['propose', 'recall', 'reflect'])
+    expect(tools.sort()).toEqual(['distill', 'propose', 'recall', 'reflect'])
   })
 
   it('has no way to call a tool that is not offered', async () => {
