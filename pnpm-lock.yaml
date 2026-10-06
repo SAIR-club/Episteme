@@ -48,6 +48,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mcp
 
+  examples/distill-session:
+    dependencies:
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@episteme/domain-learn':
+        specifier: workspace:*
+        version: link:../../packages/domain-learn
+
   examples/learn-session:
     dependencies:
       '@episteme/agent':

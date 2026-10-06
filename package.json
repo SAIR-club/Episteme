@@ -21,6 +21,7 @@
     "demo": "pnpm --filter @episteme/example-learn-session demo",
     "demo:persistent": "pnpm --filter @episteme/example-persistent-session demo",
     "demo:semantic": "pnpm --filter @episteme/example-semantic-session demo",
+    "demo:distill": "pnpm --filter @episteme/example-distill-session demo",
     "learn": "pnpm --filter @episteme/app-learn learn",
     "learn:web": "pnpm --filter @episteme/app-learn serve",
     "check": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"

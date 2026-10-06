@@ -16,6 +16,7 @@
     { "path": "examples/learn-session" },
     { "path": "examples/persistent-session" },
     { "path": "examples/semantic-session" },
+    { "path": "examples/distill-session" },
     { "path": "tests" }
   ]
 }

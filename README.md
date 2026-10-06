@@ -59,7 +59,7 @@ pnpm learn:web          # use it, in a browser at http://127.0.0.1:4321
 # or
 pnpm learn              # the same loop in a terminal
 # and the phase demos:
-pnpm demo && pnpm demo:persistent && pnpm demo:semantic
+pnpm demo && pnpm demo:persistent && pnpm demo:semantic && pnpm demo:distill
 ```
 
 `pnpm learn --help` and `pnpm learn:web --help` list the options, including `--file` to choose the graph.
@@ -98,6 +98,7 @@ episteme/
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
 │   ├── application/        The use-case layer every surface drives (LearnSession)
+│   ├── distillation/       Learning material → episodes → candidate understanding, as suggestions only
 │   ├── mcp/                The MCP surface: an agent can recall, propose and reflect, never confirm
 │   ├── agent/              CognitiveAgent interface + scripted mock (no real model yet)
 │   ├── domain-forum/       [placeholder] Forum domain pack
@@ -107,7 +108,8 @@ episteme/
 ├── examples/
 │   ├── learn-session/      Phase 0: the cognitive loop
 │   ├── persistent-session/ Phase 1: the loop across a process restart
-│   └── semantic-session/   Phase 2: a paraphrase reaching stored cognition
+│   ├── semantic-session/   Phase 2: a paraphrase reaching stored cognition
+│   └── distill-session/    Distillation: a learning dialogue in, only what the learner accepts kept
 ├── tests/                  Cross-package tests, including the North Star, restart and paraphrase suites
 └── docs/                   architecture, concepts, decisions (ADRs), roadmap
 ```
