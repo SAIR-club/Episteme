@@ -21,6 +21,14 @@ understanding until the learner decides: accept it, modify it into their own val
 only collects the decision. What each choice commits is `LearnSession.decide()`, the same path an agent's
 host uses.
 
+**Distilling material.** Paste a stretch of learning material or a dialogue into _导入学习材料_ (or `POST
+/api/distill` with `{ title?, text }`). Episteme splits it into episodes, finds candidate questions, claims,
+evidence, terms, how they relate, and what you said about your own understanding
+([ADR 0009](../../docs/decisions/0009-distillation.md)). All of these join the review queue as suggestions,
+each showing the words it came from and when they were said. A suggestion that depends on another, such as a
+claim answering a question found with it, says which to accept first. Nothing is recorded until you decide.
+The material itself is kept beside the graph, in `<graph>.sources.jsonl`, never in it.
+
 There is no login, so the page, its API and `/mcp` sit behind one boundary instead. A request is refused when:
 
 - it is addressed to any host name but a loopback name with this port, which defeats DNS rebinding;

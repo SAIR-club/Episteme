@@ -104,6 +104,26 @@ function decisionFrom(body: Record<string, unknown>): Decision {
   const fields = proposal as Record<string, unknown>
   const text = (name: string): string => asString(fields[name], `proposal.${name}`)
   switch (fields['kind']) {
+    case 'node': {
+      const properties = fields['properties']
+      if (
+        properties !== undefined &&
+        (typeof properties !== 'object' || properties === null || Array.isArray(properties))
+      ) {
+        throw new TypeError('"proposal.properties" must be an object')
+      }
+      return {
+        action,
+        proposal: {
+          kind: 'node',
+          nodeType: text('nodeType'),
+          label: text('label'),
+          ...(properties === undefined
+            ? {}
+            : { properties: properties as Record<string, unknown> }),
+        },
+      }
+    }
     case 'claim': {
       const about = fields['about']
       if (
@@ -137,7 +157,7 @@ function decisionFrom(body: Record<string, unknown>): Decision {
         },
       }
     default:
-      throw new TypeError('"proposal.kind" must be one of claim, link, state')
+      throw new TypeError('"proposal.kind" must be one of node, claim, link, state')
   }
 }
 
@@ -362,6 +382,26 @@ async function handle(
       result,
       suggestions: session.pendingSuggestions(),
       events: session.eventCount,
+    })
+    return
+  }
+
+  // Learning material in, pending suggestions out (ADR 0009). Nothing here changes the learner's understanding:
+  // what is found joins the review queue, and the learner decides on each.
+  if (path === '/api/distill' && request.method === 'POST') {
+    const body = await readJson(request)
+    const text = asString(body['text'], 'text')
+    const title = typeof body['title'] === 'string' ? body['title'] : undefined
+    const outcome = await session.distill(title === undefined ? { text } : { title, text })
+    if (!outcome.ok) {
+      sendJson(response, 422, { error: outcome.refusal.message, code: outcome.refusal.code })
+      return
+    }
+    sendJson(response, 200, {
+      sourceId: outcome.sourceId,
+      episodes: outcome.episodes,
+      suggestions: outcome.suggestions.length,
+      refused: outcome.refused,
     })
     return
   }

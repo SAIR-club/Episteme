@@ -211,6 +211,8 @@ export interface NodeView {
   readonly type: string
   readonly tier: string
   readonly tags: readonly string[]
+  /** The suggestion this node was accepted from, so a reference to that suggestion can be shown by name. */
+  readonly fromSuggestion?: string
 }
 
 /**
@@ -1478,6 +1480,9 @@ export class LearnSession {
       type: node.type,
       tier: node.meta.tier ?? 'thought',
       tags: [...node.tags],
+      ...(typeof node.properties[PROVENANCE_KEY] === 'string'
+        ? { fromSuggestion: node.properties[PROVENANCE_KEY] }
+        : {}),
     }
   }
 }
