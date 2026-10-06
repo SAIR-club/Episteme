@@ -12,3 +12,6 @@ export {
   type TimeRange,
   type Turn,
 } from './segment.js'
+export type { Candidate, DistillationPolicy, Origin, Refusal, Relation, Role } from './policy.js'
+export { distill, type DistillInput, type DistillationResult } from './engine.js'
+export { RuleBasedDistiller, type RuleBasedOptions } from './rule-based.js'

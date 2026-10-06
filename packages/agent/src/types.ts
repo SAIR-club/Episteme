@@ -53,6 +53,8 @@ export interface CandidateNode {
   readonly ref: string
   readonly nodeType: string
   readonly label: string
+  /** The passage it was found in, so an agent can tell this passage's candidates from earlier ones. */
+  readonly episodeId?: string
 }
 
 /** How a suggestion names a candidate of the same passage instead of an existing node. */
