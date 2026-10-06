@@ -18,6 +18,7 @@
     { "path": "../packages/sdk" },
     { "path": "../packages/application" },
     { "path": "../packages/mcp" },
+    { "path": "../packages/distillation" },
     { "path": "../packages/embeddings-http" }
   ]
 }

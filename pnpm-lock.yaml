@@ -125,6 +125,15 @@ importers:
 
   packages/core: {}
 
+  packages/distillation:
+    dependencies:
+      '@episteme/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@episteme/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/domain-learn:
     dependencies:
       '@episteme/core':
@@ -184,6 +193,9 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@episteme/distillation':
+        specifier: workspace:*
+        version: link:../packages/distillation
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../packages/domain-learn

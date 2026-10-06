@@ -1,0 +1,26 @@
+{
+  "name": "@episteme/distillation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Distillation: turns learning material into candidate understanding, as suggestions only (ADR 0009).",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/agent": "workspace:*",
+    "@episteme/core": "workspace:*"
+  }
+}
