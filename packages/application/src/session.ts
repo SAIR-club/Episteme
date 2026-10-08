@@ -503,13 +503,14 @@ export class LearnSession {
   }> {
     const entries = Object.entries(dimensions).filter(([, level]) => level !== '')
     if (entries.length === 0) {
-      throw new Error('record needs at least one dimension')
+      throw new SessionRefusal('missing_dimension', 'record needs at least one dimension')
     }
 
     for (const [dimension] of entries) {
       const known = RECORDABLE_DIMENSIONS.find((candidate) => candidate.id === dimension)
       if (known === undefined) {
-        throw new Error(
+        throw new SessionRefusal(
+          'not_recordable',
           `"${dimension}" is not recordable from this surface. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
         )
       }
@@ -638,7 +639,7 @@ export class LearnSession {
   /** Adds one node. Only ever called inside the mutation queue. */
   #addNodeNow(input: NodeInput): NodeView {
     const label = input.label.trim()
-    if (label === '') throw new Error('a node needs a label')
+    if (label === '') throw new SessionRefusal('missing_property', 'a node needs a label')
 
     const node = this.#episteme.graph.addNode({
       id: asId<NodeId>(input.id),
@@ -1612,6 +1613,29 @@ export type ProposeResult =
   | { readonly ok: false; readonly refusal: MutationRefusal }
 
 /** Material longer than this is split by the learner before it is distilled. */
+/**
+ * A command refused because of what it was asked to do, such as recording a dimension the learner cannot
+ * record. Thrown before anything changes, so a caller can report it as a refusal.
+ */
+export class SessionRefusal extends Error {
+  readonly code: string
+
+  constructor(code: string, message: string) {
+    super(message)
+    this.name = 'SessionRefusal'
+    this.code = code
+  }
+}
+
+/**
+ * Whether an error is a refusal of the request, by the session or by the graph's own validation, rather than a
+ * failure, such as a write that did not reach the disk. A failure may come after the change was made in
+ * memory, so reporting it as a refusal would tell the caller nothing happened when something did.
+ */
+export function isRefusal(error: unknown): error is Error & { readonly code: string } {
+  return error instanceof SessionRefusal || isEpistemeError(error)
+}
+
 export const MAX_MATERIAL = 20_000
 /** A queue holding this many suggestions takes no more distillations until some are decided. */
 export const MAX_PENDING = 500

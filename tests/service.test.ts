@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startService, workspaceFile, type EpistemeService } from '@episteme/service'
@@ -92,6 +93,37 @@ describe('without a Workspace', () => {
     expect(refused.status).toBe(422)
     expect(typeof refused.body['code']).toBe('string')
     expect(refused.body['error']).toContain('not recordable')
+  })
+
+  it('answers a write that failed as a failure, not as a refusal', async () => {
+    const fsPromises = createRequire(import.meta.url)('node:fs/promises') as {
+      rename: (from: string, to: string) => Promise<void>
+    }
+    const realRename = fsPromises.rename
+    fsPromises.rename = async (from: string, to: string) => {
+      if (to.endsWith('learn.jsonl')) throw new Error('injected: no space left on device')
+      return realRename(from, to)
+    }
+    syncBuiltinESMExports()
+    try {
+      const failed = await post('/api/v1/record', {
+        target: 'q_why_order',
+        dimensions: { confidence: 'low' },
+      })
+      // The change may already be in memory, so "refused" (422) would tell the client nothing happened.
+      expect(failed.status).toBe(500)
+      expect(failed.body['code']).toBe('internal')
+    } finally {
+      fsPromises.rename = realRename
+      syncBuiltinESMExports()
+    }
+    // A refusal is still a refusal.
+    const refused = await post('/api/v1/record', {
+      target: 'q_why_order',
+      dimensions: { mastery: 'high' },
+    })
+    expect(refused.status).toBe(422)
+    expect(refused.body['code']).toBe('not_recordable')
   })
 
   it('serves a node’s recorded history, the data a timeline is drawn from', async () => {

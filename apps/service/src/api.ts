@@ -1,5 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { RECORDABLE_DIMENSIONS, type Decision, type LearnSession } from '@episteme/application'
+import {
+  RECORDABLE_DIMENSIONS,
+  isRefusal,
+  type Decision,
+  type LearnSession,
+} from '@episteme/application'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -184,9 +189,10 @@ async function refusing<T>(
   try {
     return await command()
   } catch (error) {
-    if (error instanceof RequestError || !(error instanceof Error)) throw error
-    const code = (error as { code?: unknown }).code
-    sendRefusal(response, 422, typeof code === 'string' ? code : 'refused', error.message)
+    // Only a refusal is answered as one. A failure, such as a write that did not reach the disk, propagates and
+    // is answered as 500: the change it interrupted may already be in memory, and 422 would say nothing changed.
+    if (!isRefusal(error)) throw error
+    sendRefusal(response, 422, error.code, error.message)
     return undefined
   }
 }
