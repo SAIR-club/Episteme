@@ -1054,7 +1054,13 @@ export class LearnSession {
           type: asId<NodeTypeId>(proposal.nodeType),
           tier: this.#tierOf(proposal.nodeType),
           source,
-          properties: { ...proposal.properties, ...provenanceOf(suggestion) },
+          // The text follows the label as decided, so a learner who puts it in their own words is not left
+          // with the distiller's wording underneath.
+          properties: {
+            ...proposal.properties,
+            text: proposal.label.trim(),
+            ...provenanceOf(suggestion),
+          },
         })
         return { kind: 'node', id: node.nodeId }
       }
@@ -1389,7 +1395,7 @@ export class LearnSession {
           id: asId<NodeId>(this.#nextId(proposal.nodeType)),
           type: asId<NodeTypeId>(proposal.nodeType),
           label,
-          properties: { text: label, ...proposal.properties },
+          properties: { ...proposal.properties, text: label },
           tags: learnTags('general'),
           tier: this.#tierOf(proposal.nodeType),
         })
