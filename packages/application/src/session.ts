@@ -1147,7 +1147,17 @@ export class LearnSession {
         const target = resolve(proposal.target)
         return typeof target === 'string' ? { ...proposal, target } : target
       }
-      default:
+      case 'claim': {
+        if (proposal.about === undefined) return proposal
+        const about: string[] = []
+        for (const end of proposal.about) {
+          const resolved = resolve(end)
+          if (typeof resolved !== 'string') return resolved
+          about.push(resolved)
+        }
+        return { ...proposal, about }
+      }
+      case 'node':
         return proposal
     }
   }
