@@ -174,8 +174,7 @@ export class SuggestionStore {
    */
   async add(draft: Omit<Suggestion, 'id'>): Promise<Suggestion> {
     const suggestion: Suggestion = { id: `sug_${randomUUID()}`, ...draft }
-    this.#pending.set(suggestion.id, suggestion)
-    await this.#write()
+    await this.#change((pending) => pending.set(suggestion.id, suggestion))
     return suggestion
   }
 
@@ -194,16 +193,19 @@ export class SuggestionStore {
       id: ids[index] ?? `sug_${randomUUID()}`,
       ...draft,
     }))
-    for (const suggestion of kept) this.#pending.set(suggestion.id, suggestion)
-    if (kept.length > 0) await this.#write()
+    if (kept.length > 0) {
+      await this.#change((pending) => {
+        for (const suggestion of kept) pending.set(suggestion.id, suggestion)
+      })
+    }
     return kept
   }
 
   /** Drops a draft that has been decided, and writes the change. Returns whether it was pending. */
   async remove(id: string): Promise<boolean> {
-    const removed = this.#pending.delete(id)
-    if (removed) await this.#write()
-    return removed
+    if (!this.#pending.has(id)) return false
+    await this.#change((pending) => pending.delete(id))
+    return true
   }
 
   /** Decisions that started and were not settled, oldest first. Empty unless a write failed or the host died. */
@@ -218,28 +220,44 @@ export class SuggestionStore {
 
   /** Records, before anything is committed, what a decision is about to commit. */
   async begin(resolution: Resolution): Promise<void> {
-    this.#resolutions.set(resolution.operationId, resolution)
-    await this.#write()
+    await this.#change((_, resolutions) => resolutions.set(resolution.operationId, resolution))
   }
 
   /** The decision landed: removes its draft and its record in one write. */
   async complete(operationId: string): Promise<void> {
     const resolution = this.#resolutions.get(operationId)
     if (resolution === undefined) return
-    this.#pending.delete(resolution.suggestionId)
-    this.#resolutions.delete(operationId)
-    await this.#write()
+    await this.#change((pending, resolutions) => {
+      pending.delete(resolution.suggestionId)
+      resolutions.delete(operationId)
+    })
   }
 
   /** The decision did not land: drops its record and keeps the draft pending. */
   async abandon(operationId: string): Promise<void> {
-    if (!this.#resolutions.delete(operationId)) return
-    await this.#write()
+    if (!this.#resolutions.has(operationId)) return
+    await this.#change((_, resolutions) => resolutions.delete(operationId))
   }
 
-  /** Writes the whole file atomically, one write at a time, so concurrent changes cannot interleave. */
-  #write(): Promise<void> {
-    const next = this.#writeChain.then(() => this.#writeNow())
+  /**
+   * Writes the store as `change` leaves it, and only then changes what this store holds in memory.
+   *
+   * One write at a time, so concurrent changes cannot interleave. Memory follows the disk rather than leading
+   * it: when a write fails, the store still says what the file says. Otherwise a failed write would show a
+   * draft as decided, or a decision as settled, that the next session would find otherwise, and an id planned
+   * for an unsettled decision could be handed to something else in the meantime.
+   */
+  #change(
+    change: (pending: Map<string, Suggestion>, resolutions: Map<string, Resolution>) => void,
+  ): Promise<void> {
+    const next = this.#writeChain.then(async () => {
+      const pending = new Map(this.#pending)
+      const resolutions = new Map(this.#resolutions)
+      change(pending, resolutions)
+      await this.#writeNow(pending, resolutions)
+      replace(this.#pending, pending)
+      replace(this.#resolutions, resolutions)
+    })
     // The chain must survive a failed write without staying rejected, while the caller still sees the failure.
     this.#writeChain = next.then(
       () => undefined,
@@ -248,17 +266,20 @@ export class SuggestionStore {
     return next
   }
 
-  async #writeNow(): Promise<void> {
+  async #writeNow(
+    pending: ReadonlyMap<string, Suggestion>,
+    resolutions: ReadonlyMap<string, Resolution>,
+  ): Promise<void> {
     if (this.#filePath === undefined) return
     const lines = [
-      ...this.list().map((suggestion) =>
+      ...[...pending.values()].map((suggestion) =>
         JSON.stringify({
           schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
           kind: 'suggestion',
           suggestion,
         } satisfies StoreRecord),
       ),
-      ...this.resolutions().map((resolution) =>
+      ...[...resolutions.values()].map((resolution) =>
         JSON.stringify({
           schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
           kind: 'resolution',
@@ -270,6 +291,11 @@ export class SuggestionStore {
     await writeFile(temporary, lines.length === 0 ? '' : `${lines.join('\n')}\n`, 'utf8')
     await rename(temporary, this.#filePath)
   }
+}
+
+function replace<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void {
+  target.clear()
+  for (const [key, value] of source) target.set(key, value)
 }
 
 function parseRecord(line: string, lineNumber: number, filePath: string): StoreRecord {
