@@ -537,9 +537,17 @@ export class LearnSession {
       const suffix = Number.parseInt(node.id.slice(prefix.length), 10)
       if (Number.isFinite(suffix) && suffix > highest) highest = suffix
     }
-    // `listNodes` leaves out revoked nodes, but their ids are still taken.
+    // `listNodes` leaves out revoked nodes, but their ids are still taken. So is an id planned for a decision
+    // that has not been settled: if it landed after all, the node it names is that decision's.
+    const planned = new Set(
+      this.#suggestions.resolutions().map((resolution) => resolution.planned.nodeId),
+    )
     let next = highest + 1
-    while (this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined) next += 1
+    while (
+      this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined ||
+      planned.has(`${prefix}${next}`)
+    )
+      next += 1
     return `${prefix}${next}`
   }
 
