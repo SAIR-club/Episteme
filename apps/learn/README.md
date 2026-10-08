@@ -8,7 +8,28 @@ pnpm learn        # terminal
 pnpm learn:web    # local web surface at http://127.0.0.1:4321
 ```
 
-Both run the same loop, over the same graph file, through the same `LearnSession`.
+Both run the same loop, over the same graph file, through the same `LearnSession`. They cannot have it open
+at the same time: a graph has one owner, and the second surface refuses to start and names the process that
+holds it. Ctrl+C and `quit` release the graph; only a process killed outright leaves its lock behind, and the
+message then says which file to delete.
+
+The web surface is also the graph's **MCP host**: it serves the endpoint at `/mcp`, so an agent can recall
+the learner's understanding and propose changes to it while the learner works here. See
+[`@episteme/mcp`](../../packages/mcp/README.md). What agents propose appears at the top of the page as a
+**review queue**, with who proposed it and why. Nothing in it changes the graph or the learner's
+understanding until the learner decides: accept it, modify it into their own value, or dismiss it. The page
+only collects the decision. What each choice commits is `LearnSession.decide()`, the same path an agent's
+host uses.
+
+There is no login, so the page, its API and `/mcp` sit behind one boundary instead. A request is refused when:
+
+- it is addressed to any host name but a loopback name with this port, which defeats DNS rebinding;
+- it comes from another web page's `Origin`, or is marked cross-site by `Sec-Fetch-Site`;
+- it changes something without being sent as `application/json`, which a page cannot send cross-site without
+  a preflight this server never answers.
+
+A web page the learner visits therefore cannot record understanding, accept a suggestion, or read the graph.
+Any local process still can: this is a network boundary, not authorization.
 
 ```bash
 pnpm learn --help
@@ -167,15 +188,17 @@ and a ranked number would imply a precision that a reading of four settable dime
 
 ## Layout
 
-| File                   | Contents                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `src/session.ts`       | `LearnSession` — open, ask, record, add a node, list, flush. Shared by both surfaces |
-| `src/cli.ts`           | the terminal surface, including the command table                                    |
-| `src/server.ts`        | the HTTP surface and its JSON API                                                    |
-| `src/serve.ts`         | starts the web surface and prints where it is                                        |
-| `src/seed.ts`          | the starting topic, so a learner does not face an empty graph                        |
-| `public/index.html`    | the web interface: one file, no build step                                           |
-| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below)                               |
+| File                   | Contents                                                      |
+| ---------------------- | ------------------------------------------------------------- |
+| `src/cli.ts`           | the terminal surface, including the command table             |
+| `src/server.ts`        | the HTTP surface and its JSON API                             |
+| `src/serve.ts`         | starts the web surface and prints where it is                 |
+| `src/seed.ts`          | the starting topic, so a learner does not face an empty graph |
+| `public/index.html`    | the web interface: one file, no build step                    |
+| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below)        |
+
+`LearnSession` — open, ask, record, add a node, list, flush — is shared by both surfaces and lives in
+[`@episteme/application`](../../packages/application/README.md), so that no surface depends on another.
 
 ## Two defects the surface found
 
@@ -199,7 +222,7 @@ evaluation cases.
 ## Why the answer text is Chinese and the code is not
 
 `learnerResponder` in `@episteme/domain-learn` stays English, because that package's demos, tests and docs are
-English. `apps/learn/src/responder.ts` is the Chinese counterpart, and it reproduces the same **three
+English. `packages/application/src/responder.ts` is the Chinese counterpart, and it reproduces the same **three
 structural branches** rather than rewording the English ones:
 
 | situation                           | what the answer does                                           |

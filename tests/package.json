@@ -10,9 +10,11 @@
   "dependencies": {
     "@episteme/agent": "workspace:*",
     "@episteme/app-learn": "workspace:*",
+    "@episteme/application": "workspace:*",
     "@episteme/core": "workspace:*",
     "@episteme/domain-learn": "workspace:*",
     "@episteme/embeddings-http": "workspace:*",
+    "@episteme/mcp": "workspace:*",
     "@episteme/sdk": "workspace:*",
     "@episteme/storage-local": "workspace:*",
     "@episteme/storage-memory": "workspace:*"

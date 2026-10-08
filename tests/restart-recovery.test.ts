@@ -146,6 +146,8 @@ describe('restart recovery', () => {
     await session1.log.persist()
     const writtenPath = await storageA.save()
     expect(writtenPath).toBeUndefined()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     // 鈹€鈹€ Shutdown 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     // Nothing is shared with what follows: a second adapter reads the file from scratch.
@@ -195,6 +197,8 @@ describe('restart recovery', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     const storageB = await openLocalStorage(filePath)
     const session2 = await openEpisteme(storageB)
@@ -231,6 +235,8 @@ describe('restart recovery', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     // A second, unrelated file must not inherit the first one's understanding.
     const otherPath = join(directory, 'other.jsonl')

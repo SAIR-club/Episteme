@@ -277,3 +277,135 @@ describe('routing', () => {
     expect(list<{ nodeId: string }>(body, 'nodes').map((node) => node.nodeId)).toContain(target)
   })
 })
+
+describe('the review queue', () => {
+  /** An agent's proposal, sent the way an MCP host sends it. */
+  async function proposeOverMcp(args: Record<string, unknown>): Promise<void> {
+    const response = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'tools/call',
+        'mcp-name': 'propose',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'propose',
+          arguments: args,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'queue-test', version: '1' },
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      }),
+    })
+    expect(response.status).toBe(200)
+  }
+
+  it('is empty until an agent proposes something', async () => {
+    const { body } = await get('/api/state')
+    expect(list(body, 'suggestions')).toEqual([])
+  })
+
+  it('shows an agent’s proposal, who made it and why, without changing the learner’s state', async () => {
+    const before = field<number>((await get('/api/state')).body, 'events')
+    await proposeOverMcp({
+      kind: 'state',
+      target: 'q_why_order',
+      dimension: 'confidence',
+      level: 'medium',
+      rationale: 'they answered it but hedged',
+    })
+
+    const { body } = await get('/api/suggestions')
+    const [suggestion] = list<{
+      proposedBy: string
+      rationale: string
+      proposal: { kind: string }
+    }>(body, 'suggestions')
+    expect(suggestion).toMatchObject({
+      proposedBy: 'actor_agent_queue-test',
+      rationale: 'they answered it but hedged',
+      proposal: { kind: 'state' },
+    })
+
+    const state = (await get('/api/state')).body
+    expect(list(state, 'suggestions')).toHaveLength(1)
+    expect(field<number>(state, 'events')).toBe(before)
+  })
+
+  async function pendingId(): Promise<string> {
+    await proposeOverMcp({
+      kind: 'state',
+      target: 'q_why_order',
+      dimension: 'confidence',
+      level: 'medium',
+      rationale: 'r',
+    })
+    const [suggestion] = list<{ id: string }>((await get('/api/suggestions')).body, 'suggestions')
+    if (suggestion === undefined) throw new Error('no suggestion was kept')
+    return suggestion.id
+  }
+
+  it('accepts a suggestion into the learner’s state through the shared decision path', async () => {
+    const id = await pendingId()
+    const before = field<number>((await get('/api/state')).body, 'events')
+
+    const { status, body } = await post('/api/suggestions/decide', { id, action: 'accept' })
+    expect(status).toBe(200)
+    expect(field<{ outcome: string }>(body, 'result').outcome).toBe('accepted')
+    expect(list(body, 'suggestions')).toEqual([])
+    expect(field<number>(body, 'events')).toBe(before + 1)
+
+    const state = (await get('/api/state')).body
+    const understanding = field<Record<string, unknown>>(state, 'understanding')
+    expect(understanding['q_why_order']).toEqual([{ id: 'confidence', level: 'medium' }])
+  })
+
+  it('records the learner’s own value when they modify it', async () => {
+    const id = await pendingId()
+    await post('/api/suggestions/decide', {
+      id,
+      action: 'modify',
+      proposal: { kind: 'state', target: 'q_why_order', dimension: 'confidence', level: 'high' },
+    })
+    const understanding = field<Record<string, unknown>>(
+      (await get('/api/state')).body,
+      'understanding',
+    )
+    expect(understanding['q_why_order']).toEqual([{ id: 'confidence', level: 'high' }])
+  })
+
+  it('dismisses without recording anything', async () => {
+    const id = await pendingId()
+    const before = field<number>((await get('/api/state')).body, 'events')
+    const { status } = await post('/api/suggestions/decide', { id, action: 'dismiss' })
+    expect(status).toBe(200)
+    expect(field<number>((await get('/api/state')).body, 'events')).toBe(before)
+  })
+
+  it('reports a refused decision as a refusal, with its code, and keeps the draft', async () => {
+    const id = await pendingId()
+    const { status, body } = await post('/api/suggestions/decide', {
+      id,
+      action: 'modify',
+      proposal: { kind: 'state', target: 'q_why_order', dimension: 'confidence', level: 'total' },
+    })
+    expect(status).toBe(422)
+    expect(field<string>(body, 'code')).toBe('invalid_dimension_value')
+    expect(list((await get('/api/suggestions')).body, 'suggestions')).toHaveLength(1)
+  })
+
+  it('rejects a malformed decision before it reaches the application', async () => {
+    const id = await pendingId()
+    const { status } = await post('/api/suggestions/decide', { id, action: 'approve' })
+    expect(status).toBe(500)
+    expect(list((await get('/api/suggestions')).body, 'suggestions')).toHaveLength(1)
+  })
+})

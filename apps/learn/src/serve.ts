@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { optionValue } from './cli.js'
+import { GraphLockedError } from '@episteme/application'
+import { lockedMessage, optionValue } from './cli.js'
 import { startLearnServer } from './server.js'
 import type { SeedTopic } from './seed.js'
 import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
@@ -60,15 +61,24 @@ try {
   process.exit(1)
 }
 
-const server = await startLearnServer({
-  port,
-  filePath,
-  ...(topic === undefined ? {} : { topic }),
-})
+let server: Awaited<ReturnType<typeof startLearnServer>>
+try {
+  server = await startLearnServer({
+    port,
+    filePath,
+    ...(topic === undefined ? {} : { topic }),
+  })
+} catch (error) {
+  // Only the one failure a learner can act on is translated. Anything else is a bug and keeps its stack.
+  if (!(error instanceof GraphLockedError)) throw error
+  process.stderr.write(`${lockedMessage(error)}\n`)
+  process.exit(1)
+}
 
 process.stdout.write(
   `\nEPISTEME · Learn\n` +
     `\n  界面：  ${server.url}\n` +
+    `  MCP：   ${server.mcpUrl}  （让 agent 读取你的理解、提出建议；它不能替你确认）\n` +
     `  图谱：  ${filePath}\n` +
     (topic === undefined ? '' : `  主题：  ${topic.title}\n`) +
     `\n  这是你自己认知图谱上的一个本地界面。你记录的一切都会写入磁盘，关掉进程也不会丢。\n` +

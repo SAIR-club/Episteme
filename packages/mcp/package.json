@@ -1,0 +1,26 @@
+{
+  "name": "@episteme/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The MCP surface: lets an agent recall, propose and reflect over one learner's graph, and nothing else.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/application": "workspace:*",
+    "@modelcontextprotocol/server": "^2.3.0"
+  }
+}

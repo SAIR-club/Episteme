@@ -1,10 +1,15 @@
+import { randomUUID } from 'node:crypto'
 import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
   asId,
+  isEpistemeError,
+  systemClock,
   type ActorId,
   type DimensionId,
   type EdgeId,
+  type EdgeTypeId,
+  type MutationRefusal,
   type EmbeddingAdapter,
   type GraphNode,
   type NodeId,
@@ -24,6 +29,7 @@ import {
 } from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { chineseLearnerResponder } from './responder.js'
+import { SuggestionStore, type Proposal, type Resolution, type Suggestion } from './suggestions.js'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
 
@@ -165,16 +171,20 @@ export interface UnderstandingView {
   readonly dimensions: readonly { readonly id: string; readonly level: string }[]
 }
 
-export interface AskResult {
+/** The evidence for a question: what was retrieved, why, and what the learner has recorded about it. */
+export interface RecallResult {
   readonly question: string
-  readonly answer: string
-  /** Whether the answer was shaped by recorded prior understanding. Data, not prose. */
-  readonly usedContext: boolean
   readonly retriever: string
   readonly summary: string
   readonly known: readonly UnderstandingView[]
   readonly ranked: readonly RankedView[]
   readonly rules: readonly RankRule[]
+}
+
+export interface AskResult extends RecallResult {
+  readonly answer: string
+  /** Whether the answer was shaped by recorded prior understanding. Data, not prose. */
+  readonly usedContext: boolean
 }
 
 /** The scoring model, echoed so the surface can be honest about how relevance was decided. */
@@ -248,16 +258,22 @@ export class LearnSession {
   readonly #episteme: Episteme
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
-  readonly #store: { save(state?: unknown): Promise<void> } | undefined
-  #saveChain: Promise<void> = Promise.resolve()
+  readonly #store: Store | undefined
+  readonly #suggestions: SuggestionStore
+  /** The tail of the mutation queue. See `#exclusive`. */
+  #mutations: Promise<unknown> = Promise.resolve()
+  #closed = false
+  readonly #recovered: RecoveredDecision[] = []
 
   private constructor(
     episteme: Episteme,
     retriever: Retriever,
-    store?: { save(state?: unknown): Promise<void> },
+    suggestions: SuggestionStore,
+    store?: Store,
   ) {
     this.#episteme = episteme
     this.#retriever = retriever
+    this.#suggestions = suggestions
     this.#store = store
   }
 
@@ -283,12 +299,23 @@ export class LearnSession {
           new InMemoryEmbeddingCache(),
           ...(options.weights === undefined ? [] : [options.weights]),
         ),
+        await SuggestionStore.open(),
       )
     }
 
     const storage = await openLocalStorage(options.filePath)
-    const episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
-    return new LearnSession(
+    let episteme: Episteme
+    let suggestions: SuggestionStore
+    try {
+      episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
+      // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
+      suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
+    } catch (error) {
+      // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
+      await storage.close()
+      throw error
+    }
+    const session = new LearnSession(
       episteme,
       new HybridRetriever(
         episteme.graph,
@@ -297,8 +324,17 @@ export class LearnSession {
         new InMemoryEmbeddingCache(),
         ...(options.weights === undefined ? [] : [options.weights]),
       ),
+      suggestions,
       storage,
     )
+    try {
+      // Before anyone can use it: a decision a crash left half-done is finished or undone first.
+      await session.#recover()
+    } catch (error) {
+      await storage.close()
+      throw error
+    }
+    return session
   }
 
   get actorId(): ActorId {
@@ -346,20 +382,37 @@ export class LearnSession {
    * two cannot disagree.
    */
   async ask(question: string): Promise<AskResult> {
-    const context = await retrieveWith(
-      this.#retriever,
-      this.#episteme.graph,
-      this.#episteme.log,
-      question,
-      { actorId: HUMAN, depth: 1, limit: 8 },
-    )
-
+    const context = await this.#retrieve(question)
     const response = await this.#agent.respond({ text: question }, toAgentContext(context))
-
     return {
-      question,
+      ...this.#recallView(question, context),
       answer: response.text,
       usedContext: response.usedContext,
+    }
+  }
+
+  /**
+   * What the learner already understands that bears on a question, and why each item was retrieved, without
+   * an answer.
+   *
+   * For a surface whose own agent writes the answer, such as an MCP host. It is the same retrieval `ask`
+   * uses, so an agent recalling a question sees exactly the evidence the Learn surface would show for it.
+   */
+  async recall(question: string): Promise<RecallResult> {
+    return this.#recallView(question, await this.#retrieve(question))
+  }
+
+  #retrieve(question: string): Promise<RelevantContext> {
+    return retrieveWith(this.#retriever, this.#episteme.graph, this.#episteme.log, question, {
+      actorId: HUMAN,
+      depth: 1,
+      limit: 8,
+    })
+  }
+
+  #recallView(question: string, context: RelevantContext): RecallResult {
+    return {
+      question,
       retriever: context.retriever,
       // The Chinese display form, decided here so every surface reads the same and no view invents its own
       // wording for "nothing recorded". `contextSummary` is the English one, used by the English demos.
@@ -410,25 +463,25 @@ export class LearnSession {
       }
     }
 
-    const event = this.#episteme.log.commit({
-      target: asId<NodeId>(target),
-      actorId: HUMAN,
-      dimensions: new Map(
-        entries.map(([dimension, level]): [DimensionId, StateValue] => [
-          asId<DimensionId>(dimension),
-          { level },
-        ]),
-      ),
-      ...(options.reason === undefined ? {} : { reason: options.reason }),
-      source: 'learn-surface',
+    return this.#exclusive(async () => {
+      const event = this.#episteme.log.commit({
+        target: asId<NodeId>(target),
+        actorId: HUMAN,
+        dimensions: new Map(
+          entries.map(([dimension, level]): [DimensionId, StateValue] => [
+            asId<DimensionId>(dimension),
+            { level },
+          ]),
+        ),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+        source: 'learn-surface',
+      })
+      await this.#persist()
+      return {
+        eventId: event.id,
+        recorded: entries.map(([id, level]) => ({ id, level })),
+      }
     })
-
-    await this.flush()
-
-    return {
-      eventId: event.id,
-      recorded: entries.map(([id, level]) => ({ id, level })),
-    }
   }
 
   /**
@@ -446,23 +499,26 @@ export class LearnSession {
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
   }): Promise<NodeView> {
-    const node = this.addNodeSync({
-      id: input.id ?? this.#nextId(input.kind),
-      label: input.label,
-      type:
-        input.kind === 'claim'
-          ? NODE.claim
-          : input.kind === 'concept'
-            ? NODE.concept
-            : NODE.question,
-      // A concept the learner introduces is reference material; a claim is their own thinking. The tier
-      // decides whether it counts as understanding, so it is not a cosmetic field.
-      tier: input.kind === 'concept' ? 'reference' : 'thought',
-      ...(input.topic === undefined ? {} : { topic: input.topic }),
-      ...(input.source === undefined ? {} : { source: input.source }),
+    return this.#exclusive(async () => {
+      // The id is chosen inside the queue, so two concurrent additions cannot both pick the same next id.
+      const node = this.#addNodeNow({
+        id: input.id ?? this.#nextId(input.kind),
+        label: input.label,
+        type:
+          input.kind === 'claim'
+            ? NODE.claim
+            : input.kind === 'concept'
+              ? NODE.concept
+              : NODE.question,
+        // A concept the learner introduces is reference material; a claim is their own thinking. The tier
+        // decides whether it counts as understanding, so it is not a cosmetic field.
+        tier: input.kind === 'concept' ? 'reference' : 'thought',
+        ...(input.topic === undefined ? {} : { topic: input.topic }),
+        ...(input.source === undefined ? {} : { source: input.source }),
+      })
+      await this.#persist()
+      return node
     })
-    await this.flush()
-    return node
   }
 
   /**
@@ -481,7 +537,18 @@ export class LearnSession {
       const suffix = Number.parseInt(node.id.slice(prefix.length), 10)
       if (Number.isFinite(suffix) && suffix > highest) highest = suffix
     }
-    return `${prefix}${highest + 1}`
+    // `listNodes` leaves out revoked nodes, but their ids are still taken. So is an id planned for a decision
+    // that has not been settled: if it landed after all, the node it names is that decision's.
+    const planned = new Set(
+      this.#suggestions.resolutions().map((resolution) => resolution.planned.nodeId),
+    )
+    let next = highest + 1
+    while (
+      this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined ||
+      planned.has(`${prefix}${next}`)
+    )
+      next += 1
+    return `${prefix}${next}`
   }
 
   /**
@@ -499,19 +566,25 @@ export class LearnSession {
   }
 
   /**
-   * The unflushed half of `addNode`.
+   * Runs several additions as one mutation and one write, such as seeding a topic.
    *
-   * Exists so a batch 鈥?seeding a topic 鈥?is one write rather than one write per node. Callers that use it
-   * must `flush()` themselves; every path in this file that does is listed next to its `flush()` call.
+   * `work` runs inside the mutation queue, so whatever it reads before it writes (for example, whether a
+   * topic is already there) cannot change underneath it. It is synchronous on purpose: nothing else can run
+   * in the middle of it, and the batch is written once when it returns.
    */
-  addNodeSync(input: {
-    readonly id: string
-    readonly label: string
-    readonly type: Parameters<Episteme['graph']['addNode']>[0]['type']
-    readonly tier: 'draft' | 'thought' | 'reference'
-    readonly topic?: string
-    readonly source?: string
-  }): NodeView {
+  batch<T>(work: (writer: SessionWriter) => T): Promise<T> {
+    return this.#exclusive(async () => {
+      const result = work({
+        addNode: (input) => this.#addNodeNow(input),
+        link: (from, to, type, id) => this.#linkNow(from, to, type, id),
+      })
+      await this.#persist()
+      return result
+    })
+  }
+
+  /** Adds one node. Only ever called inside the mutation queue. */
+  #addNodeNow(input: NodeInput): NodeView {
     const label = input.label.trim()
     if (label === '') throw new Error('a node needs a label')
 
@@ -535,23 +608,27 @@ export class LearnSession {
     type = EDGE.refersTo,
     id?: string,
   ): Promise<{ readonly edgeId: string }> {
-    const edge = this.linkSync(from, to, type, id)
-    await this.flush()
-    return edge
+    return this.#exclusive(async () => {
+      const edge = this.#linkNow(from, to, type, id)
+      await this.#persist()
+      return edge
+    })
   }
 
-  /** The unflushed half of `link`. See `addNodeSync`. */
-  linkSync(
+  /** Adds one edge. Only ever called inside the mutation queue. */
+  #linkNow(
     from: string,
     to: string,
     type: Parameters<Episteme['graph']['addEdge']>[0]['type'] = EDGE.refersTo,
     id?: string,
+    source?: string,
   ): { readonly edgeId: string } {
     const edge = this.#episteme.graph.addEdge({
-      id: asId<EdgeId>(id ?? `edge_${this.#episteme.log.eventCount}_${slug(from)}_${slug(to)}`),
+      id: asId<EdgeId>(id ?? newEdgeId()),
       type,
       from: asId<NodeId>(from),
       to: asId<NodeId>(to),
+      ...(source === undefined ? {} : { source }),
     })
     return { edgeId: edge.id }
   }
@@ -652,25 +729,437 @@ export class LearnSession {
     }
   }
 
-  /**
-   * Writes the history through the store, if there is one.
-   *
-   * Serialised behind a promise chain because two concurrent callers could otherwise interleave a read of
-   * the log with a partial write of the file. `LocalStorageAdapter.save` is already atomic per write; this
-   * keeps the *sequence* ordered too.
-   */
+  /** Writes the history through the store, if there is one, after every mutation already queued. */
   flush(): Promise<void> {
-    const next = this.#saveChain.then(() => this.#persistNow())
-    // The chain must survive a failed write without becoming permanently rejected, while the caller still
-    // sees the failure.
-    this.#saveChain = next.then(
+    return this.#exclusive(() => this.#persist())
+  }
+
+  /**
+   * Runs one mutation of this session's graph, history or drafts, after every mutation queued before it.
+   *
+   * Every method that changes state goes through here, and nothing it runs calls another public mutating
+   * method, which would wait on itself. Reads are not queued: they see the state as it stands between
+   * mutations. Without this, a mutation that awaits a write lets a second one start on the same state; two
+   * decisions on one draft could then both commit.
+   *
+   * A failed mutation rejects for its caller only. The queue carries on with the next one.
+   */
+  #exclusive<T>(work: () => Promise<T> | T): Promise<T> {
+    const run = this.#mutations.then(() => {
+      if (this.#closed)
+        throw new Error('this session is closed; open a new one to change the graph')
+      return work()
+    })
+    this.#mutations = run.then(
       () => undefined,
       () => undefined,
     )
-    return next
+    return run
   }
 
-  async #persistNow(): Promise<void> {
+  /**
+   * Keeps an agent's proposal as a pending draft, for a human to decide later.
+   *
+   * Nothing here changes the graph or the history. What can be checked now is checked now, so an agent learns
+   * at once that a proposal could never be accepted, rather than leaving the learner a draft that fails when
+   * they try to take it: the nodes it names must exist, a claim and a link must pass the graph's own preview,
+   * and a state change must use a dimension and level the learner could record themselves. A refusal is
+   * returned as a value, as `previewNode` does, because proposing something unacceptable is an ordinary
+   * outcome.
+   *
+   * `proposedBy` must be an agent. The human does not propose to themselves; they record.
+   */
+  async propose(
+    proposal: Proposal,
+    from: { readonly proposedBy: string; readonly rationale: string },
+  ): Promise<ProposeResult> {
+    return this.#exclusive(async (): Promise<ProposeResult> => {
+      // Checked inside the queue, against the graph as it is when the draft is kept.
+      const refusal = this.#refusalOf(proposal, from)
+      if (refusal !== undefined) return { ok: false, refusal }
+
+      const suggestion = await this.#suggestions.add({
+        proposal: normalized(proposal),
+        rationale: from.rationale.trim(),
+        proposedBy: from.proposedBy,
+        proposedAt: systemClock.now(),
+      })
+      return { ok: true, suggestion }
+    })
+  }
+
+  /** Every draft still waiting for the learner, oldest first. */
+  pendingSuggestions(): readonly Suggestion[] {
+    return this.#suggestions.list()
+  }
+
+  /**
+   * Applies the learner's decision on a pending suggestion: the one path from a human decision to the graph
+   * (ADR 0008).
+   *
+   * Every channel (the Learn review queue, MCP elicitation) collects the decision and calls this. None of
+   * them commits on its own, so accept, modify and dismiss mean the same thing wherever they were chosen.
+   *
+   * - **accept** commits the agent's proposed value. A state change is committed as `confirmed`, and
+   *   `confirmedBy` is this session's human. There is no parameter for it: the confirming human is the one
+   *   whose graph this is, never a value a caller, a client or an agent supplies.
+   * - **modify** commits the human's own value instead, of the same kind, checked as the agent's was. The
+   *   human wrote it, so it is authored rather than confirmed.
+   * - **dismiss** removes the draft and commits nothing. No cognitive event records it, because the graph
+   *   never saw the draft.
+   *
+   * Everything committed goes through the ordinary validated path, and its source names the suggestion, the
+   * agent that proposed it and the channel that resolved it. A refusal (an unknown suggestion, a modified
+   * value that could never be committed, or a commit the graph rejects) is returned as a value and leaves
+   * the draft pending.
+   */
+  decide(
+    suggestionId: string,
+    decision: Decision,
+    channel: DecisionChannel,
+  ): Promise<DecisionResult> {
+    // One decision at a time, from reading the draft to removing it: of two decisions on the same draft,
+    // whichever is queued first wins, and the second finds it already decided.
+    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel))
+  }
+
+  async #decideNow(
+    suggestionId: string,
+    decision: Decision,
+    channel: DecisionChannel,
+  ): Promise<DecisionResult> {
+    // A decision on this draft that started before and was never settled (its write failed) is settled first,
+    // so deciding again cannot commit a second time.
+    const unsettled = this.#suggestions.resolutionOf(suggestionId)
+    if (unsettled !== undefined) await this.#settle(unsettled)
+
+    const suggestion = this.#suggestions.get(suggestionId)
+    if (suggestion === undefined) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'unknown_suggestion',
+          message: `suggestion "${suggestionId}" is not pending; it may already have been decided`,
+        },
+      }
+    }
+
+    // One write of one file, so it needs no record of its own: it happened or it did not.
+    if (decision.action === 'dismiss') {
+      await this.#suggestions.remove(suggestion.id)
+      return { ok: true, outcome: 'dismissed', suggestion }
+    }
+
+    const proposal = normalized(
+      decision.action === 'accept' ? suggestion.proposal : decision.proposal,
+    )
+    if (proposal.kind !== suggestion.proposal.kind) {
+      return {
+        ok: false,
+        refusal: {
+          code: 'kind_changed',
+          message: `a ${suggestion.proposal.kind} suggestion can only be modified into another ${suggestion.proposal.kind}`,
+        },
+      }
+    }
+    const refusal = this.#contentRefusalOf(proposal)
+    if (refusal !== undefined) return { ok: false, refusal }
+
+    // Recorded before anything is committed, with the ids it will create, so a crash at any point after this
+    // leaves enough behind to tell whether the decision landed.
+    const operationId = `dec_${randomUUID()}`
+    const resolution: Resolution = {
+      operationId,
+      suggestionId: suggestion.id,
+      outcome: decision.action === 'accept' ? 'accepted' : 'modified',
+      proposal,
+      planned: this.#plan(proposal, operationId),
+      channel,
+    }
+    await this.#suggestions.begin(resolution)
+
+    let committed: Committed | MutationRefusal
+    try {
+      committed = this.#commitDecided(resolution, suggestion)
+    } catch (error) {
+      // Only the graph's own refusals become a value. Anything else is a bug: it propagates, and the record
+      // stays for the next decision on this draft, or the next start, to settle.
+      if (!isEpistemeError(error)) throw error
+      committed = { code: error.code, message: error.message }
+    }
+    if ('code' in committed) {
+      // A revoked claim may be pending; it is written like any other change, and the draft stays.
+      await this.#persist()
+      await this.#suggestions.abandon(operationId)
+      return { ok: false, refusal: committed }
+    }
+
+    await this.#persist()
+    // The draft and the record go together, in one write, once the graph holds the change.
+    await this.#suggestions.complete(operationId)
+    return { ok: true, outcome: resolution.outcome, suggestion, committed, operationId }
+  }
+
+  /**
+   * The ids a decision will create, chosen before it commits.
+   *
+   * Derived from the operation id, so they are unique and can be looked for in the graph afterwards. A
+   * claim's node keeps the short counted id a learner types; it is chosen inside the mutation queue, so
+   * nothing else can take it before the decision commits.
+   */
+  #plan(proposal: Proposal, operationId: string): Resolution['planned'] {
+    switch (proposal.kind) {
+      case 'state':
+        return { edgeIds: [] }
+      case 'link':
+        return { edgeIds: [`edge_${operationId}_0`] }
+      case 'claim':
+        return {
+          nodeId: this.#nextId('claim'),
+          edgeIds: (proposal.about ?? []).map((_, index) => `edge_${operationId}_${index}`),
+        }
+    }
+  }
+
+  /**
+   * Whether a decision's change is in the graph.
+   *
+   * A state change is found by the suggestion it names (`sourceOf`), which no other event can name, because a
+   * draft is decided at most once. A claim or a link is found by the id planned for it, and only counts while
+   * it is not revoked: a claim withdrawn because its links were refused did not land.
+   */
+  #landed(resolution: Resolution): boolean {
+    const { proposal, planned } = resolution
+    switch (proposal.kind) {
+      case 'state':
+        return this.#episteme.log
+          .history({ target: asId<NodeId>(proposal.target), actorId: HUMAN })
+          .some((event) =>
+            [...event.dimensions.values()].some(
+              (value) => value.sourceOf === resolution.suggestionId,
+            ),
+          )
+      case 'link': {
+        const [edgeId] = planned.edgeIds
+        const edge = edgeId === undefined ? undefined : this.#episteme.graph.getEdge(edgeId)
+        return edge !== undefined && edge.revoked !== true
+      }
+      case 'claim': {
+        const node =
+          planned.nodeId === undefined ? undefined : this.#episteme.graph.getNode(planned.nodeId)
+        return node !== undefined && node.revoked !== true
+      }
+    }
+  }
+
+  /**
+   * Settles a decision that started and was not finished: completes it if its change landed, drops its record
+   * otherwise. Only ever called inside the mutation queue, or while opening.
+   */
+  async #settle(resolution: Resolution): Promise<RecoveredDecision> {
+    if (this.#landed(resolution)) {
+      // If a write failed, the change may so far exist only in memory. It is written before the draft goes.
+      await this.#persist()
+      await this.#suggestions.complete(resolution.operationId)
+      return { ...identify(resolution), settled: 'completed' }
+    }
+    await this.#suggestions.abandon(resolution.operationId)
+    return { ...identify(resolution), settled: 'rolled_back' }
+  }
+
+  /** Decisions found unsettled when this session opened, and how each was settled. */
+  get recovered(): readonly RecoveredDecision[] {
+    return this.#recovered
+  }
+
+  /** Settles every decision a previous session left unfinished. Runs once, before the session is handed out. */
+  async #recover(): Promise<void> {
+    for (const resolution of this.#suggestions.resolutions()) {
+      this.#recovered.push(await this.#settle(resolution))
+    }
+  }
+
+  /**
+   * Commits a decided proposal through the validated graph and log, with the ids planned for it.
+   *
+   * Throws the graph's own refusals, except one it has to detect itself: an edge of an accepted claim that
+   * cannot be added, which it returns after withdrawing the claim.
+   */
+  #commitDecided(resolution: Resolution, suggestion: Suggestion): Committed | MutationRefusal {
+    const { proposal, planned } = resolution
+    const confirmed = resolution.outcome === 'accepted'
+    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})`
+    switch (proposal.kind) {
+      case 'state': {
+        const value: StateValue = confirmed
+          ? {
+              level: proposal.level,
+              authority: 'confirmed',
+              confirmedBy: HUMAN,
+              sourceOf: suggestion.id,
+            }
+          : { level: proposal.level, sourceOf: suggestion.id }
+        const event = this.#episteme.log.commit({
+          target: asId<NodeId>(proposal.target),
+          actorId: HUMAN,
+          dimensions: new Map([[asId<DimensionId>(proposal.dimension), value]]),
+          reason: suggestion.rationale,
+          source,
+        })
+        return { kind: 'event', id: event.id }
+      }
+      case 'link': {
+        const edge = this.#linkNow(
+          proposal.from,
+          proposal.to,
+          asId<EdgeTypeId>(proposal.relation),
+          planned.edgeIds[0],
+          source,
+        )
+        return { kind: 'edge', id: edge.edgeId }
+      }
+      case 'claim': {
+        const node = this.#addNodeNow({
+          id: planned.nodeId ?? this.#nextId('claim'),
+          label: proposal.label,
+          type: NODE.claim,
+          tier: 'thought',
+          source,
+        })
+        // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
+        // is how the graph withdraws something, so nothing half-accepted stays standing.
+        const edges = (proposal.about ?? []).map((target, index) => ({
+          id: asId<EdgeId>(planned.edgeIds[index] ?? newEdgeId()),
+          type: EDGE.refersTo,
+          from: asId<NodeId>(node.nodeId),
+          to: asId<NodeId>(target),
+          source,
+        }))
+        for (const edge of edges) {
+          const preview = this.#episteme.graph.previewEdge(edge)
+          if (!preview.ok) {
+            this.#episteme.graph.revokeNode(node.nodeId)
+            return preview.refusal
+          }
+        }
+        for (const edge of edges) this.#episteme.graph.addEdge(edge)
+        return { kind: 'node', id: node.nodeId }
+      }
+    }
+  }
+
+  /** Why a proposal could never be accepted, or `undefined` when it could be. */
+  #refusalOf(
+    proposal: Proposal,
+    from: { readonly proposedBy: string; readonly rationale: string },
+  ): MutationRefusal | undefined {
+    if (from.rationale.trim() === '') {
+      return { code: 'missing_rationale', message: 'a suggestion must say why it is proposed' }
+    }
+    if (from.proposedBy.trim() === '' || from.proposedBy === HUMAN) {
+      return {
+        code: 'not_an_agent',
+        message: 'only an agent proposes; the human records their own understanding directly',
+      }
+    }
+    return this.#contentRefusalOf(proposal)
+  }
+
+  /**
+   * Why a proposal's content could never be committed, or `undefined` when it could be.
+   *
+   * Shared by proposing and by a human's modification, so a value the human edits meets exactly the checks
+   * the agent's value met.
+   */
+  #contentRefusalOf(proposal: Proposal): MutationRefusal | undefined {
+    const missing = (id: string): MutationRefusal | undefined =>
+      this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
+        ? { code: 'unknown_node', message: `node "${id}" does not exist` }
+        : undefined
+
+    switch (proposal.kind) {
+      case 'claim': {
+        const label = proposal.label.trim()
+        if (label === '') return { code: 'missing_property', message: 'a claim needs a label' }
+        for (const id of proposal.about ?? []) {
+          const refusal = missing(id)
+          if (refusal !== undefined) return refusal
+        }
+        const preview = this.#episteme.graph.previewNode({
+          id: asId<NodeId>(this.#nextId('claim')),
+          type: NODE.claim,
+          label,
+          properties: { text: label },
+          tags: learnTags('general'),
+          tier: 'thought',
+        })
+        return preview.ok ? undefined : preview.refusal
+      }
+      case 'link': {
+        // Two edges of one type between the same nodes say the same thing twice.
+        const existing = this.#episteme.graph
+          .listEdges()
+          .find(
+            (edge) =>
+              edge.from === proposal.from &&
+              edge.to === proposal.to &&
+              edge.type === proposal.relation,
+          )
+        if (existing !== undefined) {
+          return {
+            code: 'duplicate_edge',
+            message: `"${proposal.from}" already ${proposal.relation} "${proposal.to}" (edge ${existing.id})`,
+          }
+        }
+        const preview = this.#episteme.graph.previewEdge({
+          id: asId<EdgeId>(newEdgeId()),
+          type: asId<EdgeTypeId>(proposal.relation),
+          from: asId<NodeId>(proposal.from),
+          to: asId<NodeId>(proposal.to),
+        })
+        return preview.ok ? undefined : preview.refusal
+      }
+      case 'state': {
+        const refusal = missing(proposal.target)
+        if (refusal !== undefined) return refusal
+        const dimension = RECORDABLE_DIMENSIONS.find(
+          (candidate) => candidate.id === proposal.dimension,
+        )
+        if (dimension === undefined) {
+          return {
+            code: 'unregistered_dimension',
+            message: `"${proposal.dimension}" is not a dimension the learner records. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
+          }
+        }
+        if (!dimension.levels.includes(proposal.level)) {
+          return {
+            code: 'invalid_dimension_value',
+            message: `"${proposal.level}" is not a level of ${dimension.id}. Available: ${dimension.levels.join(', ')}`,
+          }
+        }
+        return undefined
+      }
+    }
+  }
+
+  /**
+   * Writes what is pending and gives up ownership of the graph file, so another surface can open it.
+   *
+   * Every surface that opens a session closes it on the way out. A session that is never closed holds the
+   * graph until its process exits.
+   */
+  close(): Promise<void> {
+    // Queued like a mutation, so it waits for every change already under way, and nothing queued after it
+    // can change a graph this session no longer owns.
+    return this.#exclusive(async () => {
+      await this.#persist()
+      await this.#store?.close()
+      this.#closed = true
+    })
+  }
+
+  /** Writes the graph and history. Only ever called inside the mutation queue. */
+  async #persist(): Promise<void> {
     if (this.#store === undefined) return
     await this.#episteme.persist()
     await this.#store.save()
@@ -685,6 +1174,98 @@ export class LearnSession {
       tags: [...node.tags],
     }
   }
+}
+
+/** Where a human made a decision, recorded with whatever it committed. */
+export type DecisionChannel = 'learn-review' | 'mcp-elicitation'
+
+/** What a human decided about a pending suggestion. */
+export type Decision =
+  | { readonly action: 'accept' }
+  | { readonly action: 'modify'; readonly proposal: Proposal }
+  | { readonly action: 'dismiss' }
+
+/** What a decision committed: one state event, one edge, or one claim node. */
+export interface Committed {
+  readonly kind: 'event' | 'edge' | 'node'
+  readonly id: string
+}
+
+export type DecisionResult =
+  | {
+      readonly ok: true
+      readonly outcome: 'accepted' | 'modified'
+      readonly suggestion: Suggestion
+      readonly committed: Committed
+      /** Names this decision in the graph's provenance and in the write-ahead record. */
+      readonly operationId: string
+    }
+  | { readonly ok: true; readonly outcome: 'dismissed'; readonly suggestion: Suggestion }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** A decision found unfinished when a session opened, and what was done about it. */
+export interface RecoveredDecision {
+  readonly operationId: string
+  readonly suggestionId: string
+  /** `completed`: it had landed, so its draft was removed. `rolled_back`: it had not, so the draft waits. */
+  readonly settled: 'completed' | 'rolled_back'
+}
+
+function identify(resolution: Resolution): Omit<RecoveredDecision, 'settled'> {
+  return { operationId: resolution.operationId, suggestionId: resolution.suggestionId }
+}
+
+export type ProposeResult =
+  | { readonly ok: true; readonly suggestion: Suggestion }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** A node to add, as a batch or an addition gives it. */
+export interface NodeInput {
+  readonly id: string
+  readonly label: string
+  readonly type: Parameters<Episteme['graph']['addNode']>[0]['type']
+  readonly tier: 'draft' | 'thought' | 'reference'
+  readonly topic?: string
+  readonly source?: string
+}
+
+/** What a batch may do: add nodes and link them, all written together when it returns. */
+export interface SessionWriter {
+  addNode(input: NodeInput): NodeView
+  link(
+    from: string,
+    to: string,
+    type?: Parameters<Episteme['graph']['addEdge']>[0]['type'],
+    id?: string,
+  ): { readonly edgeId: string }
+}
+
+/**
+ * A new edge id: unique without depending on anything that can repeat.
+ *
+ * Edge ids were once derived from the event count and the endpoints, which repeats whenever two edges join
+ * the same nodes with no event in between, as accepting two links does. Core now refuses a repeated id, so a
+ * repeating scheme would turn into refusals rather than overwrites. Nothing types an edge id by hand.
+ */
+function newEdgeId(): string {
+  return `edge_${randomUUID()}`
+}
+
+/** A proposal with what it names said once: a claim about the same node twice is about it once. */
+function normalized(proposal: Proposal): Proposal {
+  if (proposal.kind !== 'claim' || proposal.about === undefined) return proposal
+  return { ...proposal, about: [...new Set(proposal.about)] }
+}
+
+/** Drafts live beside the graph file they are about, and are owned with it. */
+function suggestionsPathFor(graphPath: string): string {
+  return `${graphPath}.suggestions.jsonl`
+}
+
+/** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
+interface Store {
+  save(state?: unknown): Promise<void>
+  close(): Promise<void>
 }
 
 /** Turns the retrieval's recorded contributions into something a view can render. */
@@ -783,16 +1364,6 @@ function explainSignalZh(signal: string, value: number, matchedTerms: readonly s
     default:
       return signal
   }
-}
-
-function slug(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, '_')
-      .replace(/^_+|_+$/gu, '')
-      .slice(0, 40) || 'node'
-  )
 }
 
 /**

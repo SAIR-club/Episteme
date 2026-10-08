@@ -257,6 +257,8 @@ export async function runSemanticDemo(): Promise<SemanticDemoResult> {
 
     await episteme.persist()
     await storage.save()
+    // Stopping gives up the graph, so the next session can own it.
+    await storage.close()
 
     // ── Session 2: a fresh instance over the same file, empty embedding cache ──
     const reopened = await openEpisteme(await openLocalStorage(filePath), {

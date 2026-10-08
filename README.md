@@ -97,6 +97,8 @@ episteme/
 │   ├── storage-local/      Durable GraphStorageAdapter + event store (append-only JSONL)
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
+│   ├── application/        The use-case layer every surface drives (LearnSession)
+│   ├── mcp/                The MCP surface: an agent can recall, propose and reflect, never confirm
 │   ├── agent/              CognitiveAgent interface + scripted mock (no real model yet)
 │   ├── domain-forum/       [placeholder] Forum domain pack
 │   └── logic-bridge/       [placeholder] optional formalisation (Lean, Datalog, SMT)

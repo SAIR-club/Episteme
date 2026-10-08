@@ -1,6 +1,8 @@
 # 0008 — Episteme as a plugin for other agents
 
-Status: **accepted** (2026-10-05). Nothing below is built yet.
+Status: **accepted** (2026-10-05). Amended the same day: the confirmation flow follows the multi-round-trip
+model of MCP 2026-07-28, and both channels share one decision use case. Amended again: the trust each
+confirmation channel can and cannot offer is stated precisely (see _Trust boundaries_).
 
 ## Context
 
@@ -31,8 +33,9 @@ one at a time, because the answer to each constrains the others:
 
 ## Decision
 
-**One local process owns a learner's graph. Agents reach it through MCP and can only read and propose. A human
-confirms through a channel the agent cannot answer.**
+**One local process owns a learner's graph. Agents reach it through MCP and can only read and propose. A
+decision on a proposal enters through one human-decision path. Episteme controls one channel into it, and
+trusts the host for the other.**
 
 ### One owner per graph file
 
@@ -81,28 +84,82 @@ A pending suggestion is a **draft** in the sense of _Draft → Thought → Refer
 and out of the event log until a human acts on it. The host keeps drafts in a separate file next to the graph
 (`<graph>.suggestions.jsonl`). The file is written by the same owner, and it is disposable by construction:
 
-- **Accept** commits through the ordinary path, `validateMutation`, as `authority: 'confirmed'`.
-  `confirmedBy` is the instance's human actor, set by the host and **never read from tool arguments**.
-- **Modify** does the same with the human's edited value. Because the human wrote it, it is authored, not
+- **Accept** commits the agent's proposed value through the ordinary path, `validateMutation`. A state change is
+  committed as `authority: 'confirmed'`. `confirmedBy` is the instance's human actor, injected by the host and
+  **never read from tool arguments or any other client input**.
+- **Modify** commits the human's edited value instead. Because the human wrote it, it is authored, not
   confirmed.
-- **Dismiss** removes the draft. Drafts are not history, so removing one is not a deletion of cognitive
-  record. The graph never saw it.
+- **Dismiss** removes the draft and produces no cognitive event. Drafts are not history, so removing one is
+  not a deletion of cognitive record. The graph never saw it.
+
+Claims and links have no `authority` field. For them, as for state changes, the committed record's `source`
+names the suggestion, the agent that proposed it and the channel that resolved it, so provenance survives
+the draft.
 
 Losing the suggestions file costs pending drafts, never understanding. Corrupting it cannot corrupt the graph.
 
-### Two confirmation channels, both outside the agent's reach
+A decision writes two files, and no single write covers both. Before an accepted or modified decision commits
+anything, its write-ahead record goes into the suggestions file. The record carries a stable operation id and
+the ids the decision will create. After the graph is written, a single write removes the draft and the record
+together. A start that finds a record left behind asks the graph whether the change landed. If it did, the
+draft is removed. If it did not, the record is dropped and the draft stays pending. Either way the decision
+lands at most once. Dismissing touches only the suggestions file, so it needs no record.
 
-1. **MCP elicitation**, when the client declares support for it. During `propose`, the host asks the client to
-   put the suggestion in front of the user and waits for accept, edit or decline. The answer comes from the
-   host application's UI, not from the model. If the user accepts or edits, the draft is resolved and committed
-   in that same call. If they decline or cancel, the draft stays pending. A cancelled prompt is not a decision.
+### One decision path, two channels
+
+The decision itself (_human decision → resolve the draft → `validateMutation` → graph or event log_) is **one
+use case in `@episteme/application`**. Both channels below collect the human's decision and hand it to that use
+case. Neither implements accept, modify or dismiss on its own, so the two cannot drift apart, and the
+injection of `confirmedBy` exists in exactly one place.
+
+1. **MCP elicitation**, through the multi-round-trip model of the MCP 2026-07-28 revision. `propose` keeps the
+   draft. If the client declared the elicitation capability, the tool then returns `inputRequired(...)`: a
+   form-mode elicitation that offers accept, modify or dismiss, together with a `requestState` that names the
+   draft. The client puts the form in front of the user and retries the original call with the user's answer in
+   `inputResponses`. On the retry, the tool hands the decision to the shared use case.
+   - `requestState` comes back from the client, so it is attacker-controlled input. It is sealed with an HMAC
+     under a key held only by the host process, expires, and is bound to the method. A single process can use
+     a per-process key because a single owner serves every round of a flow.
+   - `inputResponses` are untrusted input too. They are validated against the same schema the form was built
+     from. Content that fails validation is not a decision, and the draft stays pending.
+   - A declined or cancelled prompt is not a decision either, and the draft stays pending. Dismissing is an
+     explicit choice inside the form.
+   - 2025-era connections are served by the SDK's own legacy shim, which fulfils the same `inputRequired`
+     result as a server-to-client elicitation where the connection can carry one. Episteme does not keep a
+     second confirmation implementation for them. A connection that cannot carry one, such as the stateless
+     2025-era HTTP serving this host uses, declares no capabilities. The tool asks only a client that declared
+     the capability, so such a client gets a pending draft instead of a failed call.
 2. **The review queue** on the local Learn surface. It always exists, and it is the only channel for clients
-   without elicitation. `propose` then returns the draft's id, its pending state, and where it can be reviewed.
-   An agent can tell the user to go there. It cannot go there itself.
+   without elicitation. `propose` then returns the draft's id and its pending state. An agent can tell the user
+   to review it. No MCP tool reaches the queue.
 
-Elicitation trusts the host application to show the prompt to a person. A client that auto-answered would
-defeat it, just as a browser extension clicking "accept" would defeat the review page. Episteme cannot prevent
-either. It can keep provenance honest: every confirmed event records which channel confirmed it.
+### Trust boundaries
+
+The two channels do not offer the same assurance.
+
+- **The Learn review queue is the human-decision channel Episteme controls.** Episteme serves it, renders the
+  suggestion, and receives the decision through its own surface. That surface accepts only same-origin
+  requests from a loopback host. No MCP tool can reach it.
+- **MCP elicitation is a trusted-host boundary.** Episteme can verify that a retry carries a `requestState` it
+  sealed itself and an answer that fits the form it sent. It **cannot** verify that the answer came from a
+  person. A host is expected to put the form in front of its user, but from Episteme's side, any process that
+  speaks MCP can declare the elicitation capability, call `propose` and retry with an answer of its own. To
+  Episteme, that is indistinguishable from a person answering. An agent running inside a trusted host does not
+  see the form. A client program can still write the answer itself.
+
+What holds on both channels:
+
+- **No client or agent supplies `confirmedBy`.** The confirming human is the session's own human, injected by
+  the application. No tool argument, form answer or request field can name another.
+- **Provenance is recorded and is not authority.** Every resolved suggestion records the draft, the proposing
+  agent and the channel. A client's name and information are used for that provenance only, never to authorize
+  anything.
+
+Until authentication and authorization exist (Phase 4), **a confirmation through MCP elicitation means
+something only in a single-user, local environment whose MCP clients the user trusts.** In any other setting,
+treat elicitation answers as unverified, and treat the review queue as the only confirmation Episteme itself
+stands behind. Restricting which clients may confirm, or requiring the review queue for some decisions, is
+deferred to that work.
 
 ## Alternatives
 
@@ -110,6 +167,15 @@ either. It can keep provenance honest: every confirmed event records which chann
 every host. Rejected because the agent would be reporting the user's consent rather than the user giving it,
 and an agent that misreads "sure, whatever" commits on its own word. It would bring back the exact back door
 the guard was moved into Core to close.
+
+**A push-style elicitation alongside the multi-round-trip one.** The 2025 revisions sent `elicitation/create`
+from the server mid-call. Keeping that path for older clients would mean two confirmation implementations to
+keep equivalent. Rejected because the SDK's legacy shim already serves 2025-era connections from the same
+`inputRequired` result, wherever such a connection can carry a server-to-client request at all.
+
+**Each channel resolving drafts itself.** The review queue and the MCP tool could each commit what the human
+chose. Rejected because two implementations of accept, modify and dismiss would drift, and the rule that
+`confirmedBy` comes only from the host would then have two places to be gotten wrong.
 
 **One server process per client, each opening the file.** This is MCP's default shape and needs no running
 host. Rejected because of the id collision described above, and because no locking scheme makes in-memory
@@ -146,8 +212,11 @@ in Context. `packages/agent` stays as the deterministic test double that the loo
 - A process has to be running, and that is visible on purpose. The shim does not start one, so process
   lifetime and single ownership stay explicit. The cost is one manual step for the user, and the shim's error
   message names it.
-- The "AI suggests, human confirms" rule now holds across a real process boundary, not only inside one
-  program. Its remaining weak point, a host that auto-answers elicitations, is named rather than hidden.
+- "AI suggests, human confirms" now holds across a real process boundary, within the limits of _Trust
+  boundaries_. The structural parts hold everywhere: no tool writes, no input names the confirming human, and
+  every decision passes the one path. The rule that a person made the decision holds for the review queue,
+  and for elicitation only as far as the host is trusted. Until authentication exists, that limits
+  elicitation to single-user, local, trusted-client use.
 - `LearnSession` becomes the use-case layer that both the web surface and the MCP endpoint drive. It moves
   out of `apps/learn` into its own package, and both surfaces depend on that package. No app depends on another
   app.

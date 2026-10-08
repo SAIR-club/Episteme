@@ -2,7 +2,12 @@ import { createInterface } from 'node:readline'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { RECORDABLE_DIMENSIONS, LearnSession, type AskResult } from './session.js'
+import {
+  GraphLockedError,
+  RECORDABLE_DIMENSIONS,
+  LearnSession,
+  type AskResult,
+} from '@episteme/application'
 import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
 import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
 
@@ -141,7 +146,14 @@ export class LearnCli {
       options.filePath === undefined ? {} : { filePath: options.filePath },
     )
     const cli = new LearnCli(session, out)
-    const seed = await seedTopic(session, options.topic)
+    let seed: Awaited<ReturnType<typeof seedTopic>>
+    try {
+      seed = await seedTopic(session, options.topic)
+    } catch (error) {
+      // The session already owns the graph file; a failed start must not keep it.
+      await session.close()
+      throw error
+    }
     if (seed.seeded) {
       cli.#out.write(
         `已载入起始主题「${options.topic?.title ?? TRANSFORMERS.title}」：${seed.nodeCount} 个节点、${seed.edgeCount} 条连接。\n` +
@@ -156,6 +168,11 @@ export class LearnCli {
 
   get session(): LearnSession {
     return this.#session
+  }
+
+  /** Writes what is pending and releases the graph, so another surface can open it. */
+  close(): Promise<void> {
+    return this.#session.close()
   }
 
   /** Handles one line. Returns whether the session should continue. */
@@ -546,12 +563,23 @@ async function main(): Promise<void> {
       `你记录的一切都会保存。先问一个问题；输入 "?" 查看命令。\n\n`,
   )
 
-  const cli = await LearnCli.open(out, {
-    filePath,
-    ...(topic === undefined ? {} : { topic }),
-  })
+  let cli: LearnCli
+  try {
+    cli = await LearnCli.open(out, {
+      filePath,
+      ...(topic === undefined ? {} : { topic }),
+    })
+  } catch (error) {
+    // Only the one failure a learner can act on is translated. Anything else is a bug and keeps its stack.
+    if (!(error instanceof GraphLockedError)) throw error
+    process.stderr.write(`${lockedMessage(error)}\n`)
+    process.exit(1)
+  }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false })
+  // Ctrl+C ends the loop as `quit` does, so the graph is released rather than left locked. The default would
+  // kill the process before anything could run.
+  process.once('SIGINT', () => rl.close())
   process.stdout.write('> ')
 
   // `for await` over the interface rather than an event handler: it serialises input, so a question that
@@ -563,6 +591,7 @@ async function main(): Promise<void> {
   }
 
   rl.close()
+  await cli.close()
   process.stdout.write('\n已保存。你记录的所有内容都在磁盘上。\n')
 }
 
@@ -572,6 +601,23 @@ async function main(): Promise<void> {
  * Both spellings because which one works is a coin flip in most tools, and a learner who guesses wrong
  * would silently get the default file — writing their understanding somewhere they did not intend.
  */
+/**
+ * What a learner reads when another surface already has their graph open.
+ *
+ * Shared by both entry points, so the terminal and the web surface say the same thing about the same state.
+ * A running holder means "use the other one"; a dead one means a lock left by a process that was killed, and
+ * the only safe remedy is the learner's, because only they know nothing else is using the file.
+ */
+export function lockedMessage(error: GraphLockedError): string {
+  if (error.holderRunning) {
+    return `这个图谱已经被另一个进程（PID ${error.holderPid}）打开了，比如正在运行的 Learn 界面。\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
+  }
+  return (
+    `这个图谱被一个锁占着，但持有它的${error.holderPid === undefined ? '进程无法识别' : `进程（PID ${error.holderPid}）已经不在运行了`}。\n` +
+    `这通常是上次被强行结束留下的。如果确定没有别的程序在用这个图谱，删除下面这个文件后再试：\n  ${error.lockPath}`
+  )
+}
+
 export function optionValue(
   argv: readonly string[],
   ...names: readonly string[]

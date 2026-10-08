@@ -138,6 +138,8 @@ describe('paraphrase critical loop', () => {
 
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     // ── Session 2: a second adapter, no shared memory ──
     const session2 = await openEpisteme(await openLocalStorage(filePath))
@@ -236,6 +238,8 @@ describe('paraphrase critical loop', () => {
     })
     await session1.log.persist()
     await storageA.save()
+    // A restart means the first owner is gone before the second opens the file.
+    await storageA.close()
 
     // The embedding cache is deliberately thrown away: embeddings are derived data, and a fresh process
     // would have an empty one. Retrieval must still work.

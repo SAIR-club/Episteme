@@ -38,21 +38,15 @@ importers:
 
   apps/learn:
     dependencies:
-      '@episteme/agent':
+      '@episteme/application':
         specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/application
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../../packages/domain-learn
-      '@episteme/sdk':
+      '@episteme/mcp':
         specifier: workspace:*
-        version: link:../../packages/sdk
-      '@episteme/storage-local':
-        specifier: workspace:*
-        version: link:../../packages/storage-local
+        version: link:../../packages/mcp
 
   examples/learn-session:
     dependencies:
@@ -111,6 +105,24 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/application:
+    dependencies:
+      '@episteme/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@episteme/core':
+        specifier: workspace:*
+        version: link:../core
+      '@episteme/domain-learn':
+        specifier: workspace:*
+        version: link:../domain-learn
+      '@episteme/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@episteme/storage-local':
+        specifier: workspace:*
+        version: link:../storage-local
+
   packages/core: {}
 
   packages/domain-learn:
@@ -124,6 +136,15 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/mcp:
+    dependencies:
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../application
+      '@modelcontextprotocol/server':
+        specifier: ^2.3.0
+        version: 2.3.0
 
   packages/sdk:
     dependencies:
@@ -157,6 +178,9 @@ importers:
       '@episteme/app-learn':
         specifier: workspace:*
         version: link:../apps/learn
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../packages/application
       '@episteme/core':
         specifier: workspace:*
         version: link:../packages/core
@@ -166,6 +190,9 @@ importers:
       '@episteme/embeddings-http':
         specifier: workspace:*
         version: link:../packages/embeddings-http
+      '@episteme/mcp':
+        specifier: workspace:*
+        version: link:../packages/mcp
       '@episteme/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
@@ -374,6 +401,14 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
+
+  '@modelcontextprotocol/core@2.3.0':
+    resolution: {integrity: sha512-09BHFaNVBe5pB2AhzCfLj0cqmsKLERvZQ4FblzP90UMGLaXVqdZPByFjURwsUYCmxonUW2yAwgTTvle+8O2/8w==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/server@2.3.0':
+    resolution: {integrity: sha512-+6b0LdsQLmHsvS7J6sQJ4weTpzUn61fU1JKS+321/+IyDYoHW5CR2Tgqcs6GgAAQvlesCo6yX3xttgmx+XGtJw==}
+    engines: {node: '>=20'}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -1249,6 +1284,9 @@ packages:
     resolution: {integrity: sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==}
     engines: {node: '>=12'}
 
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
 snapshots:
 
   '@esbuild/android-arm64@0.19.3':
@@ -1389,6 +1427,15 @@ snapshots:
       wrap-ansi-cjs: wrap-ansi@7.0.0
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
+
+  '@modelcontextprotocol/core@2.3.0':
+    dependencies:
+      zod: 4.6.5
+
+  '@modelcontextprotocol/server@2.3.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.3.0
+      zod: 4.6.5
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
@@ -2219,3 +2266,5 @@ snapshots:
       ansi-styles: 6.1.0
       string-width: 5.1.2
       strip-ansi: 7.2.0
+
+  zod@4.6.5: {}

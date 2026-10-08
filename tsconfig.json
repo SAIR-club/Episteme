@@ -9,6 +9,8 @@
     { "path": "packages/domain-learn" },
     { "path": "packages/agent" },
     { "path": "packages/sdk" },
+    { "path": "packages/application" },
+    { "path": "packages/mcp" },
     { "path": "packages/embeddings-http" },
     { "path": "examples/learn-session" },
     { "path": "examples/persistent-session" },
