@@ -30,10 +30,11 @@ These hold for every validation session, whatever phase the project is in.
 ## Before the session
 
 Start the service on a graph of its own, so the session is not mixed into another graph or into the
-demonstration topic:
+demonstration topic. Keep it **outside the repository**: the graph and the files beside it hold the learner's
+own words and understanding, and must never be committed.
 
 ```bash
-pnpm serve --graph ./validation/session-1.jsonl --blank
+pnpm serve --graph "$HOME/.episteme/validation/session-1.jsonl" --blank
 ```
 
 Use `--topic ./their-material.json` instead of `--blank` when the learner brings a topic file. The root
@@ -43,7 +44,7 @@ Use `--topic ./their-material.json` instead of `--blank` when the learner brings
 Workspace：http://127.0.0.1:4321/
 MCP：      http://127.0.0.1:4321/mcp
 REST API： http://127.0.0.1:4321/api/v1
-图谱：     ./validation/session-1.jsonl
+图谱：     <home>/.episteme/validation/session-1.jsonl
 ```
 
 Agents connect to the MCP address; the learner reviews in the Workspace. While the service runs it holds the
