@@ -303,7 +303,7 @@ export class LearnSession {
   /**
    * Opens a session, reading any existing history first.
    *
-   * The ordering 鈥?load, then compose 鈥?is the rule `@episteme/sdk` exists to hold, so this does not
+   * The ordering — load, then compose — is the rule `@episteme/sdk` exists to hold, so this does not
    * repeat it.
    */
   static async open(options: SessionOptions = {}): Promise<LearnSession> {
@@ -540,8 +540,8 @@ export class LearnSession {
   /**
    * Adds a claim or concept the learner is working with, so the graph is theirs rather than a fixture.
    *
-   * Only the kinds a learner actually writes are accepted here. Anything else 鈥?evidence, synthesis, raw
-   * notes 鈥?has its own lifecycle, and a surface that let a learner create all nine node types from one
+   * Only the kinds a learner actually writes are accepted here. Anything else — evidence, synthesis, raw
+   * notes — has its own lifecycle, and a surface that let a learner create all nine node types from one
    * text box would be teaching them the ontology instead of the subject.
    */
   async addNode(input: {
@@ -579,7 +579,7 @@ export class LearnSession {
    *
    * Short because these ids are typed by hand: the surface asks a learner to name a node when recording
    * their understanding, and the first version used a slug of the label, which produced
-   * `node_0_self_attention_cannot_tell_which_word_ca` 鈥?truncated mid-word and impractical to type. A
+   * `node_0_self_attention_cannot_tell_which_word_ca` — truncated mid-word and impractical to type. A
    * learner's own vocabulary should not be turned into an identifier they cannot say.
    */
   #nextId(kind: string): string {
@@ -608,7 +608,7 @@ export class LearnSession {
    * Resolves a node the learner referred to by id or by an unambiguous prefix.
    *
    * Returns every match rather than guessing, so an ambiguous prefix produces a message naming the
-   * candidates instead of silently recording understanding against the wrong node 鈥?which would be a
+   * candidates instead of silently recording understanding against the wrong node — which would be a
    * permanent, validated, wrong fact in their history.
    */
   resolveNodes(reference: string): readonly NodeView[] {
