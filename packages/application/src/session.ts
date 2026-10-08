@@ -5,6 +5,8 @@ import {
   asId,
   isEpistemeError,
   systemClock,
+  toSerializedEvent,
+  type SerializedStateEvent,
   type ActorId,
   type DimensionId,
   type EdgeId,
@@ -677,6 +679,16 @@ export class LearnSession {
     return [...state]
       .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
       .sort((left, right) => (left.id < right.id ? -1 : 1))
+  }
+
+  /**
+   * Every recorded change of the learner's understanding of one node, in the persisted form, or `undefined`
+   * when there is no such node. The data an understanding timeline is drawn from.
+   */
+  historyOf(target: NodeId | string): readonly SerializedStateEvent[] | undefined {
+    const id = asId<NodeId>(target)
+    if (this.#episteme.graph.getNode(id) === undefined) return undefined
+    return this.#episteme.log.history({ target: id, actorId: HUMAN }).map(toSerializedEvent)
   }
 
   /** The open ends of this learner's lines of inquiry, so a surface can show where they left off. */

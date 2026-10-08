@@ -17,6 +17,7 @@
     "@episteme/embeddings-http": "workspace:*",
     "@episteme/mcp": "workspace:*",
     "@episteme/sdk": "workspace:*",
+    "@episteme/service": "workspace:*",
     "@episteme/storage-local": "workspace:*",
     "@episteme/storage-memory": "workspace:*"
   }

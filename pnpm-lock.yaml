@@ -48,6 +48,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mcp
 
+  apps/service:
+    dependencies:
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@episteme/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+
   examples/distill-session:
     dependencies:
       '@episteme/application':
@@ -223,6 +232,9 @@ importers:
       '@episteme/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@episteme/service':
+        specifier: workspace:*
+        version: link:../apps/service
       '@episteme/storage-local':
         specifier: workspace:*
         version: link:../packages/storage-local

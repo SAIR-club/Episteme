@@ -3,6 +3,7 @@
   "files": [],
   "references": [
     { "path": "apps/learn" },
+    { "path": "apps/service" },
     { "path": "packages/core" },
     { "path": "packages/storage-memory" },
     { "path": "packages/storage-local" },
