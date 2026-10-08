@@ -8,7 +8,7 @@ Keep this file limited to durable, cross-session guidance. Current progress, tem
 
 - Purpose: Episteme turns inquiry into persistent, evolving understanding. It is open cognitive infrastructure for carrying, organising and evolving human understanding: one graph that Learn, Forum and Research project views over, rather than separate knowledge stores. The most valuable asset is not chat history or course content but the cognitive graph that keeps evolving. See `README.md`.
 - Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. No framework, database or model provider is wired in yet — Core must run and be tested with no frontend, no LLM and no database.
-- Package manager: pnpm (see `pnpm-workspace.yaml`). Node >= 20.11.
+- Package manager: pnpm, pinned by `packageManager` in `package.json` (see `pnpm-workspace.yaml`). The project supports Node >= 20.11 (`engines`). pnpm 11 itself needs Node >= 22.13 to run, so develop on Node 22.13 or later, or use a standalone pnpm. The two floors differ on purpose; see [Continuous Integration](#continuous-integration).
 
 ## Commands
 
@@ -124,6 +124,15 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 - Do not merge, enable auto-merge, close, reopen, or change the base branch unless the user explicitly requests it.
 - Keep the remote source branch after merge.
 
+## Continuous Integration
+
+- `.github/workflows/ci.yml` is the merge gate. It runs `pnpm check` and `pnpm format:check` on the `engines` floor and on the current Node LTS.
+- The matrix tests the project's runtime, not the toolchain's. Install pnpm with `pnpm/action-setup` and `standalone: true`, so pnpm runs on its own bundled runtime whatever Node the matrix selects. Without it, pnpm 11 starts on the Node 20 floor and fails before installing anything (`No such built-in module: node:sqlite`).
+- Changing `packageManager`, `engines.node` or the matrix is one change, made in one PR: check the new pnpm's own requirement (`npm view pnpm@<version> engines`), and keep the matrix's lowest entry equal to the `engines` floor.
+- Keep `fail-fast: false`, so one failing Node version does not cancel the others and hide whether they pass.
+- A workflow change lands through a PR like any other change, and merges only after that PR's own CI run is green. A workflow that has never run green has not been tested.
+- A red `main` is fixed before anything else merges. Until then every open PR fails for a reason unrelated to its own code.
+
 ## Version Management
 
 How this project versions and releases changes. AI agents must follow this when preparing or performing releases.
@@ -146,7 +155,7 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 - One branch per task; merge back to main within 2–3 days. No long-lived parallel branches.
 - Branch naming: `<type>/<short-topic>` (e.g. `feat/search-index-cache`, `fix/daemon-start`), lowercased with dashes. Do not use a user's name, dates, or arbitrary numbers.
 - Delete branches and prune worktrees immediately after merging. Never leave worktree checkouts behind.
-- main must always be releasable; green CI is the merge gate. No feature work directly on main.
+- main must always be releasable; green CI is the merge gate. Nothing is pushed directly to main, including CI and documentation changes: every change lands through a PR whose CI is green.
 
 ### Commits and changelog
 
@@ -160,6 +169,8 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 - Branch pile-up (unmerged branches, abandoned worktrees) → merge and clean up.
 - Hotfix not merged back into main → the bug returns in the next release.
 - Version mismatch between tag and manifests → the release pipeline fails; bump all manifests together.
+- CI pushed straight to main → main goes red unnoticed, and every open PR fails for a reason unrelated to its code; workflow changes go through a PR and merge green.
+- Toolchain run on the runtime under test → the job fails before testing anything; pnpm runs standalone, and the matrix only selects the Node the project runs on.
 
 ## Project Invariants
 
