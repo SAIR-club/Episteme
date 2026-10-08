@@ -1,38 +1,44 @@
+# The merge gate AGENTS.md assumes: main must stay releasable, and green CI is what proves it.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
-    name: Check & Test
+    name: check (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [20.x, 22.x]
-
+        # 20 is the floor declared in package.json `engines`; 24 is the current LTS.
+        node: [20, 24]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      # Standalone pnpm carries its own runtime, so the version pinned in `packageManager` runs regardless
+      # of which Node the matrix is testing the project against.
+      - uses: pnpm/action-setup@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
+          standalone: true
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
 
-      - name: Run verification (typecheck + lint + format + build + test)
-        run: pnpm check
+      - run: pnpm install --frozen-lockfile
+
+      # `check` is typecheck + lint + build + test. Formatting is not part of it, so it is checked here.
+      - run: pnpm check
+
+      - run: pnpm format:check
