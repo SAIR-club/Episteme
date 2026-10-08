@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
 
 /**
- * Serves one prebuilt Workspace as static files (ADR 0010, decision 7).
+ * Serves one prebuilt Workspace as static files (ADR 0010, decision 7), and nothing outside its directory,
+ * however a path is written or what links inside it point to.
  *
  * The service imports no Workspace code and starts without one. A Workspace served from here is same-origin,
  * so the boundary needs no exception for it. It reads and changes things only through the API, like any
@@ -54,7 +55,14 @@ export async function serveWorkspace(
   }
   let body: Buffer
   try {
-    body = await readFile(file)
+    // The path is inside the directory as written; a link inside it could still lead out. What is read has to
+    // be inside the directory once every link is followed.
+    const [realRoot, realFile] = await Promise.all([realpath(root), realpath(file)])
+    if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${sep}`)) {
+      notFound(response)
+      return
+    }
+    body = await readFile(realFile)
   } catch {
     notFound(response)
     return

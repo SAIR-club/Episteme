@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -179,6 +179,21 @@ describe('with a Workspace', () => {
     expect(workspaceFile(root, '/../secret.txt')).toBeUndefined()
     expect(workspaceFile(root, '/%2e%2e%2fsecret.txt')).toBeUndefined()
     expect(workspaceFile(root, '/index.html')).toBe(join(root, 'index.html'))
+  })
+
+  it('never follows a link inside its directory to a file outside it', async () => {
+    const outside = join(directory, 'outside')
+    await mkdir(outside, { recursive: true })
+    await writeFile(join(outside, 'secret.json'), '{"secret":"outside the workspace"}')
+    await writeFile(join(root, 'inside.json'), '{"inside":true}')
+    // A junction on Windows, which needs no privilege; a directory symlink elsewhere.
+    await symlink(outside, join(root, 'linked'), 'junction')
+
+    const escaped = await fetch(`${service.url}/linked/secret.json`)
+    expect(escaped.status).toBe(404)
+    expect(await escaped.text()).not.toContain('secret')
+    // A file that is inside once links are followed is still served.
+    expect((await fetch(`${service.url}/inside.json`)).status).toBe(200)
   })
 
   it('still routes the API and MCP around it', async () => {
