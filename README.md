@@ -185,6 +185,7 @@ opt-in.
 
 ## Documentation
 
+- [Target architecture](docs/architecture/target.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Data model](docs/architecture/data-model.md)
 - [State events](docs/architecture/state-events.md)
