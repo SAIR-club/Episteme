@@ -69,8 +69,8 @@ given host delivers is measured host by host, not assumed (ADR 0008, Consequence
 | shared application layer             | `@episteme/application`: `LearnSession`, driven by the Learn surfaces and the MCP endpoint                                                                     |
 | single-owner graph host and lock     | `@episteme/storage-local`: `<graph>.lock`, `GraphLockedError`, release on close and exit                                                                       |
 | pending suggestion draft store       | `<graph>.suggestions.jsonl`, outside the graph and the event log                                                                                               |
-| MCP `recall` / `propose` / `reflect` | `@episteme/mcp`, served at `/mcp` by the Learn web host over Streamable HTTP                                                                                   |
-| Learn web review queue               | `apps/learn`: accept, modify or dismiss each pending suggestion                                                                                                |
+| MCP `recall` / `propose` / `reflect` | `@episteme/mcp`, served at `/mcp` by the Episteme service over Streamable HTTP (ADR 0010)                                                                      |
+| Learn web review queue               | the Learn page, a Workspace of the service: accept, modify or dismiss each pending suggestion                                                                  |
 | one human confirmation path          | `LearnSession.decide()`; `confirmedBy` injected by the host, never taken from input                                                                            |
 | MCP 2026-07-28 elicitation           | `inputRequired` with an HMAC-sealed `requestState` and schema-validated `inputResponses`; a trusted-host boundary, not proof that a person answered (ADR 0008) |
 | provenance                           | every resolved suggestion records the draft, the proposing agent and the channel                                                                               |
@@ -109,7 +109,8 @@ bounded consequence, and each needs its own design before it is built.
   ties drafts to the local JSONL adapter and keeps them outside ADR 0003's storage abstraction.
 - **Splitting `LearnSession`.** It carries retrieval, recording, node creation, proposals, decisions,
   recovery, persistence and lifecycle. It needs dividing before a second scene uses it. The MCP surface also
-  depends on Learn's recordable dimensions.
+  depends on Learn's recordable dimensions. The service's scene profile is where the pieces plug in
+  (ADR 0010).
 - **A stale lock that tells the truth.** The lock records only a pid. After a reboot, a reused pid can make a
   stale lock look held by a running process. Recording the hostname and the process start time would tell
   the two apart.

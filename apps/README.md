@@ -1,7 +1,9 @@
-# Applications — placeholder
+# Applications
 
-No application exists yet. This directory records the intended application surfaces so the layer
-boundary is visible; it contains no code.
+Two exist: `apps/service`, the Episteme service that owns a graph and serves MCP and REST
+([ADR 0010](../docs/decisions/0010-episteme-service.md)), and `apps/learn`, the Learn terminal and the page
+the service serves as a Workspace. The rest of this file records the intended application surfaces, so the
+layer boundary is visible.
 
 Applications are where product decisions live: UI, interaction flows, ranking, feeds,
 notifications, quizzes — anything whose value depends on one particular product rather than on the

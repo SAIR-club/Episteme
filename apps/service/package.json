@@ -1,0 +1,25 @@
+{
+  "name": "@episteme/service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Episteme service: the single owner of a graph, serving MCP to agents and a versioned REST API to human-facing clients (ADR 0010).",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "episteme-service": "./dist/serve.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "serve": "tsc -b && node dist/serve.js"
+  },
+  "dependencies": {
+    "@episteme/application": "workspace:*",
+    "@episteme/mcp": "workspace:*"
+  }
+}

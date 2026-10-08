@@ -1,21 +1,21 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { LearnSession } from '@episteme/application'
 import { agentActorFor, createMcpEndpoint } from '@episteme/mcp'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type ToolResult, type WireOptions } from './mcp-wire.js'
 
 /**
- * The MCP surface (ADR 0008), over a real socket on the Learn host, in raw JSON-RPC — including the Host and
+ * The MCP surface (ADR 0008), over a real socket on the Episteme service, in raw JSON-RPC — including the Host and
  * Origin checks that keep a localhost endpoint from being reached by a web page.
  */
 
 const CLIENT = { name: 'Test Agent', version: '1.0.0' }
 
 let directory: string
-let server: LearnServer
+let server: EpistemeService
 const wire = mcpWire(() => server.mcpUrl, CLIENT)
 const { rpc } = wire
 const call = (name: string, args: Record<string, unknown>, options: WireOptions = {}) =>
@@ -23,7 +23,7 @@ const call = (name: string, args: Record<string, unknown>, options: WireOptions 
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-mcp-'))
-  server = await startLearnServer({ port: 0, filePath: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
 })
 
 afterEach(async () => {
@@ -32,7 +32,7 @@ afterEach(async () => {
 })
 
 async function events(): Promise<number> {
-  const state = (await (await fetch(`${server.url}/api/state`)).json()) as { events: number }
+  const state = (await (await fetch(`${server.url}/api/v1/state`)).json()) as { events: number }
   return state.events
 }
 
@@ -59,7 +59,7 @@ describe('recall', () => {
   })
 
   it('returns what the human recorded, and whether it can be built on', async () => {
-    await fetch(`${server.url}/api/record`, {
+    await fetch(`${server.url}/api/v1/record`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

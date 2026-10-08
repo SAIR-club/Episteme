@@ -41,9 +41,12 @@ importers:
       '@episteme/application':
         specifier: workspace:*
         version: link:../../packages/application
-      '@episteme/domain-learn':
+
+  apps/service:
+    dependencies:
+      '@episteme/application':
         specifier: workspace:*
-        version: link:../../packages/domain-learn
+        version: link:../../packages/application
       '@episteme/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -223,6 +226,9 @@ importers:
       '@episteme/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@episteme/service':
+        specifier: workspace:*
+        version: link:../apps/service
       '@episteme/storage-local':
         specifier: workspace:*
         version: link:../packages/storage-local

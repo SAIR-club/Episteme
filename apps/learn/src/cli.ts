@@ -8,8 +8,8 @@ import {
   LearnSession,
   type AskResult,
 } from '@episteme/application'
-import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
-import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
+import { seedTopic, TRANSFORMERS, type SeedTopic } from '@episteme/application/seed'
+import { BLANK_TOPIC, loadTopicFile } from '@episteme/application/topic-file'
 
 /**
  * A terminal Learn session.
@@ -610,7 +610,7 @@ async function main(): Promise<void> {
  */
 export function lockedMessage(error: GraphLockedError): string {
   if (error.holderRunning) {
-    return `这个图谱已经被另一个进程（PID ${error.holderPid}）打开了，比如正在运行的 Learn 界面。\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
+    return `这个图谱已经被另一个进程（PID ${error.holderPid}）打开了，比如正在运行的 Episteme 服务（pnpm serve）。\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
   }
   return (
     `这个图谱被一个锁占着，但持有它的${error.holderPid === undefined ? '进程无法识别' : `进程（PID ${error.holderPid}）已经不在运行了`}。\n` +

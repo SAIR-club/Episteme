@@ -8,18 +8,6 @@
     ".": {
       "types": "./dist/cli.d.ts",
       "default": "./dist/cli.js"
-    },
-    "./seed": {
-      "types": "./dist/seed.d.ts",
-      "default": "./dist/seed.js"
-    },
-    "./topic-file": {
-      "types": "./dist/topic-file.d.ts",
-      "default": "./dist/topic-file.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "default": "./dist/server.js"
     }
   },
   "bin": {
@@ -28,12 +16,9 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "learn": "tsc -b && node dist/cli.js",
-    "serve": "tsc -b && node dist/serve.js"
+    "learn": "tsc -b && node dist/cli.js"
   },
   "dependencies": {
-    "@episteme/application": "workspace:*",
-    "@episteme/domain-learn": "workspace:*",
-    "@episteme/mcp": "workspace:*"
+    "@episteme/application": "workspace:*"
   }
 }

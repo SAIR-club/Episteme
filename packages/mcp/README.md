@@ -8,7 +8,8 @@ surface. That process owns the graph file, and no app depends on another app.
 
 ## Connecting
 
-`pnpm learn:web` starts the host and prints the endpoint, by default `http://127.0.0.1:4321/mcp`. Point an MCP
+`pnpm serve` starts the [Episteme service](../../apps/service/README.md) and prints the endpoint, by default
+`http://127.0.0.1:4321/mcp`. Point an MCP
 host that speaks Streamable HTTP at that URL. There is no stdio shim yet. While the host runs, it owns the
 graph, so the terminal surface cannot open the same file.
 
@@ -74,8 +75,8 @@ not authentication.
 
 ## The network boundary
 
-The Learn host serves this endpoint and its own pages behind one boundary (`boundaryRefusal` in
-`apps/learn/src/server.ts`). It binds to `127.0.0.1`, and it refuses a request in any of these cases:
+The Episteme service serves this endpoint, its REST API and any Workspace behind one boundary
+(`boundaryRefusal` in `apps/service/src/boundary.ts`). It binds to `127.0.0.1`, and it refuses a request in any of these cases:
 
 - `Host` is not a loopback name with the host's port.
 - `Origin` is present and is not the host's own origin.
@@ -98,6 +99,6 @@ stdio shim, if one is ever built. The v1 `@modelcontextprotocol/sdk` is not used
 
 | File              | Contents                                                              |
 | ----------------- | --------------------------------------------------------------------- |
-| `src/server.ts`   | the three tools, their input schemas and the agent identity           |
+| `src/server.ts`   | the four tools, their input schemas and the agent identity            |
 | `src/confirm.ts`  | the decision form, the sealed state, and reading the learner's answer |
 | `src/endpoint.ts` | the HTTP endpoint: Host and Origin checks, `node:http` bridge         |

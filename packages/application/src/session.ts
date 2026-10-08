@@ -5,6 +5,8 @@ import {
   asId,
   isEpistemeError,
   systemClock,
+  toSerializedEvent,
+  type SerializedStateEvent,
   type ActorId,
   type DimensionId,
   type EdgeId,
@@ -277,6 +279,10 @@ export class LearnSession {
   readonly #sources: SourceStore
   /** The tail of the mutation queue. See `#exclusive`. */
   #mutations: Promise<unknown> = Promise.resolve()
+  /** See `revision`. Advanced only by `#exclusive`. */
+  #revision = 0
+  /** See `epoch`. */
+  readonly #epoch = randomUUID()
   #closed = false
   readonly #recovered: RecoveredDecision[] = []
 
@@ -398,6 +404,30 @@ export class LearnSession {
   }
 
   /**
+   * Which state of the graph, the history and the drafts a read saw, so that several reads can tell whether
+   * they describe the same one.
+   *
+   * It advances when a mutation starts and again when it ends, so it is even while nothing is changing and odd
+   * while a change is in progress. Two reads that return the same even revision saw the same state. An odd
+   * revision promises nothing, because a mutation can be read between its steps: read again. It may advance
+   * without anything having changed, as it does for a refused mutation, but it never stays put across a change.
+   *
+   * It counts within this session only, from zero when the session opens, so it identifies a state only
+   * together with `epoch`.
+   */
+  get revision(): number {
+    return this.#revision
+  }
+
+  /**
+   * Which opening of the graph a `revision` counts within. A new session, such as after a restart, starts a
+   * new epoch, so a revision remembered from before cannot be mistaken for the same number counted again.
+   */
+  get epoch(): string {
+    return this.#epoch
+  }
+
+  /**
    * Asks a question and returns the answer together with the evidence behind it.
    *
    * One retrieval produces both the ranking shown and the context the answer was conditioned on, so the
@@ -473,13 +503,14 @@ export class LearnSession {
   }> {
     const entries = Object.entries(dimensions).filter(([, level]) => level !== '')
     if (entries.length === 0) {
-      throw new Error('record needs at least one dimension')
+      throw new SessionRefusal('missing_dimension', 'record needs at least one dimension')
     }
 
     for (const [dimension] of entries) {
       const known = RECORDABLE_DIMENSIONS.find((candidate) => candidate.id === dimension)
       if (known === undefined) {
-        throw new Error(
+        throw new SessionRefusal(
+          'not_recordable',
           `"${dimension}" is not recordable from this surface. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
         )
       }
@@ -608,7 +639,7 @@ export class LearnSession {
   /** Adds one node. Only ever called inside the mutation queue. */
   #addNodeNow(input: NodeInput): NodeView {
     const label = input.label.trim()
-    if (label === '') throw new Error('a node needs a label')
+    if (label === '') throw new SessionRefusal('missing_property', 'a node needs a label')
 
     const node = this.#episteme.graph.addNode({
       id: asId<NodeId>(input.id),
@@ -668,6 +699,16 @@ export class LearnSession {
     return [...state]
       .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
       .sort((left, right) => (left.id < right.id ? -1 : 1))
+  }
+
+  /**
+   * Every recorded change of the learner's understanding of one node, in the persisted form, or `undefined`
+   * when there is no such node. The data an understanding timeline is drawn from.
+   */
+  historyOf(target: NodeId | string): readonly SerializedStateEvent[] | undefined {
+    const id = asId<NodeId>(target)
+    if (this.#episteme.graph.getNode(id) === undefined) return undefined
+    return this.#episteme.log.history({ target: id, actorId: HUMAN }).map(toSerializedEvent)
   }
 
   /** The open ends of this learner's lines of inquiry, so a surface can show where they left off. */
@@ -767,10 +808,15 @@ export class LearnSession {
    * A failed mutation rejects for its caller only. The queue carries on with the next one.
    */
   #exclusive<T>(work: () => Promise<T> | T): Promise<T> {
-    const run = this.#mutations.then(() => {
+    const run = this.#mutations.then(async () => {
       if (this.#closed)
         throw new Error('this session is closed; open a new one to change the graph')
-      return work()
+      this.#revision += 1
+      try {
+        return await work()
+      } finally {
+        this.#revision += 1
+      }
     })
     this.#mutations = run.then(
       () => undefined,
@@ -1565,6 +1611,29 @@ function identify(resolution: Resolution): Omit<RecoveredDecision, 'settled'> {
 export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }
   | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/**
+ * A command refused because of what it was asked to do, such as recording a dimension the learner cannot
+ * record. Thrown before anything changes, so a caller can report it as a refusal.
+ */
+export class SessionRefusal extends Error {
+  readonly code: string
+
+  constructor(code: string, message: string) {
+    super(message)
+    this.name = 'SessionRefusal'
+    this.code = code
+  }
+}
+
+/**
+ * Whether an error is a refusal of the request, by the session or by the graph's own validation, rather than a
+ * failure, such as a write that did not reach the disk. A failure may come after the change was made in
+ * memory, so reporting it as a refusal would tell the caller nothing happened when something did.
+ */
+export function isRefusal(error: unknown): error is Error & { readonly code: string } {
+  return error instanceof SessionRefusal || isEpistemeError(error)
+}
 
 /** Material longer than this is split by the learner before it is distilled. */
 export const MAX_MATERIAL = 20_000

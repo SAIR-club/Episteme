@@ -3,7 +3,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GraphLockedError, LearnSession } from '@episteme/application'
-import { startLearnServer } from '@episteme/app-learn/server'
+import { startService } from '@episteme/service'
 import { openEpisteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -132,12 +132,14 @@ describe('the surfaces', () => {
 
   it('will not start a web surface over a graph another surface owns', async () => {
     const session = await LearnSession.open({ filePath })
-    await expect(startLearnServer({ port: 0, filePath })).rejects.toBeInstanceOf(GraphLockedError)
+    await expect(startService({ port: 0, graph: filePath })).rejects.toBeInstanceOf(
+      GraphLockedError,
+    )
     await session.close()
   })
 
   it('gives the graph back when the web surface stops', async () => {
-    const server = await startLearnServer({ port: 0, filePath })
+    const server = await startService({ port: 0, graph: filePath })
     await server.close()
 
     const session = await LearnSession.open({ filePath })
@@ -145,10 +147,12 @@ describe('the surfaces', () => {
   })
 
   it('gives the graph back when the web surface cannot start', async () => {
-    const running = await startLearnServer({ port: 0, filePath: join(directory, 'running.jsonl') })
+    const running = await startService({ port: 0, graph: join(directory, 'running.jsonl') })
 
     // The port is taken, so this start fails after its session already owned the file.
-    await expect(startLearnServer({ port: running.port, filePath })).rejects.toThrow(/EADDRINUSE/)
+    await expect(startService({ port: running.port, graph: filePath })).rejects.toThrow(
+      /EADDRINUSE/,
+    )
     const session = await LearnSession.open({ filePath })
     await session.close()
 

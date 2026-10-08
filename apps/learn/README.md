@@ -5,15 +5,17 @@ reading about it.
 
 ```bash
 pnpm learn        # terminal
-pnpm learn:web    # local web surface at http://127.0.0.1:4321
+pnpm serve        # the Episteme service, with this page as its Workspace, at http://127.0.0.1:4321
 ```
 
-Both run the same loop, over the same graph file, through the same `LearnSession`. They cannot have it open
+The terminal opens the graph itself, through `LearnSession`. The page is a client of the
+[Episteme service](../service/README.md) (ADR 0010), which owns the graph and serves the page as its Workspace;
+the page reads and decides only through the service's REST API (`/api/v1`). The two cannot have one graph open
 at the same time: a graph has one owner, and the second surface refuses to start and names the process that
 holds it. Ctrl+C and `quit` release the graph; only a process killed outright leaves its lock behind, and the
 message then says which file to delete.
 
-The web surface is also the graph's **MCP host**: it serves the endpoint at `/mcp`, so an agent can recall
+The service the page runs in is also the graph's **MCP host**: it serves the endpoint at `/mcp`, so an agent can recall
 the learner's understanding and propose changes to it while the learner works here. See
 [`@episteme/mcp`](../../packages/mcp/README.md). What agents propose appears at the top of the page as a
 **review queue**, with who proposed it and why. Nothing in it changes the graph or the learner's
@@ -22,14 +24,15 @@ only collects the decision. What each choice commits is `LearnSession.decide()`,
 host uses.
 
 **Distilling material.** Paste a stretch of learning material or a dialogue into _导入学习材料_ (or `POST
-/api/distill` with `{ title?, text }`). Episteme splits it into episodes, finds candidate questions, claims,
+/api/v1/distill` with `{ title?, text }`). Episteme splits it into episodes, finds candidate questions, claims,
 evidence, terms, how they relate, and what you said about your own understanding
 ([ADR 0009](../../docs/decisions/0009-distillation.md)). All of these join the review queue as suggestions,
 each showing the words it came from and when they were said. A suggestion that depends on another, such as a
 claim answering a question found with it, says which to accept first. Nothing is recorded until you decide.
 The material itself is kept beside the graph, in `<graph>.sources.jsonl`, never in it.
 
-There is no login, so the page, its API and `/mcp` sit behind one boundary instead. A request is refused when:
+There is no login, so the service puts the page, its API and `/mcp` behind one boundary instead. A request is
+refused when:
 
 - it is addressed to any host name but a loopback name with this port, which defeats DNS rebinding;
 - it comes from another web page's `Origin`, or is marked cross-site by `Sec-Fetch-Site`;
@@ -41,10 +44,10 @@ Any local process still can: this is a network boundary, not authorization.
 
 ```bash
 pnpm learn --help
-pnpm learn:web --file /tmp/chemistry.jsonl --port 4400
+pnpm serve --graph /tmp/chemistry.jsonl --port 4400
 ```
 
-`--file` (or `EPISTEME_FILE`) chooses the graph; the default is `~/.episteme/learn.jsonl`. Both the
+`--file` for the terminal and `--graph` for the service (or `EPISTEME_FILE` for either) choose the graph; the default is `~/.episteme/learn.jsonl`. Both the
 separated and the joined spelling (`--file x` and `--file=x`) work, because a learner who guesses wrong
 would otherwise silently record their understanding in a file they did not intend — there is a test for
 that, and for the case where a flag's value is missing.
@@ -55,8 +58,8 @@ The seeded transformer topic is a demonstration. A learner working on chemistry 
 attention heads to understand the interface:
 
 ```bash
-pnpm learn:web --topic ./my-topic.json
-pnpm learn:web --blank          # start from an empty graph and write the first node yourself
+pnpm serve --topic ./my-topic.json
+pnpm serve --blank              # start from an empty graph and write the first node yourself
 ```
 
 ```json
@@ -97,9 +100,11 @@ Three properties matter here:
 4. ask again
 ```
 
-The fourth step is the point. Before anything is recorded the answer has to establish the ground; after,
-it starts from what you said you understood. The interface shows the two answers side by side, so the
-change is a comparison rather than a claim.
+The fourth step is the point. Before anything is recorded nothing of yours is recalled; after, what you said
+you understood is. The page shows the two recalls side by side, so the change is a comparison rather than a
+claim. The page writes no answer: the service recalls, and an agent connected over MCP answers from the same
+recall (ADR 0010). The terminal still writes a scripted answer, as a demonstration of what an agent does with
+it.
 
 `pnpm learn` runs the same loop, and has a `progress` command that prints what the web panel's
 "到目前为止" section shows.
@@ -140,10 +145,11 @@ work. They need a surface.
   three structurally different ways depending on what the learner has recorded, which is enough to show the
   loop working and to keep the test suite reproducible. Swapping in a real model means implementing
   `CognitiveAgent`; nothing here would change.
-- **No framework, no bundler.** The web surface is `node:http` plus one HTML file with plain DOM. The
+- **No framework, no bundler.** The web surface is one HTML file with plain DOM, served by the Episteme
+  service, which is `node:http`. The
   project's own claim is that it runs with no database, no model and no frontend toolchain, and adding a
   build step to demonstrate that would undercut it.
-- **No teaching.** It retrieves, records and answers. It does not decide what you should learn next — that
+- **No teaching.** It retrieves and records; only the terminal also answers. It does not decide what you should learn next — that
   would be an application's job, and probably a different one.
 
 ## The agent cannot write
@@ -196,17 +202,17 @@ and a ranked number would imply a precision that a reading of four settable dime
 
 ## Layout
 
-| File                   | Contents                                                      |
-| ---------------------- | ------------------------------------------------------------- |
-| `src/cli.ts`           | the terminal surface, including the command table             |
-| `src/server.ts`        | the HTTP surface and its JSON API                             |
-| `src/serve.ts`         | starts the web surface and prints where it is                 |
-| `src/seed.ts`          | the starting topic, so a learner does not face an empty graph |
-| `public/index.html`    | the web interface: one file, no build step                    |
-| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below)        |
+| File                   | Contents                                               |
+| ---------------------- | ------------------------------------------------------ |
+| `src/cli.ts`           | the terminal surface, including the command table      |
+| `src/server.ts`        | the HTTP surface and its JSON API                      |
+| `src/serve.ts`         | starts the web surface and prints where it is          |
+| `public/index.html`    | the web interface: one file, no build step             |
+| `scripts/drive-ui.mjs` | drives the page over the DevTools protocol (see below) |
 
 `LearnSession` — open, ask, record, add a node, list, flush — is shared by both surfaces and lives in
-[`@episteme/application`](../../packages/application/README.md), so that no surface depends on another.
+[`@episteme/application`](../../packages/application/README.md), so that no surface depends on another. So
+do the starting topic and topic files (`@episteme/application/seed`, `@episteme/application/topic-file`).
 
 ## Two defects the surface found
 
@@ -246,7 +252,7 @@ what the system is _willing to do_, not just what it says. A test asserts each b
 ## Verifying the interface
 
 ```bash
-pnpm learn:web                                   # in one terminal
+pnpm serve                                       # in one terminal
 node apps/learn/scripts/drive-ui.mjs             # in another
 ```
 

@@ -981,7 +981,7 @@
         dimensions: [],
         nodes: [],
         selected: null,
-        /** The answer from before the last record, so the change can be shown as a comparison. */
+        /** What was recalled before the last record, so the change can be shown as a comparison. */
         before: null,
         last: null,
         question: '',
@@ -1034,7 +1034,9 @@
         addFailed: '加入失败',
         understoodBadge: (count) => `基于你记录过的 ${count} 项理解`,
         nothingRecordedBadge: '你还没有记录过相关内容',
-        told: '它被告知的内容：',
+        told: '回答由谁来写：',
+        answeredByAgent:
+          'Episteme 不生成回答。它把你已有的理解交给你在用的 agent，由 agent 在此基础上回答。',
         nothingTold: '关于这个，你还没有记录过任何东西',
         stats: (payload) =>
           `${payload.nodes.length} 个节点 · ${payload.events} 条事件 · ${payload.openEnds.length} 条未收尾的线索 · 检索器 ${payload.retriever}`,
@@ -1220,7 +1222,7 @@
         clearError()
         for (const button of card.querySelectorAll('button')) button.disabled = true
         try {
-          await api('/api/suggestions/decide', { id: suggestion.id, ...decision })
+          await api('/api/v1/suggestions/decide', { id: suggestion.id, ...decision })
           editing.delete(suggestion.id)
           // Accepting or modifying changes the graph and the learner's state, so the whole surface is re-read.
           await refreshGraph()
@@ -1308,7 +1310,7 @@
       setInterval(async () => {
         if (document.hidden || editing.size > 0) return
         try {
-          const payload = await api('/api/suggestions')
+          const payload = await api('/api/v1/suggestions')
           // Redrawn only when the queue changed, so a card does not move out from under the learner's cursor.
           if (reviewKey(payload.suggestions) !== reviewKey(latest?.suggestions)) {
             if (latest) latest.suggestions = payload.suggestions
@@ -1473,8 +1475,8 @@
        * Runs one question.
        *
        * `keepBefore` exists because of a subtle ordering problem: the comparison shown after a record is
-       * "the answer before this record" against "the answer after", and re-asking must not wipe the first
-       * half of it. A plain `ask()` clears it, because a genuinely new question makes the old answer an
+       * "what was recalled before this record" against "what is recalled after", and re-asking must not wipe the
+       * first half of it. A plain `ask()` clears it, because a genuinely new question makes the old recall an
        * irrelevant — and therefore misleading — comparison.
        */
       async function runAsk(question, keepBefore) {
@@ -1483,7 +1485,7 @@
         $('result').innerHTML = ''
         $('result').appendChild(el('div', 'loading', '正在检索…'))
         try {
-          const result = await api('/api/ask', { question })
+          const result = await api('/api/v1/recall', { question })
           if (!keepBefore && result.question !== state.question) state.before = null
           state.question = result.question
           state.last = result
@@ -1510,29 +1512,31 @@
         card.appendChild(
           el(
             'span',
-            'badge ' + (result.usedContext ? 'used' : 'cold'),
-            result.usedContext ? ZH.understoodBadge(result.known.length) : ZH.nothingRecordedBadge,
+            'badge ' + (result.known.length > 0 ? 'used' : 'cold'),
+            result.known.length > 0
+              ? ZH.understoodBadge(result.known.length)
+              : ZH.nothingRecordedBadge,
           ),
         )
-        card.appendChild(el('p', null, result.answer))
+        card.appendChild(el('p', null, result.summary || ZH.nothingTold))
         const basis = el('div', 'basis')
         basis.appendChild(el('b', null, ZH.told))
-        basis.appendChild(document.createTextNode(result.summary || ZH.nothingTold))
+        basis.appendChild(document.createTextNode(ZH.answeredByAgent))
         card.appendChild(basis)
         answer.appendChild(card)
         host.appendChild(answer)
 
         // The comparison, once a record has been made about this same question.
-        if (state.before && state.before.answer !== result.answer) {
+        if (state.before && state.before.summary !== result.summary) {
           const section = el('section')
           section.appendChild(el('h2', null, ZH.whatChanged))
           const box = el('div', 'change')
           const beforeRow = el('div', 'row before')
           beforeRow.appendChild(el('div', 'tagline', ZH.beforeRecord))
-          beforeRow.appendChild(el('p', null, state.before.answer))
+          beforeRow.appendChild(el('p', null, state.before.summary || ZH.nothingTold))
           const afterRow = el('div', 'row after')
           afterRow.appendChild(el('div', 'tagline', ZH.afterRecord))
-          afterRow.appendChild(el('p', null, result.answer))
+          afterRow.appendChild(el('p', null, result.summary || ZH.nothingTold))
           box.appendChild(beforeRow)
           box.appendChild(afterRow)
           section.appendChild(box)
@@ -1702,16 +1706,16 @@
        */
       async function record(target, dimension, level) {
         clearError()
-        // Captured before the write, so the comparison shows the answer as it was *before* this record.
+        // Captured before the write, so the comparison shows the recall as it was *before* this record.
         // The re-ask below is told to keep it.
         state.before = state.last
         state.selected = target
         const question = state.question
         try {
-          await api('/api/record', {
+          await api('/api/v1/record', {
             target,
             dimensions: { [dimension]: level },
-            reason: 'recorded from the learn surface',
+            reason: 'recorded from the Learn workspace',
           })
           await refreshGraph()
           if (question) await runAsk(question, true)
@@ -1730,7 +1734,7 @@
         }
         clearError()
         try {
-          const payload = await api('/api/claim', { label, kind })
+          const payload = await api('/api/v1/nodes', { label, kind })
           input.value = ''
           state.selected = payload.node.nodeId
           await refreshGraph()
@@ -1743,7 +1747,7 @@
       }
 
       async function refreshGraph() {
-        const payload = await api('/api/state')
+        const payload = await api('/api/v1/state')
         latest = payload
         const previous = new Map(state.nodes.map((node) => [node.nodeId, node.understood]))
         state.nodes = payload.nodes.map((node) => ({
@@ -1774,9 +1778,9 @@
         }
         $('distilgo').disabled = true
         try {
-          const result = await api('/api/distill', { title: $('distiltitle').value, text })
+          const result = await api('/api/v1/distill', { title: $('distiltitle').value, text })
           $('distilnote').textContent =
-            `从 ${result.episodes} 段里得到 ${result.suggestions} 条待确认的建议` +
+            `从 ${result.episodes} 段里得到 ${result.suggestions.length} 条待确认的建议` +
             (result.refused.length > 0 ? `，另有 ${result.refused.length} 条没有通过检查` : '') +
             '。它们在下方的建议队列里。'
           $('distiltext').value = ''
@@ -1806,7 +1810,7 @@
       // One request: the server attaches each node's recorded understanding, so the record panel never
       // renders a node as blank when it is not.
       async function boot() {
-        renderState(await api('/api/state'))
+        renderState(await api('/api/v1/state'))
       }
 
       boot().catch((error) => fail(error.message))
