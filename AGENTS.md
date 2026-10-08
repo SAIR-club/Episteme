@@ -77,9 +77,13 @@ Note: Vitest resolves `@episteme/*` through each package's `dist/`, so **run `pn
 
 ### Per-change workflow
 
-- Before any set of edits goes into commits, cut a working branch from `main` (`git checkout -b <type>/<short-topic>`). Commit directly on `main` only when the change is a one-off fix that will not become a PR.
+Every change follows one cycle: **Issue → branch from the latest `main` → develop and test → PR → review → merge.** The next task that depends on it starts only after it has merged.
+
+- Start from an issue that states the background, scope, acceptance criteria, dependencies and what is out of scope. The PR links it.
+- Fetch first and cut the branch from the latest `origin/main` (`git fetch origin && git checkout -b <type>/<short-topic> origin/main`), never from a stale local `main` or another checkout's working tree. Nothing is committed directly to `main` (see [Branch discipline](#branch-discipline)).
 - Split the work into one commit per coherent unit (feature / refactor / docs / chore), never one big mixed commit, and never commit unrelated changes together.
-- Group related units that belong to the same module or feature area into one branch. When the user explicitly asks, open one draft PR per branch. A PR's title is a Conventional Commit and becomes the squash subject on merge.
+- Group related units that belong to the same module or feature area into one branch, and open one PR per branch when the user asks. A PR's title is a Conventional Commit and becomes the squash subject on merge.
+- Do not stack branches by default. A branch is based on another unmerged branch only when it genuinely depends on code that has not merged yet; otherwise wait for the dependency to merge and branch from `main` again. Independent work is never stacked to save time.
 
 ## Conventional Commits
 
@@ -113,7 +117,7 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 
 - Open or update a pull request only when the user explicitly asks.
 - Use a dedicated branch and follow any repository-specific branch naming convention. Do not perform feature work directly on the default branch.
-- When one branch depends on another unmerged branch, stack the PRs with `gh stack init <bottom> ... <top>` then `gh stack submit --auto` (draft PRs; `--open` only when the user asks for ready-for-review); each PR's base points at its dependency so diffs stay minimal until the base merges. `gh stack sync` keeps the stack in sync after upstream merges. **Prerequisites:** `gh stack` comes from the `github/gh-stack` extension — install it with `gh extension install github/gh-stack`; `gh` must be authenticated and have push permission on the remote repository; and GitHub Stacked PRs must be enabled for the repository (otherwise `gh stack submit` fails non-interactively with exit code 9). **Fallback:** push all branches, then create the PRs individually with `gh pr create --draft --base <base> --head <branch>` — bottom PR base on `main`, each successive PR base on its direct dependency branch. Omit `--draft` only when the user explicitly asks for ready-for-review PRs.
+- Stacked PRs are the exception (see [Per-change workflow](#per-change-workflow)). Only when one branch genuinely depends on another unmerged branch, stack the PRs with `gh stack init <bottom> ... <top>` then `gh stack submit --auto` (draft PRs; `--open` only when the user asks for ready-for-review); each PR's base points at its dependency so diffs stay minimal until the base merges. `gh stack sync` keeps the stack in sync after upstream merges. **Prerequisites:** `gh stack` comes from the `github/gh-stack` extension — install it with `gh extension install github/gh-stack`; `gh` must be authenticated and have push permission on the remote repository; and GitHub Stacked PRs must be enabled for the repository (otherwise `gh stack submit` fails non-interactively with exit code 9). **Fallback:** push all branches, then create the PRs individually with `gh pr create --draft --base <base> --head <branch>` — bottom PR base on `main`, each successive PR base on its direct dependency branch. Omit `--draft` only when the user explicitly asks for ready-for-review PRs.
 - Before opening a pull request, inspect the working tree, commits, and complete diff against the intended base branch. Remove unrelated changes from the pull request scope.
 - Run the relevant checks before opening the pull request. Open every pull request as a draft and keep it a draft until the user explicitly asks to mark it ready for review — pushing commits or opening a non-draft pull request triggers GitHub's automated AI review, so do not trigger it before the user asks for review.
 - Follow the repository's existing pull request template. Do not replace or bypass project-specific requirements.
