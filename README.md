@@ -185,6 +185,7 @@ opt-in.
 
 ## Documentation
 
+- [Target architecture](docs/architecture/target.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Data model](docs/architecture/data-model.md)
 - [State events](docs/architecture/state-events.md)
@@ -199,6 +200,7 @@ opt-in.
 - [ADR 0007 — Semantic retrieval](docs/decisions/0007-semantic-retrieval.md)
 - [ADR 0008 — Episteme as a plugin for other agents](docs/decisions/0008-agent-plugin-surface.md)
 - [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
+- [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
 - [Phase 1 report](PHASE1_REPORT.md)
 - [Phase 2 report](PHASE2_REPORT.md)
 

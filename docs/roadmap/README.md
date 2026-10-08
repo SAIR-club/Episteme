@@ -1,8 +1,8 @@
 # Roadmap
 
 The plan from here. What is _built_ is described by [`README.md`](../../README.md) and proven by the tests;
-this file records what comes next and why, and is rewritten when the direction changes rather than appended
-to.
+this file records what comes next and why, on the way to the [target architecture](../architecture/target.md).
+It is rewritten when the direction changes rather than appended to.
 
 ## Where things stand
 
