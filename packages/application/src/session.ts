@@ -1322,6 +1322,18 @@ export class LearnSession {
         kept.push(item)
       }
 
+      // The limit holds for what this run would add too, not only for what was waiting before it.
+      const waiting = this.#suggestions.list().length
+      if (waiting + kept.length > MAX_PENDING) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'too_many_pending',
+            message: `${waiting} suggestions are waiting, and this material would add ${kept.length}, more than the ${MAX_PENDING} the queue holds; decide on some first, or distil less at once`,
+          },
+        }
+      }
+
       await this.#sources.add({
         id: sourceId,
         title: material.title?.trim() || firstLine(text),
