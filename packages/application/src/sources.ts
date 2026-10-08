@@ -82,17 +82,20 @@ export class SourceStore {
 
   /** Keeps a source and writes it before returning, so a suggestion's origin never points at nothing. */
   async add(source: Source): Promise<void> {
+    // Written first and kept in memory only once written, so a failed write leaves no source that the next
+    // session would not have.
+    if (this.#filePath !== undefined) {
+      const lines = [...this.list(), source].map((kept) =>
+        JSON.stringify({
+          schemaVersion: SOURCES_SCHEMA_VERSION,
+          kind: 'source',
+          source: kept,
+        } satisfies SourceRecord),
+      )
+      const temporary = `${this.#filePath}.tmp`
+      await writeFile(temporary, `${lines.join('\n')}\n`, 'utf8')
+      await rename(temporary, this.#filePath)
+    }
     this.#sources.set(source.id, source)
-    if (this.#filePath === undefined) return
-    const lines = this.list().map((kept) =>
-      JSON.stringify({
-        schemaVersion: SOURCES_SCHEMA_VERSION,
-        kind: 'source',
-        source: kept,
-      } satisfies SourceRecord),
-    )
-    const temporary = `${this.#filePath}.tmp`
-    await writeFile(temporary, `${lines.join('\n')}\n`, 'utf8')
-    await rename(temporary, this.#filePath)
   }
 }

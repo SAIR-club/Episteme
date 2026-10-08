@@ -559,9 +559,17 @@ export class LearnSession {
       const suffix = Number.parseInt(node.id.slice(prefix.length), 10)
       if (Number.isFinite(suffix) && suffix > highest) highest = suffix
     }
-    // `listNodes` leaves out revoked nodes, but their ids are still taken.
+    // `listNodes` leaves out revoked nodes, but their ids are still taken. So is an id planned for a decision
+    // that has not been settled: if it landed after all, the node it names is that decision's.
+    const planned = new Set(
+      this.#suggestions.resolutions().map((resolution) => resolution.planned.nodeId),
+    )
     let next = highest + 1
-    while (this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined) next += 1
+    while (
+      this.#episteme.graph.getNode(asId<NodeId>(`${prefix}${next}`)) !== undefined ||
+      planned.has(`${prefix}${next}`)
+    )
+      next += 1
     return `${prefix}${next}`
   }
 
@@ -1046,7 +1054,13 @@ export class LearnSession {
           type: asId<NodeTypeId>(proposal.nodeType),
           tier: this.#tierOf(proposal.nodeType),
           source,
-          properties: { ...proposal.properties, ...provenanceOf(suggestion) },
+          // The text follows the label as decided, so a learner who puts it in their own words is not left
+          // with the distiller's wording underneath.
+          properties: {
+            ...proposal.properties,
+            text: proposal.label.trim(),
+            ...provenanceOf(suggestion),
+          },
         })
         return { kind: 'node', id: node.nodeId }
       }
@@ -1139,7 +1153,17 @@ export class LearnSession {
         const target = resolve(proposal.target)
         return typeof target === 'string' ? { ...proposal, target } : target
       }
-      default:
+      case 'claim': {
+        if (proposal.about === undefined) return proposal
+        const about: string[] = []
+        for (const end of proposal.about) {
+          const resolved = resolve(end)
+          if (typeof resolved !== 'string') return resolved
+          about.push(resolved)
+        }
+        return { ...proposal, about }
+      }
+      case 'node':
         return proposal
     }
   }
@@ -1298,6 +1322,18 @@ export class LearnSession {
         kept.push(item)
       }
 
+      // The limit holds for what this run would add too, not only for what was waiting before it.
+      const waiting = this.#suggestions.list().length
+      if (waiting + kept.length > MAX_PENDING) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'too_many_pending',
+            message: `${waiting} suggestions are waiting, and this material would add ${kept.length}, more than the ${MAX_PENDING} the queue holds; decide on some first, or distil less at once`,
+          },
+        }
+      }
+
       await this.#sources.add({
         id: sourceId,
         title: material.title?.trim() || firstLine(text),
@@ -1371,7 +1407,7 @@ export class LearnSession {
           id: asId<NodeId>(this.#nextId(proposal.nodeType)),
           type: asId<NodeTypeId>(proposal.nodeType),
           label,
-          properties: { text: label, ...proposal.properties },
+          properties: { ...proposal.properties, text: label },
           tags: learnTags('general'),
           tier: this.#tierOf(proposal.nodeType),
         })
