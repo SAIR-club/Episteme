@@ -68,11 +68,16 @@ from turning into a different product.
 1. **Agents propose, people confirm.** Nothing an agent sends can confirm a candidate or name who confirmed
    it. The agent-facing interface has no confirm operation. Confirmation comes from the Workspace, or from a
    form shown by a host trusted to show it to the person ([ADR 0008](../decisions/0008-agent-plugin-surface.md),
-   _Trust boundaries_).
-2. **Conversations and material are artifacts, not understanding.** They live in the artifact store,
-   append-only, and are referenced by provenance. Conversation management is a full module, with its tree
-   and its branches, but nothing in a conversation enters the graph except through review
-   ([ADR 0009](../decisions/0009-distillation.md)).
+   _Trust boundaries_). Which protocol a request uses is not authorization: until the service enforces
+   identity and per-operation permissions, any local process that reaches it can attempt a decision, and that
+   is documented as a limitation rather than presented as a guarantee.
+2. **Conversations and material are Episteme data, not understanding.** Conversation turns, their
+   parent-child relationships, branches and source references belong to Episteme's data model, held
+   authoritatively by the service in the artifact store, append-only and referenced by provenance. A
+   Workspace projects them as a tree and never owns them. An imported conversation keeps its source, and is
+   not stored as a complete tree when its branches were not supplied. Nothing in a conversation enters the
+   understanding graph except through review ([ADR 0009](../decisions/0009-distillation.md),
+   [ADR 0010](../decisions/0010-episteme-service.md)).
 3. **Understanding events are their own stream.** The event log holds several streams: understanding events,
    which are append-only and the only source of current understanding; review records, which say who
    decided what about which candidate; and conversation and system events (messages, imports, syncs,
