@@ -8,6 +8,7 @@ import {
 } from '@modelcontextprotocol/server'
 import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } from './confirm.js'
 import {
+  MAX_MATERIAL,
   RECORDABLE_DIMENSIONS,
   type LearnSession,
   type Proposal,
@@ -16,7 +17,8 @@ import {
 } from '@episteme/application'
 
 /**
- * The tools an agent sees (ADR 0008): `recall`, `propose` and `reflect`, and nothing that writes.
+ * The tools an agent sees (ADR 0008): `recall`, `propose`, `reflect` and `distill` (ADR 0009), and nothing
+ * that writes. `distill` only produces suggestions, like `propose`.
  *
  * There is deliberately no tool that confirms a suggestion and none that writes a node, an edge or a state
  * event. An agent that could confirm would be confirming itself. Everything it wants to change is proposed,
@@ -113,6 +115,22 @@ const PROPOSE_INPUT = fromJsonSchema<ProposeInput>({
   additionalProperties: false,
 })
 
+const DISTILL_INPUT = fromJsonSchema<{ title?: string; text: string }>({
+  type: 'object',
+  properties: {
+    title: { type: 'string', maxLength: 200, description: 'A short title for the material.' },
+    text: {
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_MATERIAL,
+      description:
+        'The learning material or dialogue, verbatim. A dialogue reads best as "speaker: utterance" lines, optionally starting with [mm:ss].',
+    },
+  },
+  required: ['text'],
+  additionalProperties: false,
+})
+
 const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
   type: 'object',
   properties: {},
@@ -175,6 +193,47 @@ export function createEpistemeMcpServer(
         `Kept as pending suggestion ${suggestion.id}. It changes nothing until the learner accepts it; ` +
           `do not tell them it has been recorded.`,
         { status: 'pending', suggestion },
+      )
+    },
+  )
+
+  server.registerTool(
+    'distill',
+    {
+      title: 'Distil learning material into suggestions',
+      description:
+        'Hand Episteme a stretch of learning material or a learning dialogue. Episteme reads it with its own distiller and turns what it finds (questions, claims, evidence, terms, how they relate, and what the learner said about their own understanding) into pending suggestions, each with the words it came from. Nothing is recorded: the learner decides on each in their review queue, and is not asked here. Do not tell the learner anything was recorded.',
+      inputSchema: DISTILL_INPUT,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async ({ title, text }, context) => {
+      // Who asked is recorded for provenance only. The distiller, not the asking agent, proposes.
+      const outcome = await session.distill(title === undefined ? { text } : { title, text }, {
+        requestedBy: agentActorFor(clientNameOf(context)),
+      })
+      if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
+      return result(
+        `Distilled ${outcome.episodes} episode(s) into ${outcome.suggestions.length} pending suggestion(s)` +
+          (outcome.refused.length > 0
+            ? `; ${outcome.refused.length} candidate(s) did not pass the checks`
+            : '') +
+          '. They wait in the learner’s review queue. Nothing has been recorded.',
+        {
+          status: 'pending',
+          sourceId: outcome.sourceId,
+          episodes: outcome.episodes,
+          suggestions: outcome.suggestions.map((suggestion) => ({
+            id: suggestion.id,
+            proposal: suggestion.proposal,
+            excerpt: suggestion.origin?.excerpt,
+          })),
+          refused: outcome.refused.map(({ ref, code, message }) => ({ ref, code, message })),
+        },
       )
     },
   )

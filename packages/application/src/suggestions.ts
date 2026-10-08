@@ -24,15 +24,43 @@ export type Proposal =
       /** Ids of the concepts or questions the claim is about. Accepting it links the claim to each. */
       readonly about?: readonly string[]
     }
-  /** A connection between two existing nodes, with a registered edge type. */
+  /**
+   * A node of any registered type, such as one distilled from material (ADR 0009). Its properties are the
+   * ones its type requires; accepting it records which suggestion and which words it came from.
+   */
+  | {
+      readonly kind: 'node'
+      readonly nodeType: string
+      readonly label: string
+      readonly properties?: Readonly<Record<string, unknown>>
+    }
+  /**
+   * A connection with a registered edge type. Either end is an existing node id, or `cand:<suggestion id>`
+   * for a node suggested alongside it, which must be accepted first.
+   */
   | { readonly kind: 'link'; readonly from: string; readonly to: string; readonly relation: string }
-  /** A change on one state dimension of an existing node, for the human whose graph this is. */
+  /**
+   * A change on one state dimension of a node, for the human whose graph this is. The target may be
+   * `cand:<suggestion id>`, as for a link.
+   */
   | {
       readonly kind: 'state'
       readonly target: string
       readonly dimension: string
       readonly level: string
     }
+
+/** Where a suggestion came from in learning material: the words it rests on (ADR 0009). */
+export interface SuggestionOrigin {
+  readonly sourceId: string
+  readonly episodeId: string
+  readonly span: { readonly start: number; readonly end: number }
+  readonly excerpt: string
+  readonly time?: { readonly from: number; readonly to: number }
+}
+
+/** How a proposal names a node suggested alongside it. */
+export const SUGGESTED_NODE_PREFIX = 'cand:'
 
 export interface Suggestion {
   readonly id: string
@@ -42,6 +70,10 @@ export interface Suggestion {
   /** The agent actor that proposed it. Provenance, not authentication (ADR 0008). */
   readonly proposedBy: string
   readonly proposedAt: EpochMillis
+  /** The words it was distilled from, when it came from material. */
+  readonly origin?: SuggestionOrigin
+  /** The client that asked for the distillation it came from. Provenance, not authority. */
+  readonly requestedBy?: string
 }
 
 /**
@@ -144,6 +176,29 @@ export class SuggestionStore {
     const suggestion: Suggestion = { id: `sug_${randomUUID()}`, ...draft }
     await this.#change((pending) => pending.set(suggestion.id, suggestion))
     return suggestion
+  }
+
+  /**
+   * Keeps several drafts in one write, such as everything one distillation yields.
+   *
+   * Their ids are chosen before any is kept, so a draft may refer to another of the same batch: `refer`
+   * receives the ids in order and returns the drafts to keep.
+   */
+  async addAll(
+    count: number,
+    refer: (ids: readonly string[]) => readonly Omit<Suggestion, 'id'>[],
+  ): Promise<readonly Suggestion[]> {
+    const ids = Array.from({ length: count }, () => `sug_${randomUUID()}`)
+    const kept = refer(ids).map((draft, index): Suggestion => ({
+      id: ids[index] ?? `sug_${randomUUID()}`,
+      ...draft,
+    }))
+    if (kept.length > 0) {
+      await this.#change((pending) => {
+        for (const suggestion of kept) pending.set(suggestion.id, suggestion)
+      })
+    }
+    return kept
   }
 
   /** Drops a draft that has been decided, and writes the change. Returns whether it was pending. */

@@ -478,6 +478,52 @@
         color: var(--faint);
         margin-top: 5px;
       }
+      .review .quote {
+        font-size: 12.5px;
+        color: var(--muted);
+        border-left: 3px solid var(--line);
+        padding: 2px 0 2px 8px;
+        margin: 6px 0;
+        white-space: pre-wrap;
+      }
+      .review .needs {
+        font-size: 12px;
+        color: var(--warn);
+        margin-top: 4px;
+      }
+      .distil textarea,
+      .distil input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: var(--card);
+        color: var(--ink);
+      }
+      .distil textarea {
+        min-height: 120px;
+        resize: vertical;
+        margin-top: 6px;
+      }
+      .distil button {
+        margin-top: 8px;
+        font: inherit;
+        font-size: 12.5px;
+        padding: 5px 12px;
+        border-radius: 7px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: #fff;
+        cursor: pointer;
+      }
+      .distil .note {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
       .review .actions,
       .review .editor {
         display: flex;
@@ -851,6 +897,19 @@
         </main>
 
         <aside>
+          <section class="distil">
+            <h2>导入学习材料<span class="en">Distil learning material</span></h2>
+            <input id="distiltitle" type="text" placeholder="标题（可选）" autocomplete="off" />
+            <textarea
+              id="distiltext"
+              placeholder="粘贴一段学习材料或对话，例如：&#10;学生：为什么需要位置编码？&#10;老师：因为自注意力本身不区分顺序。"
+            ></textarea>
+            <button id="distilgo" type="button">蒸馏为建议</button>
+            <div class="note" id="distilnote">
+              提取出的问题、论断、证据和你理解的变化，都只是建议；你确认之后才会写入图谱。
+            </div>
+          </section>
+
           <section id="reviewsection" hidden>
             <h2>待你确认的建议<span class="en">Suggestions awaiting you</span></h2>
             <div id="review"></div>
@@ -935,7 +994,11 @@
           body: body === undefined ? undefined : JSON.stringify(body),
         })
         const payload = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(payload.error || response.statusText)
+        if (!response.ok) {
+          const error = new Error(payload.error || response.statusText)
+          error.code = payload.code
+          throw error
+        }
         return payload
       }
 
@@ -1034,6 +1097,7 @@
         const section = $('reviewsection')
         const host = $('review')
         host.innerHTML = ''
+        pending = new Map((suggestions || []).map((suggestion) => [suggestion.id, suggestion]))
         // Redrawing discards any open editor, so nothing is being edited any more.
         editing.clear()
         if (!suggestions || suggestions.length === 0) {
@@ -1047,15 +1111,26 @@
           el(
             'div',
             'lead',
-            `${suggestions.length} 条来自 agent 的建议。在你决定之前，它们不会改变你的图谱或你的理解。`,
+            `${suggestions.length} 条建议，来自 agent 或你导入的材料。在你决定之前，它们不会改变你的图谱或你的理解。`,
           ),
         )
         for (const suggestion of suggestions) {
           const card = el('div', 'suggestion')
           card.dataset.suggestion = suggestion.id
-          card.appendChild(el('div', 'kind', SUGGESTION_KINDS[suggestion.proposal.kind]))
+          card.appendChild(el('div', 'kind', kindOf(suggestion.proposal)))
           card.appendChild(el('div', 'what', describeProposal(suggestion.proposal)))
+          if (suggestion.origin) card.appendChild(el('div', 'quote', quoteOf(suggestion.origin)))
           card.appendChild(el('div', 'why', `理由：${suggestion.rationale}`))
+          const waiting = waitingFor(suggestion.proposal)
+          if (waiting.length > 0) {
+            card.appendChild(
+              el(
+                'div',
+                'needs',
+                `需要先接受：${waiting.map((label) => `「${label}」`).join('、')}`,
+              ),
+            )
+          }
           card.appendChild(
             el('div', 'who', `${agentName(suggestion.proposedBy)} · ${suggestion.id}`),
           )
@@ -1106,12 +1181,11 @@
           read = () => ({ ...proposal, level: select.value })
         } else {
           const input = el('input')
-          input.value = proposal.kind === 'claim' ? proposal.label : proposal.relation
+          const labelled = proposal.kind === 'claim' || proposal.kind === 'node'
+          input.value = labelled ? proposal.label : proposal.relation
           editor.appendChild(input)
           read = () =>
-            proposal.kind === 'claim'
-              ? { ...proposal, label: input.value }
-              : { ...proposal, relation: input.value }
+            labelled ? { ...proposal, label: input.value } : { ...proposal, relation: input.value }
         }
 
         const save = el('button', 'accept', '按我的修改记录')
@@ -1125,6 +1199,14 @@
         })
         editor.append(save, cancel)
         return editor
+      }
+
+      /** Refusals a learner meets in the queue, in their words; anything else is shown as the host gave it. */
+      const DECISION_REFUSALS = {
+        depends_on_pending:
+          '它依赖的另一条建议还没有被接受。先接受卡片上「需要先接受」的那几条，再接受这一条。',
+        unresolved_candidate:
+          '它依赖的建议你已经不采纳了，所以它没有可以连上的东西。可以把这一条也不采纳。',
       }
 
       /** Which drafts are pending, as one comparable value. */
@@ -1143,17 +1225,63 @@
           // Accepting or modifying changes the graph and the learner's state, so the whole surface is re-read.
           await refreshGraph()
         } catch (error) {
-          fail(`处理建议失败：${error.message}`)
+          fail(`处理建议失败：${DECISION_REFUSALS[error.code] ?? error.message}`)
           for (const button of card.querySelectorAll('button')) button.disabled = false
         }
       }
 
       const SUGGESTION_KINDS = { claim: '新论断', link: '新连接', state: '理解的变化' }
+      const NODE_KINDS = {
+        question: '新问题',
+        claim: '新论断',
+        evidence: '新证据',
+        concept: '新概念',
+      }
 
-      const labelOf = (nodeId) =>
-        state.nodes.find((node) => node.nodeId === nodeId)?.label ?? nodeId
+      const kindOf = (proposal) =>
+        proposal.kind === 'node'
+          ? (NODE_KINDS[proposal.nodeType] ?? `新节点（${proposal.nodeType}）`)
+          : SUGGESTION_KINDS[proposal.kind]
+
+      /** The suggestions currently in the queue, by id, so a reference between them can be shown by name. */
+      let pending = new Map()
+
+      /** A node by its label; a node suggested alongside (`cand:<id>`) by what it proposes. */
+      const labelOf = (nodeId) => {
+        if (nodeId.startsWith('cand:')) {
+          const id = nodeId.slice(5)
+          const named = pending.get(id)?.proposal
+          if (named && 'label' in named) return `${named.label}（待确认）`
+          // Accepted already: it is a node now, named as the learner kept it.
+          const accepted = state.nodes.find((node) => node.fromSuggestion === id)
+          return accepted ? accepted.label : '一条你没有采纳的建议'
+        }
+        return state.nodes.find((node) => node.nodeId === nodeId)?.label ?? nodeId
+      }
+
+      /** What this suggestion waits on: suggested nodes it refers to that are still in the queue. */
+      function waitingFor(proposal) {
+        const ends =
+          proposal.kind === 'link'
+            ? [proposal.from, proposal.to]
+            : proposal.kind === 'state'
+              ? [proposal.target]
+              : []
+        return ends
+          .filter((end) => end.startsWith('cand:') && pending.has(end.slice(5)))
+          .map((end) => pending.get(end.slice(5)).proposal.label)
+      }
+
+      /** The words a distilled suggestion came from, with when they were said if the material had times. */
+      function quoteOf(origin) {
+        const at = (seconds) =>
+          `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+        const time = origin.time ? `［${at(origin.time.from)}–${at(origin.time.to)}］ ` : ''
+        return `原文 ${time}「${origin.excerpt}」`
+      }
 
       function describeProposal(proposal) {
+        if (proposal.kind === 'node') return `「${proposal.label}」`
         if (proposal.kind === 'claim') {
           const about = (proposal.about || []).map(labelOf)
           return about.length === 0
@@ -1632,6 +1760,35 @@
         renderProgress(payload.progress)
         renderReview(payload.suggestions)
       }
+
+      /**
+       * Hands material to the host to distil. What comes back is only suggestions: they join the queue above,
+       * and nothing is recorded until the learner decides on each.
+       */
+      async function distilMaterial() {
+        clearError()
+        const text = $('distiltext').value
+        if (text.trim() === '') {
+          fail('先粘贴一段材料。')
+          return
+        }
+        $('distilgo').disabled = true
+        try {
+          const result = await api('/api/distill', { title: $('distiltitle').value, text })
+          $('distilnote').textContent =
+            `从 ${result.episodes} 段里得到 ${result.suggestions} 条待确认的建议` +
+            (result.refused.length > 0 ? `，另有 ${result.refused.length} 条没有通过检查` : '') +
+            '。它们在下方的建议队列里。'
+          $('distiltext').value = ''
+          $('distiltitle').value = ''
+          await refreshGraph()
+        } catch (error) {
+          fail(`蒸馏失败：${error.message}`)
+        } finally {
+          $('distilgo').disabled = false
+        }
+      }
+      $('distilgo').addEventListener('click', distilMaterial)
 
       $('go').addEventListener('click', ask)
       $('q').addEventListener('keydown', (event) => {

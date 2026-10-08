@@ -20,7 +20,7 @@ export type {
   Capability,
 } from './mock-agent.js'
 
-export { suggestion, isActionable } from './types.js'
+export { suggestion, isActionable, CANDIDATE_PREFIX } from './types.js'
 export type {
   AgentContext,
   AgentInput,
@@ -32,4 +32,7 @@ export type {
   EdgeSuggestion,
   StateChangeSuggestion,
   AgentSuggestion,
+  AgentMaterial,
+  KnownNode,
+  CandidateNode,
 } from './types.js'

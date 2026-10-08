@@ -62,3 +62,16 @@ graph.addNode({
 
 `learnDomainPack` uses `registerIfAbsent` throughout, so a pack that shares this vocabulary — Forum,
 for instance — composes with it rather than conflicting.
+
+## Distillation policy
+
+`@episteme/domain-learn/distillation` exports `learnDistillationPolicy`, which says what distillation may suggest
+in the Learn scene ([ADR 0009](../../docs/decisions/0009-distillation.md)):
+
+- concepts, questions, claims and evidence, as Learn's own node types;
+- `refers_to`, `answers`, `supports` and `contradicts` between them;
+- changes to `confidence` and `articulation`, with the levels this pack registers.
+
+It never distils a `thought`. A thought is understanding the learner organised deliberately, so what material
+yields stays a claim until the learner organises it. It is a subpath export, so the pack's main entry does not
+depend on distillation.

@@ -48,6 +48,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/mcp
 
+  examples/distill-session:
+    dependencies:
+      '@episteme/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@episteme/domain-learn':
+        specifier: workspace:*
+        version: link:../../packages/domain-learn
+
   examples/learn-session:
     dependencies:
       '@episteme/agent':
@@ -113,6 +122,9 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+      '@episteme/distillation':
+        specifier: workspace:*
+        version: link:../distillation
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../domain-learn
@@ -125,11 +137,23 @@ importers:
 
   packages/core: {}
 
+  packages/distillation:
+    dependencies:
+      '@episteme/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@episteme/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/domain-learn:
     dependencies:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+      '@episteme/distillation':
+        specifier: workspace:*
+        version: link:../distillation
 
   packages/embeddings-http:
     dependencies:
@@ -184,6 +208,9 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@episteme/distillation':
+        specifier: workspace:*
+        version: link:../packages/distillation
       '@episteme/domain-learn':
         specifier: workspace:*
         version: link:../packages/domain-learn

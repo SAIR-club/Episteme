@@ -16,7 +16,49 @@ export interface AgentWorkspace {
   readonly state: Readonly<Record<string, StateValue>>
   /** Recent reasoning, oldest first, for models that need narrative context. */
   readonly notes?: readonly string[]
+  /**
+   * The passage being distilled, when the agent is asked to read material (ADR 0009).
+   *
+   * The passage is input to reason over, never something to store: it stays outside the graph, and whatever
+   * the agent suggests from it is only a suggestion.
+   */
+  readonly material?: AgentMaterial
+  /** Nodes the human already has, so a passage's words can be matched to them instead of duplicated. */
+  readonly known?: readonly KnownNode[]
+  /**
+   * Nodes suggested earlier for this same passage, which later suggestions may refer to as `cand:<ref>`.
+   *
+   * They exist only as suggestions. A reference to one resolves only if a human accepts it.
+   */
+  readonly candidates?: readonly CandidateNode[]
 }
+
+export interface AgentMaterial {
+  readonly sourceId: string
+  readonly episodeId: string
+  readonly text: string
+  /** Where the passage sits in the source, as character offsets. */
+  readonly span: { readonly start: number; readonly end: number }
+  /** The passage's time range in the source, in seconds, when the source had timestamps. */
+  readonly time?: { readonly from: number; readonly to: number }
+}
+
+export interface KnownNode {
+  readonly id: string
+  readonly label: string
+  readonly type: string
+}
+
+export interface CandidateNode {
+  readonly ref: string
+  readonly nodeType: string
+  readonly label: string
+  /** The passage it was found in, so an agent can tell this passage's candidates from earlier ones. */
+  readonly episodeId?: string
+}
+
+/** How a suggestion names a candidate of the same passage instead of an existing node. */
+export const CANDIDATE_PREFIX = 'cand:'
 
 /**
  * What an agent is told about the human before it answers.
@@ -65,15 +107,20 @@ export interface NodeSuggestion {
   readonly tags?: readonly string[]
   readonly anchors?: readonly string[]
   readonly rationale: string
+  /** A name other suggestions of the same passage can use for this node, as `cand:<ref>`. */
+  readonly ref?: string
+  /** The words of the material this suggestion rests on, verbatim. */
+  readonly quote?: string
 }
 
-/** An edge the agent proposes. */
+/** An edge the agent proposes. Either end may be an existing node id or `cand:<ref>`. */
 export interface EdgeSuggestion {
   readonly kind: 'edge'
   readonly edgeType: string
   readonly from: string
   readonly to: string
   readonly rationale: string
+  readonly quote?: string
 }
 
 /**
@@ -85,11 +132,13 @@ export interface EdgeSuggestion {
  */
 export interface StateChangeSuggestion {
   readonly kind: 'state'
+  /** An existing node id or `cand:<ref>`. */
   readonly target: string
   readonly actorId: string
   readonly dimensions: Readonly<Record<string, StateValue>>
   readonly evidence: readonly string[]
   readonly rationale: string
+  readonly quote?: string
 }
 
 export type Suggestion = NodeSuggestion | EdgeSuggestion | StateChangeSuggestion

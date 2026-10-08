@@ -409,3 +409,50 @@ describe('the review queue', () => {
     expect(list((await get('/api/suggestions')).body, 'suggestions')).toHaveLength(1)
   })
 })
+
+describe('distilling material', () => {
+  const MATERIAL =
+    '学生：为什么 Transformer 需要位置编码？\n老师：因为自注意力本身不区分词的顺序。\n学生：我明白了。'
+
+  it('turns material into pending suggestions, with their words, and records nothing', async () => {
+    const before = field<number>((await get('/api/state')).body, 'events')
+    const { status, body } = await post('/api/distill', { title: '位置编码', text: MATERIAL })
+    expect(status).toBe(200)
+    expect(field<number>(body, 'episodes')).toBe(1)
+    expect(field<number>(body, 'suggestions')).toBeGreaterThan(0)
+
+    const suggestions = list<{ origin?: { excerpt: string } }>(
+      (await get('/api/suggestions')).body,
+      'suggestions',
+    )
+    expect(suggestions).toHaveLength(field<number>(body, 'suggestions'))
+    expect(suggestions.every((suggestion) => suggestion.origin !== undefined)).toBe(true)
+    expect(field<number>((await get('/api/state')).body, 'events')).toBe(before)
+  })
+
+  it('reports material it will not read as a refusal', async () => {
+    const { status, body } = await post('/api/distill', { text: 'x'.repeat(20_001) })
+    expect(status).toBe(422)
+    expect(field<string>(body, 'code')).toBe('material_too_long')
+  })
+
+  it('lets the learner modify a distilled node into their own words', async () => {
+    await post('/api/distill', { text: MATERIAL })
+    const suggestions = list<{ id: string; proposal: { kind: string; nodeType?: string } }>(
+      (await get('/api/suggestions')).body,
+      'suggestions',
+    )
+    const claim = suggestions.find(
+      (suggestion) =>
+        suggestion.proposal.kind === 'node' && suggestion.proposal.nodeType === 'claim',
+    )
+    const { status } = await post('/api/suggestions/decide', {
+      id: claim?.id,
+      action: 'modify',
+      proposal: { kind: 'node', nodeType: 'claim', label: '注意力本身没有顺序' },
+    })
+    expect(status).toBe(200)
+    const nodes = list<{ label: string }>((await get('/api/state')).body, 'nodes')
+    expect(nodes.map((node) => node.label)).toContain('注意力本身没有顺序')
+  })
+})

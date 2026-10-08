@@ -1,7 +1,7 @@
 # @episteme/mcp
 
-The MCP surface of an Episteme host. It lets an agent `recall`, `propose` and `reflect` over one learner's
-graph, and nothing else. See [ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md).
+The MCP surface of an Episteme host. It lets an agent `recall`, `propose`, `reflect` and `distill` over one
+learner's graph, and nothing else. See [ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md).
 
 It is a package rather than an app because the host that serves it is the same process that serves the Learn
 surface. That process owns the graph file, and no app depends on another app.
@@ -14,11 +14,12 @@ graph, so the terminal surface cannot open the same file.
 
 ## Tools
 
-| tool      | what it does                                                                                   | changes anything |
-| --------- | ---------------------------------------------------------------------------------------------- | ---------------- |
-| `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved     | no               |
-| `propose` | keeps a claim, a link or a state change as a pending suggestion, or refuses it with the reason | no               |
-| `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending  | no               |
+| tool      | what it does                                                                                                     | changes anything |
+| --------- | ---------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved                       | no               |
+| `propose` | keeps a claim, a link or a state change as a pending suggestion, or refuses it with the reason                   | no               |
+| `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending                    | no               |
+| `distill` | distils learning material with Episteme's own distiller into pending suggestions, each with its words (ADR 0009) | no               |
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
 that could confirm would be confirming itself. A suggestion is accepted through the one human-decision path,
@@ -26,6 +27,10 @@ from the Learn review queue or from an elicitation form answered in the host. Se
 of these can and cannot guarantee.
 
 Every result carries the same data twice: as text addressed to the agent, and as `structuredContent`.
+
+`distill` never asks the learner through the host, even one that could show a form. A single distillation yields
+many suggestions, and they wait in the review queue. The client that asked is recorded as `requestedBy`, for
+provenance only. Material is limited to 20,000 characters, and the queue to 500 pending suggestions.
 
 ## Asking the learner
 

@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./distillation": {
+      "types": "./dist/distillation.d.ts",
+      "default": "./dist/distillation.js"
     }
   },
   "main": "./dist/index.js",
@@ -20,6 +24,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@episteme/core": "workspace:*"
+    "@episteme/core": "workspace:*",
+    "@episteme/distillation": "workspace:*"
   }
 }

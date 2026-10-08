@@ -5,5 +5,5 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../core" }, { "path": "../distillation" }]
+  "references": [{ "path": "../core" }, { "path": "../agent" }]
 }

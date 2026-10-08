@@ -125,6 +125,25 @@ Still open, and answered by using it rather than in advance:
   arbitrary phrasing, so `SEMANTIC_MATCH_THRESHOLD` has to be recalibrated against a real model's similarity
   distribution ([retrieval.md](../architecture/retrieval.md)).
 
+## Distillation — minimal loop: implemented
+
+Built to [ADR 0009](../decisions/0009-distillation.md): learning material or a learning dialogue goes in, is
+split into episodes, and is read by a distiller. The result is candidate questions, claims, evidence and terms,
+how they relate, and what the learner said about their own understanding. All of it becomes pending
+suggestions, each with the words it came from. The learner accepts, modifies or dismisses each through the one
+decision path, and only that reaches the graph and the history. Entry points are the application, the Learn
+surface (_导入学习材料_) and the MCP `distill` tool, which feeds the review queue only.
+`pnpm demo:distill` and `tests/distillation-loop.test.ts` take a real fragment through the whole loop.
+
+Not done, deliberately:
+
+- **A model-backed distiller.** The first is rule-based: deterministic, Chinese and English, and modest in what
+  it finds. A model-backed `CognitiveAgent` replaces it behind the same interface.
+- **Dismissing what depends on a dismissed suggestion.** Such suggestions stay in the queue, refused as
+  `unresolved_candidate` if accepted, until the learner dismisses them too.
+- **Thoughts.** Distillation never suggests one. A thought is what the learner organises.
+- **Policies for other subjects.** Only the Learn policy exists. Another Domain Pack can add its own.
+
 ## Phase 4 — privacy before other people's understanding arrives
 
 Attaching to arbitrary agents means personal understanding is read by tools Episteme does not control. Before

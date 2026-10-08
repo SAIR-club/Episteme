@@ -12,6 +12,7 @@
     "@episteme/app-learn": "workspace:*",
     "@episteme/application": "workspace:*",
     "@episteme/core": "workspace:*",
+    "@episteme/distillation": "workspace:*",
     "@episteme/domain-learn": "workspace:*",
     "@episteme/embeddings-http": "workspace:*",
     "@episteme/mcp": "workspace:*",
