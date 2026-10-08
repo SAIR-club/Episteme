@@ -29,6 +29,23 @@ function at(session: LearnSession): { readonly epoch: string; readonly revision:
   return { epoch: session.epoch, revision: session.revision }
 }
 
+/**
+ * Runs a read that awaits, such as `recall` waiting on embeddings, and says which state it saw.
+ *
+ * Reads are not queued, so a change can land while one is waiting, and the result may then hold some of it and
+ * not the rest. Such a read is reported at an odd revision, which promises nothing, rather than at the even
+ * revision the change left behind, which would claim the result describes that state.
+ */
+export async function readSettled<T>(
+  session: LearnSession,
+  read: () => Promise<T>,
+): Promise<{ readonly epoch: string; readonly revision: number; readonly result: T }> {
+  const before = session.revision
+  const result = await read()
+  const after = session.revision
+  return { epoch: session.epoch, revision: before === after ? after : after | 1, result }
+}
+
 /** Input that does not have the shape a route needs. Answered with 400, never with a stack. */
 class RequestError extends Error {}
 
@@ -249,8 +266,9 @@ export async function handleApi(
     // The same query as the MCP `recall` tool, and the same result.
     if (path === `${API_PREFIX}/recall` && method === 'POST') {
       const body = await readJson(request)
-      const recalled = await session.recall(asString(body['question'], 'question'))
-      sendJson(response, 200, { ...at(session), ...recalled })
+      const question = asString(body['question'], 'question')
+      const { epoch, revision, result } = await readSettled(session, () => session.recall(question))
+      sendJson(response, 200, { epoch, revision, ...result })
       return
     }
 
