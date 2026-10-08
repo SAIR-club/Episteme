@@ -100,9 +100,11 @@ Three properties matter here:
 4. ask again
 ```
 
-The fourth step is the point. Before anything is recorded the answer has to establish the ground; after,
-it starts from what you said you understood. The interface shows the two answers side by side, so the
-change is a comparison rather than a claim.
+The fourth step is the point. Before anything is recorded nothing of yours is recalled; after, what you said
+you understood is. The page shows the two recalls side by side, so the change is a comparison rather than a
+claim. The page writes no answer: the service recalls, and an agent connected over MCP answers from the same
+recall (ADR 0010). The terminal still writes a scripted answer, as a demonstration of what an agent does with
+it.
 
 `pnpm learn` runs the same loop, and has a `progress` command that prints what the web panel's
 "到目前为止" section shows.
@@ -143,10 +145,11 @@ work. They need a surface.
   three structurally different ways depending on what the learner has recorded, which is enough to show the
   loop working and to keep the test suite reproducible. Swapping in a real model means implementing
   `CognitiveAgent`; nothing here would change.
-- **No framework, no bundler.** The web surface is `node:http` plus one HTML file with plain DOM. The
+- **No framework, no bundler.** The web surface is one HTML file with plain DOM, served by the Episteme
+  service, which is `node:http`. The
   project's own claim is that it runs with no database, no model and no frontend toolchain, and adding a
   build step to demonstrate that would undercut it.
-- **No teaching.** It retrieves, records and answers. It does not decide what you should learn next — that
+- **No teaching.** It retrieves and records; only the terminal also answers. It does not decide what you should learn next — that
   would be an application's job, and probably a different one.
 
 ## The agent cannot write
