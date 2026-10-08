@@ -109,7 +109,7 @@ describe('a distilled node put in the learner’s own words', () => {
       'learn-review',
     )
     if (!decided.ok || decided.outcome === 'dismissed') throw new Error('expected a node')
-    const node = session.graph.getNode(decided.committed.id as never)
+    const node = session.graph.getNode(decided.committed.id)
     expect(node?.label).toBe('位置编码为什么必要？')
     expect(node?.properties['text']).toBe('位置编码为什么必要？')
     await session.close()
