@@ -284,7 +284,12 @@ export async function handleApi(
 
     const history = NODE_HISTORY.exec(path)
     if (history !== null && method === 'GET') {
-      const target = decodeURIComponent(history[1] ?? '')
+      let target: string
+      try {
+        target = decodeURIComponent(history[1] ?? '')
+      } catch {
+        throw new RequestError('the node id in the path is not valid percent-encoding')
+      }
       const events = session.historyOf(target)
       if (events === undefined) {
         sendRefusal(response, 404, 'unknown_node', `there is no node "${target}"`)

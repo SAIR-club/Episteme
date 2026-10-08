@@ -109,6 +109,11 @@ describe('without a Workspace', () => {
     const unknown = await get('/api/v1/nodes/no_such_node/history')
     expect(unknown.status).toBe(404)
     expect(unknown.body['code']).toBe('unknown_node')
+
+    // A node id that is not valid percent-encoding is malformed input, not a failure of the service.
+    const malformed = await get('/api/v1/nodes/%E0%A4%A/history')
+    expect(malformed.status).toBe(400)
+    expect(malformed.body['code']).toBe('invalid_request')
   })
 
   it('reports an unknown route under the API as 404 with a code', async () => {
