@@ -49,11 +49,12 @@ an edit in place.
 
 ### Revisions
 
-Reads, and the results of changes, carry a `revision`: which state of the graph, the history and the drafts
-they describe. It is even while nothing changes and odd while a change is in progress. Two results with the
-same even revision describe the same state, so a client that drew one screen from several reads can tell
-whether they agree. An odd revision promises nothing; read again. The revision may advance without a visible
-change, never stays put across one, and counts from zero each time the service starts.
+Reads, and the results of changes, carry an `epoch` and a `revision`: which state of the graph, the history and
+the drafts they describe. The revision is even while nothing changes and odd while a change is in progress.
+Two results with the same `epoch` and the same even `revision` describe the same state, so a client that drew
+one screen from several reads can tell whether they agree. An odd revision promises nothing; read again. The
+revision may advance without a visible change and never stays put across one. It counts from zero each time
+the service starts, and each start has a new `epoch`, so compare the pair, never the revision alone.
 
 ### Errors
 

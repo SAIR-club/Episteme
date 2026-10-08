@@ -281,6 +281,8 @@ export class LearnSession {
   #mutations: Promise<unknown> = Promise.resolve()
   /** See `revision`. Advanced only by `#exclusive`. */
   #revision = 0
+  /** See `epoch`. */
+  readonly #epoch = randomUUID()
   #closed = false
   readonly #recovered: RecoveredDecision[] = []
 
@@ -410,10 +412,19 @@ export class LearnSession {
    * revision promises nothing, because a mutation can be read between its steps: read again. It may advance
    * without anything having changed, as it does for a refused mutation, but it never stays put across a change.
    *
-   * It counts within this session only, from zero when the session opens.
+   * It counts within this session only, from zero when the session opens, so it identifies a state only
+   * together with `epoch`.
    */
   get revision(): number {
     return this.#revision
+  }
+
+  /**
+   * Which opening of the graph a `revision` counts within. A new session, such as after a restart, starts a
+   * new epoch, so a revision remembered from before cannot be mistaken for the same number counted again.
+   */
+  get epoch(): string {
+    return this.#epoch
   }
 
   /**

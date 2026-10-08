@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { LearnSession } from '@episteme/application'
 import { seedTopic } from '@episteme/application/seed'
 import { describe, expect, it } from 'vitest'
@@ -56,6 +59,28 @@ describe('the session revision', () => {
     expect(during % 2).toBe(1)
     expect(session.revision % 2).toBe(0)
     await session.close()
+  })
+
+  it('starts again after a restart, in a new epoch, so the same number cannot pass for the same state', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'episteme-epoch-'))
+    const filePath = join(directory, 'learn.jsonl')
+    try {
+      const first = await LearnSession.open({ filePath })
+      await seedTopic(first)
+      await first.record('q_why_order', { confidence: 'low' })
+      const before = { epoch: first.epoch, revision: first.revision }
+      await first.close()
+
+      const second = await LearnSession.open({ filePath })
+      await second.record('q_why_order', { confidence: 'high' })
+      await second.batch(() => undefined)
+      // Counting again from zero can land on the same number for a different state.
+      expect(second.revision).toBe(before.revision)
+      expect(second.epoch).not.toBe(before.epoch)
+      await second.close()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('advances for a refused change too, since what was tried may have touched something', async () => {

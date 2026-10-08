@@ -38,9 +38,9 @@ async function rest<T = Record<string, unknown>>(path: string, body?: unknown): 
   return (await response.json()) as T
 }
 
-/** A result without its revision, which only REST reports. */
+/** A result without its epoch and revision, which only REST reports. */
 function withoutRevision(body: Record<string, unknown>): Record<string, unknown> {
-  const { revision: _revision, ...rest } = body
+  const { epoch: _epoch, revision: _revision, ...rest } = body
   return rest
 }
 
@@ -124,13 +124,17 @@ describe('deciding', () => {
 
 describe('revisions', () => {
   it('stay equal while nothing changes, across every read', async () => {
-    const state = await rest<{ revision: number }>('/state')
-    const suggestions = await rest<{ revision: number }>('/suggestions')
-    const reflected = await rest<{ revision: number }>('/reflect')
-    const recalled = await rest<{ revision: number }>('/recall', { question: 'positions' })
+    const state = await rest<{ epoch: string; revision: number }>('/state')
+    const suggestions = await rest<{ epoch: string; revision: number }>('/suggestions')
+    const reflected = await rest<{ epoch: string; revision: number }>('/reflect')
+    const recalled = await rest<{ epoch: string; revision: number }>('/recall', {
+      question: 'positions',
+    })
     await agent.call('recall', { question: 'positions' })
 
     expect(state.revision % 2).toBe(0)
+    expect(typeof state.epoch).toBe('string')
+    for (const read of [suggestions, reflected, recalled]) expect(read.epoch).toBe(state.epoch)
     for (const read of [suggestions, reflected, recalled])
       expect(read.revision).toBe(state.revision)
     expect((await rest<{ revision: number }>('/state')).revision).toBe(state.revision)

@@ -21,6 +21,14 @@ export interface ApiContext {
   readonly seeded: boolean
 }
 
+/**
+ * Which state a result describes: the session's revision, and the epoch it counts within. A revision alone
+ * starts again from zero after a restart, so only the pair identifies a state.
+ */
+function at(session: LearnSession): { readonly epoch: string; readonly revision: number } {
+  return { epoch: session.epoch, revision: session.revision }
+}
+
 /** Input that does not have the shape a route needs. Answered with 400, never with a stack. */
 class RequestError extends Error {}
 
@@ -194,7 +202,7 @@ export async function handleApi(
       const understanding: Record<string, readonly { id: string; level: string }[]> = {}
       for (const node of nodes) understanding[node.nodeId] = session.understandingOf(node.nodeId)
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         scene: profile.name,
         topic: { title: profile.seed.title, about: profile.seed.about, seeded },
         dimensions: RECORDABLE_DIMENSIONS,
@@ -213,7 +221,7 @@ export async function handleApi(
 
     if (path === `${API_PREFIX}/suggestions` && method === 'GET') {
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         suggestions: session.pendingSuggestions(),
       })
       return
@@ -230,7 +238,7 @@ export async function handleApi(
         return
       }
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         result,
         suggestions: session.pendingSuggestions(),
         events: session.eventCount,
@@ -242,14 +250,14 @@ export async function handleApi(
     if (path === `${API_PREFIX}/recall` && method === 'POST') {
       const body = await readJson(request)
       const recalled = await session.recall(asString(body['question'], 'question'))
-      sendJson(response, 200, { revision: session.revision, ...recalled })
+      sendJson(response, 200, { ...at(session), ...recalled })
       return
     }
 
     // The same query as the MCP `reflect` tool, and the same result.
     if (path === `${API_PREFIX}/reflect` && method === 'GET') {
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         progress: session.progress(),
         pendingSuggestions: session.pendingSuggestions().length,
       })
@@ -264,7 +272,7 @@ export async function handleApi(
         sendRefusal(response, 404, 'unknown_node', `there is no node "${target}"`)
         return
       }
-      sendJson(response, 200, { revision: session.revision, target, events })
+      sendJson(response, 200, { ...at(session), target, events })
       return
     }
 
@@ -280,7 +288,7 @@ export async function handleApi(
         return
       }
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         status: 'pending',
         sourceId: outcome.sourceId,
         episodes: outcome.episodes,
@@ -310,7 +318,7 @@ export async function handleApi(
       )
       if (recorded === undefined) return
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         ...recorded,
         // Echoed so the client does not have to guess what the recorded state now is.
         understanding: session.understandingOf(target),
@@ -327,7 +335,7 @@ export async function handleApi(
       const node = await refusing(response, () => session.addNode({ label, kind }))
       if (node === undefined) return
       sendJson(response, 200, {
-        revision: session.revision,
+        ...at(session),
         node,
         nodes: session.listNodes(),
         events: session.eventCount,
