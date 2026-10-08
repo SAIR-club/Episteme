@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -18,11 +18,11 @@ const MATERIAL = [
 ].join('\n')
 
 let directory: string
-let server: LearnServer
+let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-mcp-distil-'))
-  server = await startLearnServer({ port: 0, filePath: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
 })
 
 afterEach(async () => {
@@ -41,7 +41,7 @@ interface Surface {
   nodes: { label: string }[]
 }
 const surface = async (): Promise<Surface> =>
-  (await (await fetch(`${server.url}/api/state`)).json()) as Surface
+  (await (await fetch(`${server.url}/api/v1/state`)).json()) as Surface
 
 describe('distill over MCP', () => {
   it('puts what it finds in the review queue, records nothing, and notes who asked', async () => {
@@ -91,7 +91,7 @@ describe('distill over MCP', () => {
         suggestion.proposal.kind === 'node' && suggestion.proposal.nodeType === 'question',
     )
 
-    const decided = await fetch(`${server.url}/api/suggestions/decide`, {
+    const decided = await fetch(`${server.url}/api/v1/suggestions/decide`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: question?.id, action: 'accept' }),

@@ -23,7 +23,7 @@
     "demo:semantic": "pnpm --filter @episteme/example-semantic-session demo",
     "demo:distill": "pnpm --filter @episteme/example-distill-session demo",
     "learn": "pnpm --filter @episteme/app-learn learn",
-    "learn:web": "pnpm --filter @episteme/app-learn serve",
+    "serve": "pnpm --filter @episteme/service build && node apps/service/dist/serve.js --workspace apps/learn/public",
     "check": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"
   },
   "devDependencies": {

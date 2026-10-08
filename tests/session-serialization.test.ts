@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { LearnSession, type DecisionResult, type Suggestion } from '@episteme/application'
 import { seedTopic } from '@episteme/application/seed'
 import { asId, type NodeId } from '@episteme/core'
@@ -116,21 +116,21 @@ describe('decisions on one draft, started together', () => {
 })
 
 describe('the Learn queue and the MCP form, deciding the same draft at once', () => {
-  let server: LearnServer
+  let server: EpistemeService
 
   afterEach(async () => {
     await server.close()
   })
 
   it('records exactly one decision', async () => {
-    server = await startLearnServer({ port: 0, filePath: join(directory, 'learn.jsonl') })
+    server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
     const agent = mcpWire(() => server.mcpUrl, {
       name: 'Race Host',
       version: '1',
       capabilities: { elicitation: { form: {} } },
     })
     const state = async () =>
-      (await (await fetch(`${server.url}/api/state`)).json()) as {
+      (await (await fetch(`${server.url}/api/v1/state`)).json()) as {
         events: number
         suggestions: { id: string }[]
       }
@@ -140,7 +140,7 @@ describe('the Learn queue and the MCP form, deciding the same draft at once', ()
     const before = (await state()).events
 
     const [viaLearn, viaMcp] = await Promise.all([
-      fetch(`${server.url}/api/suggestions/decide`, {
+      fetch(`${server.url}/api/v1/suggestions/decide`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id: draft?.id, action: 'accept' }),

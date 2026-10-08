@@ -6,9 +6,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../packages/application" },
-    { "path": "../../packages/domain-learn" },
-    { "path": "../../packages/mcp" }
-  ]
+  "references": [{ "path": "../../packages/application" }]
 }

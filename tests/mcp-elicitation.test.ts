@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answer, mcpWire, type ToolResult } from './mcp-wire.js'
 
@@ -17,7 +17,7 @@ import { answer, mcpWire, type ToolResult } from './mcp-wire.js'
 const FORM_CAPABLE = { elicitation: { form: {} } }
 
 let directory: string
-let server: LearnServer
+let server: EpistemeService
 const asking = mcpWire(() => server.mcpUrl, {
   name: 'Form Host',
   version: '1',
@@ -27,7 +27,7 @@ const silent = mcpWire(() => server.mcpUrl, { name: 'Plain Host', version: '1' }
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-elicit-'))
-  server = await startLearnServer({ port: 0, filePath: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
 })
 
 afterEach(async () => {
@@ -48,7 +48,7 @@ async function surface(): Promise<{
   suggestions: { id: string }[]
   understanding: Record<string, { id: string; level: string }[]>
 }> {
-  return (await (await fetch(`${server.url}/api/state`)).json()) as never
+  return (await (await fetch(`${server.url}/api/v1/state`)).json()) as never
 }
 
 /** The first round: the tool keeps the draft and asks. */

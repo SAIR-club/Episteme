@@ -2,12 +2,12 @@ import { request as httpRequest } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
 /**
- * The boundary of the whole Learn surface: the page, its API and the MCP endpoint behind one check.
+ * The boundary of the whole Episteme service: a Workspace, the API and the MCP endpoint behind one check.
  *
  * The surface has no authentication, so these tests play the parts a hostile web page can play: a
  * cross-site form or text POST, a fetch with its own Origin, a read through a rebound host name, an image tag
@@ -16,11 +16,11 @@ import { mcpWire } from './mcp-wire.js'
  */
 
 let directory: string
-let server: LearnServer
+let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-boundary-'))
-  server = await startLearnServer({ port: 0, filePath: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
 })
 
 afterEach(async () => {
@@ -56,7 +56,7 @@ const own = () => `127.0.0.1:${server.port}`
 const JSON_TYPE = { 'content-type': 'application/json' }
 
 async function events(): Promise<number> {
-  const state = await raw('GET', '/api/state', { host: own() })
+  const state = await raw('GET', '/api/v1/state', { host: own() })
   return (JSON.parse(state.body) as { events: number }).events
 }
 
@@ -64,7 +64,7 @@ const RECORD = JSON.stringify({ target: 'q_why_order', dimensions: { confidence:
 
 describe('the host name', () => {
   it('refuses a read through a host name rebound to this machine', async () => {
-    for (const path of ['/api/state', '/api/suggestions', '/']) {
+    for (const path of ['/api/v1/state', '/api/v1/suggestions', '/']) {
       const refused = await raw('GET', path, { host: `rebound.example:${server.port}` })
       expect(refused.status).toBe(403)
     }
@@ -81,15 +81,17 @@ describe('the host name', () => {
   })
 
   it('refuses a local name on another port, and a missing host', async () => {
-    expect((await raw('GET', '/api/state', { host: '127.0.0.1:1' })).status).toBe(403)
+    expect((await raw('GET', '/api/v1/state', { host: '127.0.0.1:1' })).status).toBe(403)
     // Node itself answers an HTTP/1.1 request without a Host header with 400 before the surface sees it;
     // the surface's own check is the second line. Either way it is refused.
-    expect([400, 403]).toContain((await raw('GET', '/api/state', {})).status)
+    expect([400, 403]).toContain((await raw('GET', '/api/v1/state', {})).status)
   })
 
   it('answers every local name for this port', async () => {
     for (const name of ['127.0.0.1', 'localhost', '[::1]']) {
-      expect((await raw('GET', '/api/state', { host: `${name}:${server.port}` })).status).toBe(200)
+      expect((await raw('GET', '/api/v1/state', { host: `${name}:${server.port}` })).status).toBe(
+        200,
+      )
     }
   })
 })
@@ -99,7 +101,7 @@ describe('a cross-site write', () => {
     const before = await events()
     const refused = await raw(
       'POST',
-      '/api/record',
+      '/api/v1/record',
       { host: own(), 'content-type': 'text/plain' },
       RECORD,
     )
@@ -111,7 +113,7 @@ describe('a cross-site write', () => {
     const before = await events()
     const refused = await raw(
       'POST',
-      '/api/record',
+      '/api/v1/record',
       { host: own(), 'content-type': 'application/x-www-form-urlencoded' },
       'target=q_why_order',
     )
@@ -122,9 +124,9 @@ describe('a cross-site write', () => {
   it('refuses a JSON POST from another origin, to record or to decide', async () => {
     const before = await events()
     for (const [path, body] of [
-      ['/api/record', RECORD],
-      ['/api/suggestions/decide', JSON.stringify({ id: 'sug_x', action: 'accept' })],
-      ['/api/claim', JSON.stringify({ label: 'planted' })],
+      ['/api/v1/record', RECORD],
+      ['/api/v1/suggestions/decide', JSON.stringify({ id: 'sug_x', action: 'accept' })],
+      ['/api/v1/nodes', JSON.stringify({ label: 'planted' })],
     ] as const) {
       const refused = await raw(
         'POST',
@@ -140,7 +142,7 @@ describe('a cross-site write', () => {
   it('refuses an opaque origin', async () => {
     const refused = await raw(
       'POST',
-      '/api/record',
+      '/api/v1/record',
       { host: own(), origin: 'null', ...JSON_TYPE },
       RECORD,
     )
@@ -156,19 +158,19 @@ describe('a cross-site write', () => {
       level: 'high',
       rationale: 'r',
     })
-    const pending = JSON.parse((await raw('GET', '/api/suggestions', { host: own() })).body) as {
+    const pending = JSON.parse((await raw('GET', '/api/v1/suggestions', { host: own() })).body) as {
       suggestions: { id: string }[]
     }
     const id = pending.suggestions[0]?.id
 
     const refused = await raw(
       'POST',
-      '/api/suggestions/decide',
+      '/api/v1/suggestions/decide',
       { host: own(), origin: 'http://evil.example', ...JSON_TYPE },
       JSON.stringify({ id, action: 'accept' }),
     )
     expect(refused.status).toBe(403)
-    const after = JSON.parse((await raw('GET', '/api/suggestions', { host: own() })).body) as {
+    const after = JSON.parse((await raw('GET', '/api/v1/suggestions', { host: own() })).body) as {
       suggestions: unknown[]
     }
     expect(after.suggestions).toHaveLength(1)
@@ -178,7 +180,7 @@ describe('a cross-site write', () => {
 describe('a cross-site read', () => {
   it('refuses what a browser marks as cross-site, with or without an Origin', async () => {
     for (const site of ['cross-site', 'same-site']) {
-      const refused = await raw('GET', '/api/state', { host: own(), 'sec-fetch-site': site })
+      const refused = await raw('GET', '/api/v1/state', { host: own(), 'sec-fetch-site': site })
       expect(refused.status).toBe(403)
     }
   })
@@ -194,7 +196,7 @@ describe('what still gets through', () => {
 
     const recorded = await raw(
       'POST',
-      '/api/record',
+      '/api/v1/record',
       {
         host: own(),
         origin: `http://${own()}`,
@@ -209,7 +211,7 @@ describe('what still gets through', () => {
   it('the page opened as localhost', async () => {
     const recorded = await raw(
       'POST',
-      '/api/record',
+      '/api/v1/record',
       { host: `localhost:${server.port}`, origin: `http://localhost:${server.port}`, ...JSON_TYPE },
       RECORD,
     )

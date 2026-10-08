@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startLearnServer, type LearnServer } from '@episteme/app-learn/server'
+import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answer, mcpWire, type McpWire, type ToolResult } from './mcp-wire.js'
 
@@ -17,12 +17,12 @@ import { answer, mcpWire, type McpWire, type ToolResult } from './mcp-wire.js'
 
 let directory: string
 let filePath: string
-let server: LearnServer
+let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-flow-'))
   filePath = join(directory, 'learn.jsonl')
-  server = await startLearnServer({ port: 0, filePath })
+  server = await startService({ port: 0, graph: filePath })
 })
 
 afterEach(async () => {
@@ -42,7 +42,7 @@ function plainHost(name: string): McpWire {
 
 async function restartHost(): Promise<void> {
   await server.close()
-  server = await startLearnServer({ port: 0, filePath })
+  server = await startService({ port: 0, graph: filePath })
 }
 
 async function learn<T>(path: string, body?: unknown): Promise<{ status: number; body: T }> {
@@ -65,7 +65,7 @@ interface Surface {
   understanding: Record<string, { id: string; level: string }[]>
 }
 
-const surface = async (): Promise<Surface> => (await learn<Surface>('/api/state')).body
+const surface = async (): Promise<Surface> => (await learn<Surface>('/api/v1/state')).body
 
 interface StoredValue {
   level?: string
@@ -165,7 +165,7 @@ describe('an agent without a form proposes, the learner decides in Learn', () =>
     expect((await agent.call('reflect', {})).structuredContent?.['pendingSuggestions']).toBe(1)
 
     const [pending] = (await surface()).suggestions
-    const decided = await learn('/api/suggestions/decide', {
+    const decided = await learn('/api/v1/suggestions/decide', {
       id: pending?.id,
       action: 'modify',
       proposal: { kind: 'state', target: 'q_why_order', dimension: 'confidence', level: 'low' },
@@ -189,11 +189,11 @@ describe('an agent without a form proposes, the learner decides in Learn', () =>
       rationale: 'this is how they summarised it',
     })
     const [pending] = (await surface()).suggestions
-    await learn('/api/suggestions/decide', { id: pending?.id, action: 'accept' })
+    await learn('/api/v1/suggestions/decide', { id: pending?.id, action: 'accept' })
 
     await restartHost()
     const { body } = await learn<{ nodes: { nodeId: string; label: string; type: string }[] }>(
-      '/api/state',
+      '/api/v1/state',
     )
     expect(body.nodes.map((node) => node.label)).toContain('位置编码给每个词加上了它在序列中的位置')
   })
@@ -204,7 +204,7 @@ describe('the two channels meet', () => {
     const agent = formHost('Claude Code')
     const asked = await agent.call('propose', ORDER_CONFIDENCE)
     const [pending] = (await surface()).suggestions
-    await learn('/api/suggestions/decide', { id: pending?.id, action: 'dismiss' })
+    await learn('/api/v1/suggestions/decide', { id: pending?.id, action: 'dismiss' })
 
     const late = await agent.call('propose', ORDER_CONFIDENCE, {
       requestState: asked.requestState,
@@ -223,7 +223,7 @@ describe('the two channels meet', () => {
     })
 
     const [pending] = (await surface()).suggestions
-    const decided = await learn('/api/suggestions/decide', { id: pending?.id, action: 'accept' })
+    const decided = await learn('/api/v1/suggestions/decide', { id: pending?.id, action: 'accept' })
     expect(decided.status).toBe(200)
     expect((await eventsOnDisk())[0]?.source).toContain('accepted via learn-review')
   })

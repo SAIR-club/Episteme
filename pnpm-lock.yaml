@@ -41,12 +41,6 @@ importers:
       '@episteme/application':
         specifier: workspace:*
         version: link:../../packages/application
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-      '@episteme/mcp':
-        specifier: workspace:*
-        version: link:../../packages/mcp
 
   apps/service:
     dependencies:

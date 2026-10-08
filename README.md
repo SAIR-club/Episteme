@@ -32,9 +32,10 @@ Future interaction changes
 
 ## Status
 
-There is now something you can actually use: **`pnpm learn:web`** opens a local interface where a learner
-asks a question in their own words, sees which of their own prior understanding was retrieved **and why**,
-records what they now understand, and watches the next answer change because of it. Everything is written to
+There is now something you can actually use: **`pnpm serve`** starts the Episteme service and a local
+interface where a learner asks a question in their own words, sees which of their own prior understanding was
+retrieved **and why**, records what they now understand, and watches what is recalled next change because of
+it. Agents reach the same graph over MCP and write their answers on top of it. Everything is written to
 a plain JSONL file and survives closing the process.
 
 ![The Learn surface](docs/images/learn-surface.png)
@@ -55,14 +56,15 @@ not an accident of the current state: it is the project's own claim being demons
 ```bash
 pnpm install
 pnpm check              # typecheck + lint + tests
-pnpm learn:web          # use it, in a browser at http://127.0.0.1:4321
+pnpm serve              # use it, in a browser at http://127.0.0.1:4321
 # or
 pnpm learn              # the same loop in a terminal
 # and the phase demos:
 pnpm demo && pnpm demo:persistent && pnpm demo:semantic && pnpm demo:distill
 ```
 
-`pnpm learn --help` and `pnpm learn:web --help` list the options, including `--file` to choose the graph.
+`pnpm learn --help` and `pnpm serve --help` list the options, including `--file` and `--graph` to choose the
+graph.
 The default is `~/.episteme/learn.jsonl`.
 
 ## Using it
