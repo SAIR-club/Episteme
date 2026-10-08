@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { GraphLockedError } from '@episteme/application'
 import { lockedMessage, optionValue } from './cli.js'
 import { startLearnServer } from './server.js'
-import type { SeedTopic } from './seed.js'
-import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
+import type { SeedTopic } from '@episteme/application/seed'
+import { BLANK_TOPIC, loadTopicFile } from '@episteme/application/topic-file'
 
 /**
  * Starts the Learn surface and prints where it is.

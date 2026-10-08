@@ -72,3 +72,5 @@ It changes no understanding.
 | `src/responder.ts`   | the Chinese answer templates the session's scripted agent uses                |
 | `src/sources.ts`     | `SourceStore`: distilled material, kept outside the graph                     |
 | `src/suggestions.ts` | `SuggestionStore` and the `Proposal` kinds an agent can make                  |
+| `src/seed.ts`        | the starting topic, so a learner does not face an empty graph (`./seed`)      |
+| `src/topic-file.ts`  | a learner’s own starting topic, read from JSON (`./topic-file`)               |

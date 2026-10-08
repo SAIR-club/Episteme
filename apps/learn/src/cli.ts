@@ -8,8 +8,8 @@ import {
   LearnSession,
   type AskResult,
 } from '@episteme/application'
-import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
-import { BLANK_TOPIC, loadTopicFile } from './topic-file.js'
+import { seedTopic, TRANSFORMERS, type SeedTopic } from '@episteme/application/seed'
+import { BLANK_TOPIC, loadTopicFile } from '@episteme/application/topic-file'
 
 /**
  * A terminal Learn session.

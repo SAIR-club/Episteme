@@ -7,7 +7,7 @@ import {
   type DistillOutcome,
   type Suggestion,
 } from '@episteme/application'
-import { seedTopic } from '@episteme/app-learn/seed'
+import { seedTopic } from '@episteme/application/seed'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 

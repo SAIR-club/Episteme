@@ -8,6 +8,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./seed": {
+      "types": "./dist/seed.d.ts",
+      "default": "./dist/seed.js"
+    },
+    "./topic-file": {
+      "types": "./dist/topic-file.d.ts",
+      "default": "./dist/topic-file.js"
     }
   },
   "main": "./dist/index.js",

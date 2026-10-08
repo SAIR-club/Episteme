@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { RECORDABLE_DIMENSIONS, LearnSession, type Decision } from '@episteme/application'
 import { createMcpEndpoint, type McpEndpoint } from '@episteme/mcp'
-import { seedTopic, TRANSFORMERS, type SeedTopic } from './seed.js'
+import { seedTopic, TRANSFORMERS, type SeedTopic } from '@episteme/application/seed'
 
 /**
  * A local HTTP surface for the Learn session.

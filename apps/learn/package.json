@@ -9,14 +9,6 @@
       "types": "./dist/cli.d.ts",
       "default": "./dist/cli.js"
     },
-    "./seed": {
-      "types": "./dist/seed.d.ts",
-      "default": "./dist/seed.js"
-    },
-    "./topic-file": {
-      "types": "./dist/topic-file.d.ts",
-      "default": "./dist/topic-file.js"
-    },
     "./server": {
       "types": "./dist/server.d.ts",
       "default": "./dist/server.js"
