@@ -1612,7 +1612,6 @@ export type ProposeResult =
   | { readonly ok: true; readonly suggestion: Suggestion }
   | { readonly ok: false; readonly refusal: MutationRefusal }
 
-/** Material longer than this is split by the learner before it is distilled. */
 /**
  * A command refused because of what it was asked to do, such as recording a dimension the learner cannot
  * record. Thrown before anything changes, so a caller can report it as a refusal.
@@ -1636,6 +1635,7 @@ export function isRefusal(error: unknown): error is Error & { readonly code: str
   return error instanceof SessionRefusal || isEpistemeError(error)
 }
 
+/** Material longer than this is split by the learner before it is distilled. */
 export const MAX_MATERIAL = 20_000
 /** A queue holding this many suggestions takes no more distillations until some are decided. */
 export const MAX_PENDING = 500
