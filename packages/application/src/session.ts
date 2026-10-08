@@ -277,6 +277,8 @@ export class LearnSession {
   readonly #sources: SourceStore
   /** The tail of the mutation queue. See `#exclusive`. */
   #mutations: Promise<unknown> = Promise.resolve()
+  /** See `revision`. Advanced only by `#exclusive`. */
+  #revision = 0
   #closed = false
   readonly #recovered: RecoveredDecision[] = []
 
@@ -395,6 +397,21 @@ export class LearnSession {
 
   get eventCount(): number {
     return this.#episteme.log.eventCount
+  }
+
+  /**
+   * Which state of the graph, the history and the drafts a read saw, so that several reads can tell whether
+   * they describe the same one.
+   *
+   * It advances when a mutation starts and again when it ends, so it is even while nothing is changing and odd
+   * while a change is in progress. Two reads that return the same even revision saw the same state. An odd
+   * revision promises nothing, because a mutation can be read between its steps: read again. It may advance
+   * without anything having changed, as it does for a refused mutation, but it never stays put across a change.
+   *
+   * It counts within this session only, from zero when the session opens.
+   */
+  get revision(): number {
+    return this.#revision
   }
 
   /**
@@ -759,10 +776,15 @@ export class LearnSession {
    * A failed mutation rejects for its caller only. The queue carries on with the next one.
    */
   #exclusive<T>(work: () => Promise<T> | T): Promise<T> {
-    const run = this.#mutations.then(() => {
+    const run = this.#mutations.then(async () => {
       if (this.#closed)
         throw new Error('this session is closed; open a new one to change the graph')
-      return work()
+      this.#revision += 1
+      try {
+        return await work()
+      } finally {
+        this.#revision += 1
+      }
     })
     this.#mutations = run.then(
       () => undefined,
