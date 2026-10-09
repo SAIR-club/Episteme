@@ -9,3 +9,4 @@ packages:
 # instead of approving builds interactively.
 allowBuilds:
   esbuild: true
+  simple-git-hooks: true

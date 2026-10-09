@@ -1,9 +1,0 @@
-node_modules
-dist
-coverage
-pnpm-lock.yaml
-*.tsbuildinfo
-
-# Documentation images. Prettier does not reformat these today, but a formatter reaching a binary asset is
-# not a failure mode worth leaving possible.
-docs/images

@@ -239,10 +239,12 @@ export class SuggestionStore {
     landing?: SubmissionLanding,
   ): Promise<readonly Suggestion[]> {
     const ids = chosen
-    const kept = refer(ids).map((draft, index): Suggestion => ({
-      id: ids[index] ?? `sug_${randomUUID()}`,
-      ...draft,
-    }))
+    const kept = refer(ids).map(
+      (draft, index): Suggestion => ({
+        id: ids[index] ?? `sug_${randomUUID()}`,
+        ...draft,
+      }),
+    )
     if (kept.length > 0 || landing !== undefined) {
       await this.#change((pending, _, landings) => {
         for (const suggestion of kept) pending.set(suggestion.id, suggestion)
