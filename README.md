@@ -30,17 +30,50 @@ Persistent cognitive graph
 Future interaction changes
 ```
 
-## Status
+We care less about producing more answers than about making the process of understanding something that can
+be recorded, verified, reused and continually corrected.
 
-There is now something you can actually use: **`pnpm serve`** starts the Episteme service and a local
-interface where a learner asks a question in their own words, sees which of their own prior understanding was
-retrieved **and why**, records what they now understand, and watches what is recalled next change because of
-it. Agents reach the same graph over MCP and write their answers on top of it. Everything is written to
-a plain JSONL file and survives closing the process.
+## What "structured understanding" means
+
+A note, a knowledge base or a RAG index stores **material**: text that may be retrieved later. Episteme stores
+what a particular person has come to understand from that material, as structure:
+
+- **units**: concepts, questions, claims and evidence, each with where it came from;
+- **relations**: what answers what, what supports or contradicts what, and which claim revises an earlier one;
+- **state**: how sure the person is, whether they can explain it, whether it conflicts with something else,
+  as separate dimensions rather than one score;
+- **history**: every change kept as an event, so "I used to think this, and now I think that" can be read back.
+
+Raw conversations and material are kept beside the graph, never in it. Nothing an agent infers becomes part of
+the graph until the person decides on it. The graph records what the person accepted as a description of
+their understanding at that time. It does not prove they have mastered anything.
+
+## Status: v0.1.0, a developer preview
+
+v0.1.0, _First Real Learning Loop_, is the first version whose whole loop is built and tested end to end:
+
+```text
+Agent A submits candidate understanding, quoting the words it rests on
+  → Episteme verifies each quote against the stored source and keeps the source
+  → the learner reviews: accepts, modifies or dismisses
+  → only what they accept enters the graph
+  → Agent B, in another session, recalls it
+```
+
+It is a **developer preview**, not a stable release for general users. Automated tests prove the loop with
+scripted MCP clients. It has **not yet been tried with a real Claude Code host and a real learner**, and
+several protections are still missing; see [Limitations](#limitations-in-v010). The release notes say exactly
+what is proven and what is not: [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
+
+**`pnpm serve`** starts the Episteme service and a local interface where a learner asks a question in their
+own words, sees which of their own prior understanding was retrieved **and why**, records what they now
+understand, reviews what agents suggested, and watches what is recalled next change because of it. Agents
+reach the same graph over MCP: they can recall, propose and submit readings of material, and never confirm
+anything. Everything is written to plain JSONL files and survives closing the process.
 
 ![The Learn surface](docs/images/learn-surface.png)
 
-Behind it, three phases of work that each proved one thing:
+Behind it, three earlier phases of work that each proved one thing:
 
 | phase | claim                                                             | how to see it          |
 | ----- | ----------------------------------------------------------------- | ---------------------- |
@@ -65,7 +98,34 @@ pnpm demo && pnpm demo:persistent && pnpm demo:semantic && pnpm demo:distill
 
 `pnpm learn --help` and `pnpm serve --help` list the options, including `--file` and `--graph` to choose the
 graph.
-The default is `~/.episteme/learn.jsonl`.
+The default is `~/.episteme/learn.jsonl`, seeded with a demonstration topic. For your own learning, keep a graph
+of its own outside the repository and start it empty:
+
+```bash
+pnpm serve --graph "$HOME/.episteme/my-topic.jsonl" --blank
+```
+
+## Connecting an agent
+
+The service prints its MCP address, by default `http://127.0.0.1:4321/mcp`. Any MCP host that speaks
+Streamable HTTP can be pointed at it; there is no stdio shim yet. An agent gets four tools:
+
+| tool      | what it does                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------------- |
+| `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved           |
+| `propose` | a claim, a link or a state change, kept as a pending suggestion                                      |
+| `reflect` | what the learner has recorded, grouped by what needs attention next                                  |
+| `distill` | a stretch of material or dialogue, read by Episteme, or by the host's own model with verified quotes |
+
+None of them confirms anything. The learner decides in the Workspace the service serves at `/`. For Claude
+Code, the command would be the one below, but **it has not been verified against a real Claude Code host yet**:
+
+```bash
+claude mcp add --transport http episteme http://127.0.0.1:4321/mcp
+```
+
+See [packages/mcp](packages/mcp/README.md) for the tools, the identity an agent is recorded under, and what
+verification does and does not show.
 
 ## Using it
 
@@ -101,12 +161,13 @@ episteme/
 │   ├── sdk/                Composition: the one place the layers are wired in order
 │   ├── application/        The use-case layer every surface drives (LearnSession)
 │   ├── distillation/       Learning material → episodes → candidate understanding, as suggestions only
-│   ├── mcp/                The MCP surface: an agent can recall, propose and reflect, never confirm
-│   ├── agent/              CognitiveAgent interface + scripted mock (no real model yet)
+│   ├── mcp/                The MCP surface: an agent can recall, propose, reflect and distill, never confirm
+│   ├── agent/              CognitiveAgent interface + a scripted mock used as the test double
 │   ├── domain-forum/       [placeholder] Forum domain pack
 │   └── logic-bridge/       [placeholder] optional formalisation (Lean, Datalog, SMT)
 ├── apps/
-│   └── learn/              The Learn interaction surface: terminal and local web
+│   ├── service/            The Episteme service: owns the graph, serves MCP, REST and the Workspace
+│   └── learn/              The Learn surface: the terminal client and the page served as the Workspace
 ├── examples/
 │   ├── learn-session/      Phase 0: the cognitive loop
 │   ├── persistent-session/ Phase 1: the loop across a process restart
@@ -205,10 +266,28 @@ opt-in.
 - [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
 - [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
 - [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
+- [Roadmap](docs/roadmap/README.md)
+- [v0.1.0 release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md) ·
+  [Development status](docs/development-status.md)
 - [Phase 1 report](PHASE1_REPORT.md)
 - [Phase 2 report](PHASE2_REPORT.md)
 
-## What v0 does not do
+## Limitations in v0.1.0
+
+- **No real host yet.** Host-assisted distillation works with scripted MCP clients in tests. No real Claude
+  Code session and no real learner have used it, and compatibility with any particular agent host is not
+  verified.
+- **Review is not authenticated.** Any local process can call the REST review API, including an agent with
+  shell access, and could accept its own proposal. Run the service only on your own machine, with agents you
+  trust. Tracked in [#17](https://github.com/SAIR-club/Episteme/issues/17).
+- **The Workspace does not show a suggestion's basis or speaker** yet. The data is in the API
+  ([#26](https://github.com/SAIR-club/Episteme/issues/26)).
+- **Retrieval uses a deterministic embedding adapter.** A question phrased very differently from what was
+  recorded may not reach it.
+- **`not_pending` in a retry receipt is not "dismissed".** Dismissals leave no record
+  ([#25](https://github.com/SAIR-club/Episteme/issues/25)).
+- **Plain-text local storage.** Graphs, drafts and sources are plain JSONL on disk, with no encryption and no
+  authentication. Do not expose the service to a network.
 
 Scope creep is the main risk to this project, so the following are explicitly out of scope for
 now: multi-agent systems, recommendation engines, automatic curriculum generation, reputation,
@@ -216,9 +295,14 @@ leaderboards, semantic auto-merge, AI truth oracles, automatic knowledge-graph g
 federation, institutional deployment, payments, complex governance, educational-effect
 experiments, and full Lean integration.
 
-An agent interface exists in `packages/agent`, but only as a scripted mock. Connecting a real
-model is deferred until the Core and Learn loop is stable — an agent that could not be held
-constant would make the central claim unverifiable.
+Episteme ships no model of its own. The host's agent supplies the model, and `packages/agent` keeps a scripted
+mock as the deterministic test double the loop's proofs depend on ([ADR 0008](docs/decisions/0008-agent-plugin-surface.md)).
+
+## What comes next
+
+Development is paused after v0.1.0. When it resumes, the first step is not a new feature: it is one end-to-end
+learning session with a real Claude Code host and a real learner, and a second session that shows whether what
+they confirmed the first time is recalled and used. See [docs/development-status.md](docs/development-status.md).
 
 ## Technical principles
 
