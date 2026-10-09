@@ -57,6 +57,8 @@ export interface SuggestionOrigin {
   readonly span: { readonly start: number; readonly end: number }
   readonly excerpt: string
   readonly time?: { readonly from: number; readonly to: number }
+  /** Who said those words, when they lie in one speaker's turn of a dialogue (ADR 0011). */
+  readonly speaker?: string
 }
 
 /** How a proposal names a node suggested alongside it. */
@@ -74,6 +76,12 @@ export interface Suggestion {
   readonly origin?: SuggestionOrigin
   /** The client that asked for the distillation it came from. Provenance, not authority. */
   readonly requestedBy?: string
+  /**
+   * For a distilled suggestion: `stated` when its quoted words are in a turn of the learner, `inferred` when it
+   * is a reading of what was said (ADR 0011). `stated` does not mean the suggestion is what the learner meant,
+   * and neither basis proves the learner has mastered anything.
+   */
+  readonly basis?: 'stated' | 'inferred'
 }
 
 /**

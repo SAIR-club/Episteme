@@ -35,4 +35,6 @@ export type {
   AgentMaterial,
   KnownNode,
   CandidateNode,
+  QuoteAt,
+  Basis,
 } from './types.js'

@@ -1,13 +1,21 @@
 import {
   CANDIDATE_PREFIX,
   type AgentWorkspace,
+  type Basis,
   type CandidateNode,
   type CognitiveAgent,
   type KnownNode,
   type Suggestion,
 } from '@episteme/agent'
 import type { Candidate, DistillationPolicy, Origin, Refusal, Role } from './policy.js'
-import { segment, type Episode, type Material } from './segment.js'
+import {
+  MAX_QUOTE_LENGTH,
+  MIN_QUOTE_SIGNS,
+  canonicalText,
+  occurrencesOf,
+  quoteSigns,
+} from './quotes.js'
+import { segment, type Episode, type Material, type Span } from './segment.js'
 
 export interface DistillInput {
   readonly material: Material
@@ -18,10 +26,18 @@ export interface DistillInput {
   readonly actorId: string
   /** What the human already has, so the material's words can be matched to it rather than duplicated. */
   readonly known: readonly KnownNode[]
+  /**
+   * The learner's speaker label in the material, when it is a dialogue. A turn is the learner's when its speaker
+   * equals this exactly, both in NFC and trimmed, with no case folding. Without it nothing is `stated`
+   * (ADR 0011).
+   */
+  readonly learner?: string
 }
 
 export interface DistillationResult {
   readonly sourceId: string
+  /** The material as it was read: canonical (`canonicalText`). Every span points into this text. */
+  readonly text: string
   readonly episodes: readonly Episode[]
   /** Everything found, kept or refused, in the order it was found. */
   readonly candidates: readonly Candidate[]
@@ -41,8 +57,13 @@ const MAX_EXCERPT = 280
  * check is kept as refused, with the reason, not dropped.
  */
 export async function distill(input: DistillInput): Promise<DistillationResult> {
-  const { material, agent, policy } = input
+  const { agent, policy } = input
+  // Read, and pointed into, in its canonical form only, so a span never needs mapping back (ADR 0011).
+  const material: Material = { ...input.material, text: canonicalText(input.material.text) }
+  const learner = input.learner === undefined ? undefined : canonicalText(input.learner).trim()
   const episodes = segment(material)
+  /** The name the reader gave each node candidate, by engine reference. */
+  const localRefs = new Map<string, string>()
   const candidates: Candidate[] = []
   const roleOf = new Map(
     Object.entries(policy.nodeTypes).map(([role, type]) => [type, role as Role]),
@@ -66,12 +87,18 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
         span: episode.span,
         ...(episode.time === undefined ? {} : { time: episode.time }),
       },
-      candidates: candidateNodes(candidates),
+      candidates: candidateNodes(candidates, localRefs),
     }
 
-    const keep = (ref: string, suggestion: Suggestion, refusal: Refusal | undefined): void => {
-      const origin = originOf(material, episode, suggestion.quote)
-      let reason = refusal ?? policy.validate?.({ ref, suggestion, origin, status: 'suggested' })
+    const keep = (ref: string, given: Suggestion, refusal: Refusal | undefined): void => {
+      const located = locate(material, episodes, episode, given)
+      const origin = 'origin' in located ? located.origin : undefined
+      const basis = basisOf(given, origin, learner)
+      const suggestion: Suggestion = { ...given, basis: basis.value }
+      let reason = refusal ?? ('refusal' in located ? located.refusal : undefined) ?? basis.refusal
+      if (reason === undefined && origin !== undefined) {
+        reason = policy.validate?.({ ref, suggestion, origin, status: 'suggested' })
+      }
       if (
         reason === undefined &&
         (keptInEpisode >= policy.limits.perEpisode || keptInRun >= policy.limits.perRun)
@@ -81,12 +108,18 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
           message: `more candidates than this domain keeps from one ${keptInEpisode >= policy.limits.perEpisode ? 'episode' : 'piece of material'}`,
         }
       }
-      if (reason === undefined) {
+      if (reason === undefined && origin !== undefined) {
         keptInEpisode += 1
         keptInRun += 1
         candidates.push({ ref, suggestion, origin, status: 'suggested' })
-      } else {
-        candidates.push({ ref, suggestion, origin, status: 'refused', refusal: reason })
+      } else if (reason !== undefined) {
+        candidates.push({
+          ref,
+          suggestion,
+          ...(origin === undefined ? {} : { origin }),
+          status: 'refused',
+          refusal: reason,
+        })
       }
     }
 
@@ -107,6 +140,7 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
         continue
       }
       local.set(name, ref)
+      localRefs.set(ref, name)
       const role = roleOf.get(suggestion.nodeType)
       const label = suggestion.label.trim()
       const node =
@@ -122,7 +156,10 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
     }
 
     // Then what connects them, and what the material says about the learner, seeing every candidate so far.
-    const seeing: AgentWorkspace = { ...workspace, candidates: candidateNodes(candidates) }
+    const seeing: AgentWorkspace = {
+      ...workspace,
+      candidates: candidateNodes(candidates, localRefs),
+    }
     const linked = [
       ...deferred,
       ...(await agent.suggestConnections(seeing)),
@@ -152,23 +189,27 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
     }
   }
 
-  return { sourceId: material.sourceId, episodes, candidates }
+  return { sourceId: material.sourceId, text: material.text, episodes, candidates }
 }
 
-/** The kept nodes, as an agent sees them. */
-function candidateNodes(candidates: readonly Candidate[]): readonly CandidateNode[] {
-  return candidates.flatMap((candidate) =>
-    candidate.status === 'suggested' && candidate.suggestion.kind === 'node'
-      ? [
-          {
-            ref: candidate.ref,
-            nodeType: candidate.suggestion.nodeType,
-            label: candidate.suggestion.label,
-            episodeId: candidate.origin.episodeId,
-          },
-        ]
-      : [],
-  )
+/** The kept nodes, as an agent sees them, each with the name its reader gave it. */
+function candidateNodes(
+  candidates: readonly Candidate[],
+  localRefs: ReadonlyMap<string, string>,
+): readonly CandidateNode[] {
+  return candidates.flatMap((candidate) => {
+    if (candidate.status !== 'suggested' || candidate.suggestion.kind !== 'node') return []
+    const localRef = localRefs.get(candidate.ref)
+    return [
+      {
+        ref: candidate.ref,
+        nodeType: candidate.suggestion.nodeType,
+        label: candidate.suggestion.label,
+        episodeId: candidate.origin.episodeId,
+        ...(localRef === undefined ? {} : { localRef }),
+      },
+    ]
+  })
 }
 
 function nodeRefusal(
@@ -206,7 +247,12 @@ function nodeRefusal(
     (item) => item.type === node.nodeType && normalise(item.label) === same,
   )
   if (existing !== undefined) {
-    return { code: 'already_known', message: `the learner already has this as "${existing.id}"` }
+    // Only a second node is refused. What the words show can still be sent against the one the learner has.
+    return {
+      code: 'already_known',
+      message: `the learner already has this as "${existing.id}"`,
+      existingNodeId: existing.id,
+    }
   }
   return undefined
 }
@@ -289,21 +335,124 @@ function endpointRefusal(
   return undefined
 }
 
-/** The words a candidate rests on: its quote, where the episode holds it, or else the whole episode. */
-function originOf(material: Material, episode: Episode, quote: string | undefined): Origin {
-  const at = quote === undefined || quote === '' ? -1 : episode.text.indexOf(quote)
-  const span =
-    at < 0
-      ? episode.span
-      : { start: episode.span.start + at, end: episode.span.start + at + (quote ?? '').length }
+/**
+ * Where the words a suggestion rests on are, or why they cannot be found (ADR 0011).
+ *
+ * A suggestion with no quote rests on the whole episode being read. A quote is put in canonical form and found
+ * exactly: in the episode the suggestion names, or else in the one being read, and in the occurrence it names
+ * when the words occur there more than once. A quote that cannot be located is refused, never widened to the
+ * episode, and leaves no origin.
+ */
+function locate(
+  material: Material,
+  episodes: readonly Episode[],
+  reading: Episode,
+  suggestion: Suggestion,
+): { readonly origin: Origin } | { readonly refusal: Refusal } {
+  if (suggestion.quote === undefined || suggestion.quote === '') {
+    return { origin: originAt(material, reading, reading.span) }
+  }
+  const quote = canonicalText(suggestion.quote)
+  if (quote.length > MAX_QUOTE_LENGTH) {
+    return refused('quote_too_long', `a quote of ${quote.length} characters is a passage`)
+  }
+  if (quoteSigns(quote) < MIN_QUOTE_SIGNS) {
+    return refused(
+      'quote_too_short',
+      `a quote needs at least ${MIN_QUOTE_SIGNS} letters or digits to rest on`,
+    )
+  }
+  const named = suggestion.quoteAt
+  const episode =
+    named === undefined ? reading : episodes.find((candidate) => candidate.id === named.episodeId)
+  if (episode === undefined) {
+    return refused('quote_not_found', `there is no passage "${named?.episodeId ?? ''}"`)
+  }
+
+  const found = occurrencesOf(episode.text, quote)
+  if (found.length === 0) {
+    const crossing = occurrencesOf(material.text, quote).some(
+      (start) =>
+        !episodes.some(
+          (candidate) =>
+            candidate.span.start <= start && start + quote.length <= candidate.span.end,
+        ),
+    )
+    return crossing
+      ? refused('quote_spans_episodes', 'the quote runs across two passages')
+      : refused('quote_not_found', 'the quote is not in the passage it is said to come from')
+  }
+  const occurrence = named?.occurrence
+  if (occurrence === undefined && found.length > 1) {
+    return refused(
+      'quote_ambiguous',
+      `the quote occurs ${found.length} times; say which occurrence is meant`,
+    )
+  }
+  const offset = occurrence === undefined ? found[0] : found[occurrence - 1]
+  if (offset === undefined) {
+    return refused('quote_not_found', `the quote has no occurrence ${String(occurrence)}`)
+  }
+  const start = episode.span.start + offset
+  return { origin: originAt(material, episode, { start, end: start + quote.length }) }
+}
+
+function refused(code: string, message: string): { readonly refusal: Refusal } {
+  return { refusal: { code, message } }
+}
+
+/** The origin of the words at `span`, with the speaker whose turn holds them, when one does. */
+function originAt(material: Material, episode: Episode, span: Span): Origin {
   const words = material.text.slice(span.start, span.end)
+  const speaker = episode.turns.find(
+    (turn) =>
+      turn.speaker !== undefined && turn.span.start <= span.start && span.end <= turn.span.end,
+  )?.speaker
   return {
     sourceId: material.sourceId,
     episodeId: episode.id,
     span,
     excerpt: words.length > MAX_EXCERPT ? `${words.slice(0, MAX_EXCERPT - 1)}…` : words,
     ...(episode.time === undefined ? {} : { time: episode.time }),
+    ...(speaker === undefined ? {} : { speaker }),
   }
+}
+
+/**
+ * The basis of a suggestion's quote (ADR 0011).
+ *
+ * Only words inside a turn whose speaker is the given `learner` can be `stated`, and a reader that says `stated`
+ * of anything else is refused.
+ *
+ * A reader that leaves the basis unset gets `stated` exactly when its quote is in such a turn, and `inferred`
+ * otherwise. That default exists for the rule-based reader, whose candidates are the learner's sentences as
+ * written. A reader whose suggestions are its own reading, such as a host's model, must state the basis of
+ * every suggestion itself: an inference does not become `stated` because the words it rests on are the
+ * learner's.
+ */
+function basisOf(
+  suggestion: Suggestion,
+  origin: Origin | undefined,
+  learner: string | undefined,
+): { readonly value: Basis; readonly refusal?: Refusal } {
+  const learners =
+    learner !== undefined &&
+    learner !== '' &&
+    origin?.speaker !== undefined &&
+    canonicalText(origin.speaker).trim() === learner
+  if (suggestion.basis === 'stated' && !learners) {
+    return {
+      value: 'stated',
+      refusal: {
+        code: 'basis_mismatch',
+        message:
+          learner === undefined || learner === ''
+            ? 'nothing is stated by the learner unless the material says who the learner is'
+            : `the quote is not in a turn of "${learner}"`,
+      },
+    }
+  }
+  return { value: suggestion.basis ?? (learners ? 'stated' : 'inferred') }
 }
 
 /** Labels compared without case, surrounding space or final punctuation. */

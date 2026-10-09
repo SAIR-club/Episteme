@@ -8,12 +8,17 @@ import type { Span, TimeRange } from './segment.js'
  */
 export type Role = 'concept' | 'question' | 'claim' | 'evidence' | 'thought'
 
-/** The domain-neutral relations between them. `about` points a question or claim at what it concerns. */
-export type Relation = 'about' | 'answers' | 'supports' | 'contradicts'
+/**
+ * The domain-neutral relations between them. `about` points a question or claim at what it concerns; `revises`
+ * points an earlier claim at the one that corrects it, without withdrawing the earlier one (ADR 0011).
+ */
+export type Relation = 'about' | 'answers' | 'supports' | 'contradicts' | 'revises'
 
 export interface Refusal {
   readonly code: string
   readonly message: string
+  /** For `already_known`: the node the learner already has, so the observation can be sent against it. */
+  readonly existingNodeId?: string
 }
 
 /**
@@ -52,19 +57,31 @@ export interface Origin {
   /** Those words, verbatim, shortened if long. */
   readonly excerpt: string
   readonly time?: TimeRange
+  /** Who said them, when they lie in one speaker's turn of a dialogue. */
+  readonly speaker?: string
 }
 
 /**
  * One thing distillation found, and whether it may be suggested.
  *
  * Refused candidates are kept, with the reason, as `AgentSuggestion` intends: a learner, or a test, can see
- * what was found and why it was not offered, instead of it disappearing.
+ * what was found and why it was not offered, instead of it disappearing. A kept candidate always has the origin
+ * it rests on. A refused one has it whenever its words could be located; a quote that could not be located
+ * leaves no origin rather than an invented one (ADR 0011).
  */
-export interface Candidate {
-  /** Unique within one distillation, such as `e2.q1`. Other candidates name it as `cand:e2.q1`. */
-  readonly ref: string
-  readonly suggestion: Suggestion
-  readonly origin: Origin
-  readonly status: 'suggested' | 'refused'
-  readonly refusal?: Refusal
-}
+export type Candidate =
+  | {
+      /** Unique within one distillation, such as `e2.q1`. Other candidates name it as `cand:e2.q1`. */
+      readonly ref: string
+      readonly suggestion: Suggestion
+      readonly origin: Origin
+      readonly status: 'suggested'
+      readonly refusal?: undefined
+    }
+  | {
+      readonly ref: string
+      readonly suggestion: Suggestion
+      readonly origin?: Origin
+      readonly status: 'refused'
+      readonly refusal: Refusal
+    }

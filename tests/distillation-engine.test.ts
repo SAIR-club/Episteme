@@ -99,14 +99,17 @@ describe('a real learning dialogue', () => {
   it('points every candidate at the exact words it rests on, and at when they were said', async () => {
     const result = await distilDialogue()
     for (const candidate of result.candidates) {
+      // Every candidate of this dialogue is kept, and a kept candidate always has its origin.
+      expect(candidate.status).toBe('suggested')
+      if (candidate.status !== 'suggested') continue
       const words = DIALOGUE.slice(candidate.origin.span.start, candidate.origin.span.end)
       expect(candidate.origin.excerpt).toBe(words)
       if (candidate.suggestion.quote !== undefined) expect(words).toBe(candidate.suggestion.quote)
       expect(candidate.origin.sourceId).toBe('src_1')
     }
     const learnerSaid = result.candidates.find((candidate) => candidate.ref === 'e1.s5')
-    expect(learnerSaid?.origin.excerpt).toBe('我明白了。')
-    expect(learnerSaid?.origin.time).toEqual({ from: 5, to: 62 })
+    expect(learnerSaid?.origin?.excerpt).toBe('我明白了。')
+    expect(learnerSaid?.origin?.time).toEqual({ from: 5, to: 62 })
   })
 
   it('gives a node the properties its domain requires, whoever suggested it', async () => {

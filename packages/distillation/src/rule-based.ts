@@ -5,9 +5,11 @@ import {
   type CandidateNode,
   type CognitiveAgent,
   type KnownNode,
+  type QuoteAt,
   type Suggestion,
 } from '@episteme/agent'
 import type { DistillationPolicy, Role } from './policy.js'
+import { MIN_QUOTE_SIGNS, occurrenceAt, quoteSigns } from './quotes.js'
 
 export interface RuleBasedOptions {
   readonly policy: DistillationPolicy
@@ -58,7 +60,7 @@ export class RuleBasedDistiller implements CognitiveAgent {
     const known = workspace.known ?? []
     const found: Suggestion[] = []
     const counters: Partial<Record<Role, number>> = {}
-    const add = (role: Role, label: string, quote: string, rationale: string): void => {
+    const add = (role: Role, label: string, words: Quoted, rationale: string): void => {
       const nodeType = types[role]
       if (nodeType === undefined) return
       counters[role] = (counters[role] ?? 0) + 1
@@ -67,10 +69,12 @@ export class RuleBasedDistiller implements CognitiveAgent {
         nodeType,
         label,
         ref: `${REF_PREFIX[role]}${counters[role]}`,
-        quote,
+        ...words,
         rationale,
       })
     }
+    const at = (words: string, offset: number): Quoted =>
+      quoted(material.text, material.episodeId, words, offset)
 
     for (const sentence of sentencesOf(material.text, this.#learners)) {
       if (sentence.byLearner && selfReport(sentence.text) !== undefined) continue
@@ -78,14 +82,14 @@ export class RuleBasedDistiller implements CognitiveAgent {
         add(
           'question',
           sentence.text,
-          sentence.text,
+          at(sentence.text, sentence.offset),
           say(sentence.text, '学习中被提出的问题', 'A question raised while learning'),
         )
       } else if (EVIDENCE.test(sentence.text)) {
         add(
           'evidence',
           sentence.text,
-          sentence.text,
+          at(sentence.text, sentence.offset),
           say(
             sentence.text,
             '用来支撑某个说法的例子或依据',
@@ -96,7 +100,7 @@ export class RuleBasedDistiller implements CognitiveAgent {
         add(
           'claim',
           sentence.text,
-          sentence.text,
+          at(sentence.text, sentence.offset),
           say(
             sentence.text,
             '给出了理由或限制的陈述，可能是你持有的观点',
@@ -114,7 +118,7 @@ export class RuleBasedDistiller implements CognitiveAgent {
       add(
         'concept',
         term,
-        match[0],
+        at(match[0], match.index),
         say(term, '材料中特别标出的术语', 'A term the material sets apart'),
       )
     }
@@ -133,23 +137,31 @@ export class RuleBasedDistiller implements CognitiveAgent {
     const [question] = ofType('question')
     const claims = ofType('claim')
     const concepts = ofType('concept')
+    const sentences = sentencesOf(material.text, this.#learners)
     const edges: Suggestion[] = []
     const edge = (
       relation: 'about' | 'answers' | 'supports',
       from: string,
       to: string,
       why: string,
-      quote?: string,
+      label?: string,
     ): void => {
       const edgeType = edgeTypes[relation]
       if (edgeType === undefined) return
+      // The words of the sentence the label was taken from, where the node it names was found.
+      const sentence =
+        label === undefined ? undefined : sentences.find((candidate) => candidate.text === label)
       edges.push({
         kind: 'edge',
         edgeType,
         from,
         to,
         rationale: why,
-        ...(quote === undefined ? {} : { quote }),
+        ...(sentence === undefined
+          ? label === undefined
+            ? {}
+            : { quote: label }
+          : quoted(material.text, material.episodeId, sentence.text, sentence.offset)),
       })
     }
 
@@ -234,7 +246,7 @@ export class RuleBasedDistiller implements CognitiveAgent {
         actorId: workspace.actorId,
         dimensions: { [report.dimension]: { level: report.level, authority: 'suggested' } },
         evidence: [sentence.text],
-        quote: sentence.text,
+        ...quoted(material.text, material.episodeId, sentence.text, sentence.offset),
         rationale: say(
           sentence.text,
           `你在材料里说「${sentence.text}」`,
@@ -291,23 +303,54 @@ function selfReport(text: string): Report | undefined {
 interface Sentence {
   readonly text: string
   readonly byLearner: boolean
+  /** Where the sentence starts in the passage. */
+  readonly offset: number
 }
 
-/** Sentences of a passage, each knowing whether the learner said it. */
+/** Sentences of a passage, each knowing whether the learner said it and where it starts. */
 function sentencesOf(text: string, learners: ReadonlySet<string>): readonly Sentence[] {
   const sentences: Sentence[] = []
   let speaker: string | undefined
-  for (const line of text.split(/\r?\n/u)) {
+  let lineStart = 0
+  for (const line of text.split('\n')) {
     const turn = /^\s*(?:\[[\d:]+\]\s*)?([^:：[\]]{1,24}?)\s*[:：]\s*(.*)$/u.exec(line)
     const said = turn === null ? line : (turn[2] ?? '')
     if (turn !== null) speaker = turn[1]?.trim()
     const byLearner = speaker === undefined || learners.has(speaker.toLowerCase())
+    // What was said runs to the end of the line, so it starts where the line ends minus its length.
+    let cursor = lineStart + line.length - said.length
     for (const piece of said.split(/(?<=[。！？!?；;])|(?<=\.)\s+/u)) {
+      const pieceStart = text.indexOf(piece, cursor)
+      cursor = pieceStart + piece.length
       const sentence = piece.trim()
-      if (sentence.length >= 2) sentences.push({ text: sentence, byLearner })
+      const offset = pieceStart + (piece.length - piece.trimStart().length)
+      if (sentence.length >= 2) sentences.push({ text: sentence, byLearner, offset })
     }
+    lineStart += line.length + 1
   }
   return sentences
+}
+
+/** The words a suggestion rests on, and where they are in the passage. */
+type Quoted = { readonly quote: string; readonly quoteAt: QuoteAt }
+
+/**
+ * Quotes `words` found at `offset`, naming which occurrence they are, so that words said twice in a passage
+ * point at the time they were said (ADR 0011). Words with too few letters or digits to rest on, such as a
+ * single-character term, are quoted with the line they stand in instead, so nothing is lost for being short.
+ */
+function quoted(text: string, episodeId: string, words: string, offset: number): Quoted {
+  let quote = words
+  let start = offset
+  if (quoteSigns(words) < MIN_QUOTE_SIGNS) {
+    const lineStart = text.lastIndexOf('\n', offset - 1) + 1
+    const lineEnd = text.indexOf('\n', offset)
+    const line = text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd)
+    quote = line.trim()
+    start = lineStart + (line.length - line.trimStart().length)
+  }
+  const occurrence = occurrenceAt(text, quote, start)
+  return { quote, quoteAt: occurrence === undefined ? { episodeId } : { episodeId, occurrence } }
 }
 
 function cand(candidate: CandidateNode): string {

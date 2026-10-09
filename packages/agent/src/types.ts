@@ -55,10 +55,37 @@ export interface CandidateNode {
   readonly label: string
   /** The passage it was found in, so an agent can tell this passage's candidates from earlier ones. */
   readonly episodeId?: string
+  /**
+   * The name the reader gave the node (`NodeSuggestion.ref`), so a reader can find the engine's reference for a
+   * node it suggested in an earlier passage instead of constructing one (ADR 0011).
+   */
+  readonly localRef?: string
 }
 
 /** How a suggestion names a candidate of the same passage instead of an existing node. */
 export const CANDIDATE_PREFIX = 'cand:'
+
+/**
+ * Where a suggestion's quote is: in which passage, and which of its occurrences there (ADR 0011).
+ *
+ * Without it, the quote is looked for in the passage being read, and must occur there once.
+ */
+export interface QuoteAt {
+  readonly episodeId: string
+  /** 1-based, among the quote's occurrences in that passage, overlapping ones included. */
+  readonly occurrence?: number
+}
+
+/**
+ * What a suggestion's quote is, as evidence (ADR 0011).
+ *
+ * - `stated`: the quoted words are in a turn of the learner. It says the learner said those words, nothing more.
+ *   It does not say that the suggestion is what the learner meant by them.
+ * - `inferred`: the suggestion is a reading of what was said, by whichever reader made it.
+ *
+ * Neither basis proves that the learner has mastered anything, and the learner's acceptance does not either.
+ */
+export type Basis = 'stated' | 'inferred'
 
 /**
  * What an agent is told about the human before it answers.
@@ -111,6 +138,8 @@ export interface NodeSuggestion {
   readonly ref?: string
   /** The words of the material this suggestion rests on, verbatim. */
   readonly quote?: string
+  readonly quoteAt?: QuoteAt
+  readonly basis?: Basis
 }
 
 /** An edge the agent proposes. Either end may be an existing node id or `cand:<ref>`. */
@@ -121,6 +150,8 @@ export interface EdgeSuggestion {
   readonly to: string
   readonly rationale: string
   readonly quote?: string
+  readonly quoteAt?: QuoteAt
+  readonly basis?: Basis
 }
 
 /**
@@ -139,6 +170,8 @@ export interface StateChangeSuggestion {
   readonly evidence: readonly string[]
   readonly rationale: string
   readonly quote?: string
+  readonly quoteAt?: QuoteAt
+  readonly basis?: Basis
 }
 
 export type Suggestion = NodeSuggestion | EdgeSuggestion | StateChangeSuggestion

@@ -232,7 +232,12 @@ export function createEpistemeMcpServer(
             proposal: suggestion.proposal,
             excerpt: suggestion.origin?.excerpt,
           })),
-          refused: outcome.refused.map(({ ref, code, message }) => ({ ref, code, message })),
+          refused: outcome.refused.map(({ ref, code, message, existingNodeId }) => ({
+            ref,
+            code,
+            message,
+            ...(existingNodeId === undefined ? {} : { existingNodeId }),
+          })),
         },
       )
     },
