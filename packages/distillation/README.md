@@ -95,3 +95,25 @@ quoted with the line it stands in. It sets no basis of its own; the engine marks
 
 It finds what these patterns find. Its purpose is to make the loop real and testable; extraction quality
 belongs to a model-backed agent behind the same interface.
+
+## A host's reading
+
+`prepareHostReading({ sourceId, text, items, policy, actorId })` takes what a host's model read
+([ADR 0011](../../docs/decisions/0011-host-assisted-distillation.md)). It checks what can be checked before
+reading:
+
+- each item's shape;
+- its basis, which is required, so there is no default for a host;
+- its quote, located in the whole canonical text by the host's `occurrence`. That position is converted into
+  the engine's own form, an episode and an occurrence within it;
+- what each relation and state change depends on.
+
+It returns those refusals, which carry no origin, and a `CognitiveAgent` that hands the rest to `distill`:
+
+- each node in the episode its quote is in;
+- each relation and state change in the latest of its quote's and its candidate ends' episodes.
+
+A candidate end in an earlier episode is named through `workspace.candidates` by the reader's own name for it
+(`localRef`), never by constructing an engine reference. The engine then locates every quote again and applies
+the same policy and checks as for any reader. `hostRefusalOf` reports an engine refusal under the host's ref,
+and as `depends_on_refused` when it names a node the engine refused.

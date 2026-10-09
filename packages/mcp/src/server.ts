@@ -8,8 +8,11 @@ import {
 } from '@modelcontextprotocol/server'
 import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } from './confirm.js'
 import {
+  MAX_HOST_ITEMS,
   MAX_MATERIAL,
   RECORDABLE_DIMENSIONS,
+  type DistillOutcome,
+  type HostItem,
   type LearnSession,
   type Proposal,
   type RecallResult,
@@ -115,7 +118,18 @@ const PROPOSE_INPUT = fromJsonSchema<ProposeInput>({
   additionalProperties: false,
 })
 
-const DISTILL_INPUT = fromJsonSchema<{ title?: string; text: string }>({
+interface DistillInput {
+  title?: string
+  text: string
+  candidates?: HostItem[]
+  learner?: string
+  hostSession?: string
+  submissionId?: string
+}
+
+const SHORT_TEXT = { type: 'string', minLength: 1, maxLength: 200 } as const
+
+const DISTILL_INPUT = fromJsonSchema<DistillInput>({
   type: 'object',
   properties: {
     title: { type: 'string', maxLength: 200, description: 'A short title for the material.' },
@@ -124,7 +138,87 @@ const DISTILL_INPUT = fromJsonSchema<{ title?: string; text: string }>({
       minLength: 1,
       maxLength: MAX_MATERIAL,
       description:
-        'The learning material or dialogue, verbatim. A dialogue reads best as "speaker: utterance" lines, optionally starting with [mm:ss].',
+        'The learning material or dialogue, verbatim. A dialogue reads best as "speaker: utterance" lines, optionally starting with [mm:ss]. Send only the stretch you read, never a whole transcript.',
+    },
+    candidates: {
+      type: 'array',
+      maxItems: MAX_HOST_ITEMS,
+      description:
+        'Your own reading of the text. With it you are the reader and Episteme does not also read the text; without it, Episteme reads it with its own rules. Each item quotes the words it rests on, verbatim; Episteme checks every quote against the text and refuses what it cannot find.',
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['node', 'relation', 'state'] },
+          ref: {
+            type: 'string',
+            maxLength: 100,
+            description:
+              'Your name for the item. Required for a node, which other items name as "cand:<ref>"; refusals are reported under it.',
+          },
+          role: {
+            type: 'string',
+            enum: ['concept', 'question', 'claim', 'evidence'],
+            description: 'node: what it is.',
+          },
+          label: {
+            type: 'string',
+            description: 'node: the unit of understanding, as the learner would state it.',
+          },
+          from: { type: 'string', description: 'relation: "cand:<ref>" or an existing node id.' },
+          to: { type: 'string', description: 'relation: "cand:<ref>" or an existing node id.' },
+          relation: {
+            type: 'string',
+            enum: ['about', 'answers', 'supports', 'contradicts', 'revises'],
+            description:
+              'relation: revises points from an earlier claim to the one that corrects it, and never withdraws the earlier one.',
+          },
+          target: {
+            type: 'string',
+            description: 'state: "cand:<ref>" or an existing node id (from recall).',
+          },
+          dimension: { type: 'string', description: 'state: which dimension.' },
+          level: {
+            type: 'string',
+            description:
+              'state: the level. A conflict may be suggested as suspected or open only; settling one is the learner’s act.',
+          },
+          quote: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 1000,
+            description: 'The words the item rests on, copied exactly from the text.',
+          },
+          occurrence: {
+            type: 'integer',
+            minimum: 1,
+            description:
+              'Which occurrence of the quote in the whole text, counting from 1. Required when the quote occurs more than once.',
+          },
+          basis: {
+            type: 'string',
+            enum: ['stated', 'inferred'],
+            description:
+              'stated: the quoted words are the learner’s own, in their turn. inferred: this is your reading of what was said. Say inferred whenever you are interpreting, even when the words you quote are the learner’s. Neither means the learner has mastered anything.',
+          },
+          rationale: { type: 'string', minLength: 1, description: 'Why you propose it.' },
+        },
+        required: ['kind', 'quote', 'basis', 'rationale'],
+        additionalProperties: false,
+      },
+    },
+    learner: {
+      ...SHORT_TEXT,
+      description:
+        'The learner’s speaker label in the text, exactly as written, such as "学生" or "User". Without it nothing can be stated.',
+    },
+    hostSession: {
+      ...SHORT_TEXT,
+      description: 'Your own identifier for this conversation. Provenance only.',
+    },
+    submissionId: {
+      ...SHORT_TEXT,
+      description:
+        'An idempotency key. Sending the same request again with it changes nothing and returns what became of the first; a different request under the same key is refused.',
     },
   },
   required: ['text'],
@@ -202,7 +296,7 @@ export function createEpistemeMcpServer(
     {
       title: 'Distil learning material into suggestions',
       description:
-        'Hand Episteme a stretch of learning material or a learning dialogue. Episteme reads it with its own distiller and turns what it finds (questions, claims, evidence, terms, how they relate, and what the learner said about their own understanding) into pending suggestions, each with the words it came from. Nothing is recorded: the learner decides on each in their review queue, and is not asked here. Do not tell the learner anything was recorded.',
+        'Hand Episteme a stretch of learning material or a learning dialogue, and optionally your own reading of it as candidates. Episteme keeps the text, checks every quote against it, and turns what passes the domain’s checks (questions, claims, evidence, terms, how they relate, and what the learner said about their own understanding) into pending suggestions, each with the words it came from. A verified quote only shows the words are in the text you sent. Nothing is recorded: the learner decides on each in their review queue, and is not asked here. Do not tell the learner anything was recorded.',
       inputSchema: DISTILL_INPUT,
       annotations: {
         readOnlyHint: false,
@@ -211,35 +305,46 @@ export function createEpistemeMcpServer(
         openWorldHint: false,
       },
     },
-    async ({ title, text }, context) => {
-      // Who asked is recorded for provenance only. The distiller, not the asking agent, proposes.
+    async (input, context) => {
+      const { title, text, candidates, learner, hostSession, submissionId } = input
+      // Who asked is recorded for provenance. With candidates, the asking agent's model did the reading and
+      // proposes what is kept; without them, Episteme's distiller does.
       const outcome = await session.distill(title === undefined ? { text } : { title, text }, {
         requestedBy: agentActorFor(clientNameOf(context)),
+        ...(learner === undefined ? {} : { learner }),
+        ...(candidates === undefined
+          ? {}
+          : {
+              host: {
+                candidates,
+                ...(hostSession === undefined ? {} : { hostSession }),
+                ...(submissionId === undefined ? {} : { submissionId }),
+              },
+            }),
       })
       if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
-      return result(
-        `Distilled ${outcome.episodes} episode(s) into ${outcome.suggestions.length} pending suggestion(s)` +
-          (outcome.refused.length > 0
-            ? `; ${outcome.refused.length} candidate(s) did not pass the checks`
-            : '') +
-          '. They wait in the learner’s review queue. Nothing has been recorded.',
-        {
-          status: 'pending',
-          sourceId: outcome.sourceId,
-          episodes: outcome.episodes,
-          suggestions: outcome.suggestions.map((suggestion) => ({
-            id: suggestion.id,
-            proposal: suggestion.proposal,
-            excerpt: suggestion.origin?.excerpt,
-          })),
-          refused: outcome.refused.map(({ ref, code, message, existingNodeId }) => ({
-            ref,
-            code,
-            message,
-            ...(existingNodeId === undefined ? {} : { existingNodeId }),
-          })),
-        },
-      )
+      return result(describeDistilled(outcome), {
+        status: outcome.status,
+        reader: outcome.reader,
+        sourceId: outcome.sourceId,
+        episodes: outcome.episodes,
+        suggestions: outcome.suggestions.map((suggestion) => ({
+          id: suggestion.id,
+          proposal: suggestion.proposal,
+          excerpt: suggestion.origin?.excerpt,
+          ...(suggestion.origin?.speaker === undefined
+            ? {}
+            : { speaker: suggestion.origin.speaker }),
+          ...(suggestion.basis === undefined ? {} : { basis: suggestion.basis }),
+        })),
+        refused: outcome.refused.map(({ ref, code, message, existingNodeId }) => ({
+          ref,
+          code,
+          message,
+          ...(existingNodeId === undefined ? {} : { existingNodeId }),
+        })),
+        ...(outcome.receipt === undefined ? {} : { receipt: outcome.receipt }),
+      })
     },
   )
 
@@ -342,6 +447,23 @@ function describeRecall(recalled: RecallResult): string {
     )
   }
   return lines.join('\n')
+}
+
+function describeDistilled(outcome: Extract<DistillOutcome, { ok: true }>): string {
+  if (outcome.status === 'duplicate_submission') {
+    const pending = outcome.receipt?.kept.filter((entry) => entry.status === 'pending').length ?? 0
+    return (
+      `This submission was already made${outcome.receipt === undefined ? '' : ` (${outcome.receipt.submissionId})`}; nothing was changed or queued again. ` +
+      `${pending} of its suggestion(s) still wait in the learner’s review queue; the receipt says what became of each.`
+    )
+  }
+  return (
+    `Distilled ${outcome.episodes} episode(s) into ${outcome.suggestions.length} pending suggestion(s)` +
+    (outcome.refused.length > 0
+      ? `; ${outcome.refused.length} candidate(s) did not pass the checks`
+      : '') +
+    '. They wait in the learner’s review queue. Nothing has been recorded.'
+  )
 }
 
 function describeProgress(progress: ProgressSummary, pending: number): string {

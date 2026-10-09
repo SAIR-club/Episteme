@@ -61,6 +61,14 @@ export interface SuggestionOrigin {
   readonly speaker?: string
 }
 
+/**
+ * Fresh ids for drafts. Random rather than counted: a counter restarts once every draft has been resolved, and
+ * an agent still holding an old id would then refer to a different suggestion than it was told about.
+ */
+export function newSuggestionIds(count: number): readonly string[] {
+  return Array.from({ length: count }, () => `sug_${randomUUID()}`)
+}
+
 /** How a proposal names a node suggested alongside it. */
 export const SUGGESTED_NODE_PREFIX = 'cand:'
 
@@ -87,10 +95,11 @@ export interface Suggestion {
 /**
  * The version this build writes. Bump only together with a migration, as for the graph file.
  *
- * Version 2 added resolution records. A version 1 file holds only suggestions and reads unchanged.
+ * Version 2 added resolution records, version 3 landing records. Earlier files hold only what their version
+ * knew and read unchanged.
  */
-export const SUGGESTIONS_SCHEMA_VERSION = 2
-const READABLE_VERSIONS: readonly number[] = [1, 2]
+export const SUGGESTIONS_SCHEMA_VERSION = 3
+const READABLE_VERSIONS: readonly number[] = [1, 2, 3]
 
 /**
  * A decision that has started committing and has not been settled: a write-ahead record.
@@ -113,9 +122,31 @@ export interface Resolution {
   readonly channel: string
 }
 
+/**
+ * Proof that a keyed submission's drafts were kept (ADR 0011 §5).
+ *
+ * A submission is recorded on its source before its drafts are written, so a draft's origin never points at
+ * nothing, and no write covers both files. This record is written in the same write as the drafts, so it exists
+ * exactly when they were kept. A submission without one never got its drafts into the queue: a retry is then
+ * read again rather than answered. It stays when the drafts are later decided, so that a suggestion missing
+ * from the queue is known to have been in it.
+ */
+export interface SubmissionLanding {
+  /** The submitting agent and its `submissionId`: the submission's scope. */
+  readonly by: string
+  readonly submissionId: string
+  readonly sourceId: string
+  readonly suggestionIds: readonly string[]
+}
+
 type StoreRecord =
   | { readonly schemaVersion: number; readonly kind: 'suggestion'; readonly suggestion: Suggestion }
   | { readonly schemaVersion: number; readonly kind: 'resolution'; readonly resolution: Resolution }
+  | {
+      readonly schemaVersion: number
+      readonly kind: 'landing'
+      readonly landing: SubmissionLanding
+    }
 
 /**
  * The drafts of one graph, in proposal order.
@@ -127,6 +158,7 @@ export class SuggestionStore {
   readonly #filePath: string | undefined
   readonly #pending = new Map<string, Suggestion>()
   readonly #resolutions = new Map<string, Resolution>()
+  readonly #landings = new Map<string, SubmissionLanding>()
   #writeChain: Promise<void> = Promise.resolve()
 
   private constructor(filePath: string | undefined) {
@@ -156,7 +188,13 @@ export class SuggestionStore {
       if (line === '') continue
       const record = parseRecord(line, index + 1, filePath)
       if (record.kind === 'suggestion') store.#pending.set(record.suggestion.id, record.suggestion)
-      else store.#resolutions.set(record.resolution.operationId, record.resolution)
+      else if (record.kind === 'resolution') {
+        store.#resolutions.set(record.resolution.operationId, record.resolution)
+      } else
+        store.#landings.set(
+          landingKey(record.landing.by, record.landing.submissionId),
+          record.landing,
+        )
     }
     return store
   }
@@ -190,23 +228,34 @@ export class SuggestionStore {
    * Keeps several drafts in one write, such as everything one distillation yields.
    *
    * Their ids are chosen before any is kept, so a draft may refer to another of the same batch: `refer`
-   * receives the ids in order and returns the drafts to keep.
+   * receives the ids in order and returns the drafts to keep. A caller that has to record the ids before the
+   * drafts are kept, such as a submission's receipt, chooses them with `newSuggestionIds` and passes them in.
    */
   async addAll(
     count: number,
     refer: (ids: readonly string[]) => readonly Omit<Suggestion, 'id'>[],
+    chosen: readonly string[] = newSuggestionIds(count),
+    /** For a keyed submission: written in the same write as its drafts, even when there are none. */
+    landing?: SubmissionLanding,
   ): Promise<readonly Suggestion[]> {
-    const ids = Array.from({ length: count }, () => `sug_${randomUUID()}`)
+    const ids = chosen
     const kept = refer(ids).map((draft, index): Suggestion => ({
       id: ids[index] ?? `sug_${randomUUID()}`,
       ...draft,
     }))
-    if (kept.length > 0) {
-      await this.#change((pending) => {
+    if (kept.length > 0 || landing !== undefined) {
+      await this.#change((pending, _, landings) => {
         for (const suggestion of kept) pending.set(suggestion.id, suggestion)
+        if (landing !== undefined)
+          landings.set(landingKey(landing.by, landing.submissionId), landing)
       })
     }
     return kept
+  }
+
+  /** Whether the drafts of a keyed submission were kept, and which they were. */
+  landing(by: string, submissionId: string): SubmissionLanding | undefined {
+    return this.#landings.get(landingKey(by, submissionId))
   }
 
   /** Drops a draft that has been decided, and writes the change. Returns whether it was pending. */
@@ -256,15 +305,21 @@ export class SuggestionStore {
    * for an unsettled decision could be handed to something else in the meantime.
    */
   #change(
-    change: (pending: Map<string, Suggestion>, resolutions: Map<string, Resolution>) => void,
+    change: (
+      pending: Map<string, Suggestion>,
+      resolutions: Map<string, Resolution>,
+      landings: Map<string, SubmissionLanding>,
+    ) => void,
   ): Promise<void> {
     const next = this.#writeChain.then(async () => {
       const pending = new Map(this.#pending)
       const resolutions = new Map(this.#resolutions)
-      change(pending, resolutions)
-      await this.#writeNow(pending, resolutions)
+      const landings = new Map(this.#landings)
+      change(pending, resolutions, landings)
+      await this.#writeNow(pending, resolutions, landings)
       replace(this.#pending, pending)
       replace(this.#resolutions, resolutions)
+      replace(this.#landings, landings)
     })
     // The chain must survive a failed write without staying rejected, while the caller still sees the failure.
     this.#writeChain = next.then(
@@ -277,6 +332,7 @@ export class SuggestionStore {
   async #writeNow(
     pending: ReadonlyMap<string, Suggestion>,
     resolutions: ReadonlyMap<string, Resolution>,
+    landings: ReadonlyMap<string, SubmissionLanding>,
   ): Promise<void> {
     if (this.#filePath === undefined) return
     const lines = [
@@ -294,11 +350,22 @@ export class SuggestionStore {
           resolution,
         } satisfies StoreRecord),
       ),
+      ...[...landings.values()].map((landing) =>
+        JSON.stringify({
+          schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
+          kind: 'landing',
+          landing,
+        } satisfies StoreRecord),
+      ),
     ]
     const temporary = `${this.#filePath}.tmp`
     await writeFile(temporary, lines.length === 0 ? '' : `${lines.join('\n')}\n`, 'utf8')
     await rename(temporary, this.#filePath)
   }
+}
+
+function landingKey(by: string, submissionId: string): string {
+  return JSON.stringify([by, submissionId])
 }
 
 function replace<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void {
@@ -320,6 +387,7 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
     kind?: unknown
     suggestion?: Suggestion
     resolution?: Resolution
+    landing?: SubmissionLanding
   } | null
   const version = record?.schemaVersion
   if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version)) {
@@ -333,5 +401,10 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
   if (version >= 2 && record?.kind === 'resolution' && record.resolution !== undefined) {
     return { schemaVersion: version, kind: 'resolution', resolution: record.resolution }
   }
-  throw new Error(`line ${lineNumber} of "${filePath}" is neither a suggestion nor a resolution`)
+  if (version >= 3 && record?.kind === 'landing' && record.landing !== undefined) {
+    return { schemaVersion: version, kind: 'landing', landing: record.landing }
+  }
+  throw new Error(
+    `line ${lineNumber} of "${filePath}" is not a suggestion, a resolution or a landing record`,
+  )
 }
