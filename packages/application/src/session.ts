@@ -1337,7 +1337,19 @@ export class LearnSession {
               }),
             }
       if (keyed !== undefined) {
-        const earlier = this.#sources.submission(keyed.by, keyed.id)
+        let earlier = this.#sources.submission(keyed.by, keyed.id)
+        // Recorded on its source, but its drafts never landed: the write of the drafts failed or the process
+        // died first. Nothing of it reached the queue, so it is not answered as made: the record of the attempt
+        // is dropped and this request is read again. The source stays, and is reused for the same words.
+        if (earlier !== undefined && this.#suggestions.landing(keyed.by, keyed.id) === undefined) {
+          await this.#sources.put({
+            ...earlier.source,
+            submissions: (earlier.source.submissions ?? []).filter(
+              (entry) => entry !== earlier?.submission,
+            ),
+          })
+          earlier = undefined
+        }
         if (earlier !== undefined) {
           if (earlier.submission.payloadDigest !== keyed.payloadDigest) {
             return {
@@ -1583,6 +1595,9 @@ export class LearnSession {
             ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
           })),
         ids,
+        keyed === undefined
+          ? undefined
+          : { by: keyed.by, submissionId: keyed.id, sourceId, suggestionIds: ids },
       )
       return {
         ok: true,
@@ -1635,8 +1650,10 @@ export class LearnSession {
   }
 
   /**
-   * What has become of a suggestion: still pending; accepted or modified, with what it committed, found through
-   * the provenance the graph keeps; or no longer pending with nothing committed from it, which is a dismissal.
+   * What has become of a suggestion of a submission whose drafts landed: still pending; accepted or modified,
+   * with what it committed, found through the provenance the graph keeps; or `not_pending`, no longer in the
+   * queue with nothing in the graph from it. The landing record proves it was in the queue. Episteme keeps no
+   * record of a dismissal, so `not_pending` does not claim one.
    */
   #currentStatusOf(suggestionId: string): SubmissionStatus {
     if (this.#suggestions.get(suggestionId) !== undefined) return { status: 'pending' }
@@ -1930,7 +1947,10 @@ export type SubmissionStatus =
       /** What the decision committed, found through the provenance the graph keeps. */
       readonly committed: { readonly kind: 'node' | 'edge' | 'event'; readonly id: string }
     }
-  /** No longer pending, and nothing in the graph came from it: it was dismissed. */
+  /**
+   * It was in the queue (its submission's landing record proves that), it is no longer, and nothing in the graph
+   * came from it. A dismissal leaves exactly this, but leaves no record of its own, so this is not called one.
+   */
   | { readonly status: 'not_pending' }
 
 /** The receipt of a keyed submission, given when it is made again. Nothing is re-queued. */

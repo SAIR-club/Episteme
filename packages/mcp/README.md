@@ -64,7 +64,11 @@ against it instead. Saying something again is not by itself a change of state.
 
 - The same request again writes nothing. It answers `duplicate_submission` with a `receipt`: the source, when it
   was stored, what was refused, and for each kept suggestion whether it is `pending`, `accepted`/`modified`
-  (with what it committed) or `not_pending` (dismissed).
+  (with what it committed) or `not_pending`. `not_pending` means it was in the queue and no longer is, with
+  nothing in the graph from it. Episteme keeps no record of a dismissal, so this is not called one.
+- A request is "made" only once its suggestions were queued. If storing them failed, or the service stopped
+  first, the same request again is read again rather than answered: nothing is lost, and nothing is queued
+  twice.
 - A different request under the same id is refused as `submission_conflict`.
 - Without an id, the same text in the same `hostSession` reuses its source, and a suggestion already waiting
   for the same words is refused as `already_pending`.

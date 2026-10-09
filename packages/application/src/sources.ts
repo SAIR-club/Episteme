@@ -156,7 +156,10 @@ export class SourceStore {
     return this.#sources.get(id)
   }
 
-  /** The source a keyed submission stored, with that submission, when there is one. */
+  /**
+   * The source a keyed submission stored, with that submission, when there is one. A submission is complete
+   * only once its drafts' landing record exists in the drafts file; until then it is a record of an attempt.
+   */
   submission(
     by: string,
     id: string,
