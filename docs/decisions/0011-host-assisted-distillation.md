@@ -1,6 +1,6 @@
 # 0011 — Host-assisted distillation: the host reads, Episteme verifies
 
-Status: **proposed** (2026-10-08). Amends [ADR 0009](0009-distillation.md).
+Status: **accepted** (2026-10-08). Amends [ADR 0009](0009-distillation.md).
 
 ## Context
 
