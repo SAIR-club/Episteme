@@ -15,12 +15,12 @@ graph, so the terminal surface cannot open the same file.
 
 ## Tools
 
-| tool      | what it does                                                                                                     | changes anything |
-| --------- | ---------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved                       | no               |
-| `propose` | keeps a claim, a link or a state change as a pending suggestion, or refuses it with the reason                   | no               |
-| `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending                    | no               |
-| `distill` | distils learning material with Episteme's own distiller into pending suggestions, each with its words (ADR 0009) | no               |
+| tool      | what it does                                                                                                                                    | changes anything |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved                                                      | no               |
+| `propose` | keeps a claim, a link or a state change as a pending suggestion, or refuses it with the reason                                                  | no               |
+| `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending                                                   | no               |
+| `distill` | distils learning material into pending suggestions, each with its words: read by Episteme, or by the host's model and verified (ADR 0009, 0011) | no               |
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
 that could confirm would be confirming itself. A suggestion is accepted through the one human-decision path,
@@ -32,6 +32,42 @@ Every result carries the same data twice: as text addressed to the agent, and as
 `distill` never asks the learner through the host, even one that could show a form. A single distillation yields
 many suggestions, and they wait in the review queue. The client that asked is recorded as `requestedBy`, for
 provenance only. Material is limited to 20,000 characters, and the queue to 500 pending suggestions.
+
+### Sending your own reading (ADR 0011)
+
+With `candidates`, the host's model is the reader and Episteme's own reader does not also run. Each item is a
+`node` (`concept`, `question`, `claim`, `evidence`), a `relation` (`about`, `answers`, `supports`,
+`contradicts`, `revises`) or a `state`. Every item carries:
+
+- `quote`: the words it rests on, copied exactly from `text`;
+- `occurrence`: which occurrence, counted over the whole text. It is required when the quote recurs.
+- `basis`: `stated` or `inferred`. It is required; there is no default.
+- `rationale`.
+
+A node has a `ref` that other items name as `cand:<ref>`, across the whole text. `learner` names the learner's
+speaker label; only a quote in a turn of that speaker can be `stated`. Say `inferred` whenever the item is your
+reading, even of the learner's own words.
+
+Episteme keeps the text (canonical: `\n` line breaks, NFC). It refuses, as values reported under your refs:
+
+- every quote it cannot find exactly (`quote_not_found`, `quote_ambiguous`, `quote_spans_episodes`,
+  `quote_too_short`, `quote_too_long`);
+- a `stated` item outside the learner's turns (`basis_mismatch`);
+- what fails the domain's checks.
+
+What passes is proposed by your agent actor. A verified quote only shows the words are in the text you sent. It
+does not show they are a faithful record of the conversation, or that the item follows from them.
+`already_known` names the node the learner already has (`existingNodeId`), so the observation can be sent
+against it instead. Saying something again is not by itself a change of state.
+
+`submissionId` makes a request idempotent, per agent:
+
+- The same request again writes nothing. It answers `duplicate_submission` with a `receipt`: the source, when it
+  was stored, what was refused, and for each kept suggestion whether it is `pending`, `accepted`/`modified`
+  (with what it committed) or `not_pending` (dismissed).
+- A different request under the same id is refused as `submission_conflict`.
+- Without an id, the same text in the same `hostSession` reuses its source, and a suggestion already waiting
+  for the same words is refused as `already_pending`.
 
 ## Asking the learner
 
