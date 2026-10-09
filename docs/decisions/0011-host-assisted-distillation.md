@@ -277,8 +277,10 @@ The basis is part of what the person decides on, and it is never rewritten:
 
 Each dimension keeps its own meaning. `confidence` is how sure the learner is, not how right. `articulation`
 is how well they can put it into words, not whether they can use it. A confirmed state is recorded as exactly
-that dimension at that level, and nothing is derived from it. No surface (`recall`, `reflect`, the review)
-may present a `stated` or confirmed state as proof of ability, and there is still no single mastery score
+that dimension at that level, and this decision derives nothing further from it. The existing readings that
+combine dimensions, such as `settled` and the attention groups in `recall` and `reflect`, summarise what is
+recorded. They are not measures of ability either. No surface (`recall`, `reflect`, the review) may present a
+`stated` or confirmed state as proof of ability, and there is still no single mastery score
 ([AGENTS.md](../../AGENTS.md#project-invariants)).
 
 The rule-based reader marks a state change `stated` only when the material is a dialogue and the quote is in a
