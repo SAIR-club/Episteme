@@ -72,7 +72,7 @@ Note: Vitest resolves `@episteme/*` through each package's `dist/`, so **run `pn
 - Create commits only when the user explicitly asks. Committing, pushing, or opening a pull request is never part of finishing a task: "done" means files changed, checks run, and the diff summarized, with the working tree left uncommitted. Group each commit around one coherent change.
 - Commit messages must follow Conventional Commits (full format in the [Conventional Commits](#conventional-commits) section).
 - Do not push unless the user explicitly requests it.
-- Never delete remote branches, including merged feature branches.
+- Never delete a remote branch, including a merged feature branch, without the user's explicit authorisation for that branch (see [Branch discipline](#branch-discipline)).
 - Never force-push or rewrite shared branch history.
 
 ### Per-change workflow
@@ -126,7 +126,7 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 - After review feedback, address comments within scope, rerun affected checks, and summarize the resolution. Do not silently introduce unrelated changes.
 - CodeRabbit auto-review behavior follows the repository's `.coderabbit.yaml` configuration (`auto_review.enabled`, `labels`, `base_branches`, `auto_incremental_review`). A fixing commit does not guarantee a re-review — only when `auto_incremental_review` is enabled. If auto-review is paused, use `@coderabbitai resume` to resume; for a manual incremental review, use `@coderabbitai review` (do not treat `resume` as a general replacement for `auto_review.enabled: false`). Reply to each review thread: when a finding is valid, fix it and reply naming the fixing commit; when it is not applicable, reply with the reason — CodeRabbit may push back with specifics, suggest alternatives, or insist, then either fix, open a follow-up issue for valid but out-of-scope work, or hold the position. Resolve every thread before merge.
 - Do not merge, enable auto-merge, close, reopen, or change the base branch unless the user explicitly requests it.
-- Keep the remote source branch after merge.
+- Keep the remote source branch after merge unless the user explicitly authorises deleting it (see [Branch discipline](#branch-discipline)).
 
 ## Continuous Integration
 
@@ -158,7 +158,7 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 
 - One branch per task; merge back to main within 2–3 days. No long-lived parallel branches.
 - Branch naming: `<type>/<short-topic>` (e.g. `feat/search-index-cache`, `fix/daemon-start`), lowercased with dashes. Do not use a user's name, dates, or arbitrary numbers.
-- Delete branches and prune worktrees immediately after merging. Never leave worktree checkouts behind.
+- After a merge, clean up what is no longer needed: delete the local feature branch and prune its worktree, and never leave worktree checkouts behind. The remote feature branch should be cleaned up too, but an AI agent deletes a remote branch only when the user explicitly authorises it for that branch; otherwise it leaves it for the maintainer.
 - main must always be releasable; green CI is the merge gate. Nothing is pushed directly to main, including CI and documentation changes: every change lands through a PR whose CI is green.
 
 ### Commits and changelog
