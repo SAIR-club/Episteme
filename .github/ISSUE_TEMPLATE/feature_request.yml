@@ -1,0 +1,29 @@
+name: Feature Request / RFC
+description: Suggest an enhancement or architectural addition
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Episteme is a minimal cognitive graph substrate. Domain-specific features belong to applications or domain extensions.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: What inquiry, cognitive structure, or integration need does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution / Architecture
+      description: How should this fit into Core, Registries, or SDK?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Other approaches considered and why they were deferred.
+    validations:
+      required: false

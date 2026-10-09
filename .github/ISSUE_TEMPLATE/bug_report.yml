@@ -1,0 +1,45 @@
+name: Bug Report
+description: Report unexpected behavior, errors, or broken invariants
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue! Please check existing issues first before submitting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear and concise description of what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps or minimal test case to reproduce the behavior.
+      placeholder: |
+        1. Run `...`
+        2. Execute `...`
+        3. See error `...`
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened according to project invariants.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, OS, pnpm version, commit hash.
+      value: |
+        - Node: 
+        - pnpm: 
+        - OS: 
+        - Episteme commit/version: 
+    validations:
+      required: false

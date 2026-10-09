@@ -7,5 +7,11 @@ export default defineConfig({
     // default node environment is the contract rather than a convenience.
     environment: 'node',
     passWithNoTests: false,
+    poolOptions: {
+      forks: {
+        minForks: 1,
+        maxForks: 4,
+      },
+    },
   },
 })
