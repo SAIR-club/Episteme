@@ -42,7 +42,12 @@ import {
 } from './suggestions.js'
 import { SourceStore, type Source } from './sources.js'
 import { CANDIDATE_PREFIX, type CognitiveAgent } from '@episteme/agent'
-import { RuleBasedDistiller, distill, type DistillationPolicy } from '@episteme/distillation'
+import {
+  RuleBasedDistiller,
+  canonicalText,
+  distill,
+  type DistillationPolicy,
+} from '@episteme/distillation'
 import { learnDistillationPolicy } from '@episteme/domain-learn/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
@@ -1063,7 +1068,8 @@ export class LearnSession {
   #commitDecided(resolution: Resolution, suggestion: Suggestion): Committed | MutationRefusal {
     const { proposal, planned } = resolution
     const confirmed = resolution.outcome === 'accepted'
-    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})`
+    // A distilled suggestion's basis goes with it, so an agent's reading is never recorded as the learner's words.
+    const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})${suggestion.basis === undefined ? '' : `, basis ${suggestion.basis}`}`
     switch (proposal.kind) {
       case 'state': {
         const value: StateValue = confirmed
@@ -1236,6 +1242,9 @@ export class LearnSession {
    *
    * Bounded: material longer than `MAX_MATERIAL` characters, or a queue already holding `MAX_PENDING`
    * suggestions, is refused as a value, before anything is kept.
+   *
+   * The material is kept in canonical form (`canonicalText`), and every span points into that text. `learner`
+   * names the learner's speaker label in a dialogue; without it nothing distilled is `stated` (ADR 0011).
    */
   distill(
     material: { readonly title?: string; readonly text: string },
@@ -1243,10 +1252,11 @@ export class LearnSession {
       readonly requestedBy?: string
       readonly agent?: CognitiveAgent
       readonly policy?: DistillationPolicy
+      readonly learner?: string
     } = {},
   ): Promise<DistillOutcome> {
     return this.#exclusive(async (): Promise<DistillOutcome> => {
-      const text = material.text
+      const text = canonicalText(material.text)
       if (text.trim() === '') {
         return {
           ok: false,
@@ -1283,6 +1293,7 @@ export class LearnSession {
         known: this.#episteme.graph
           .listNodes()
           .map((node) => ({ id: node.id, label: node.label, type: node.type })),
+        ...(options.learner === undefined ? {} : { learner: options.learner }),
       })
 
       const proposedBy = `actor_agent_${agent.id}`
@@ -1292,6 +1303,7 @@ export class LearnSession {
         proposal: Proposal
         origin: SuggestionOrigin
         rationale: string
+        basis: Suggestion['basis']
       }[] = []
       const candidates = new Map<string, number>()
       const refer = (end: string): string | undefined => {
@@ -1301,15 +1313,16 @@ export class LearnSession {
       }
 
       for (const candidate of result.candidates) {
-        const origin: SuggestionOrigin = candidate.origin
         if (candidate.status === 'refused') {
+          // A quote that could not be located has no origin, and none is made up for it.
           refused.push({
             ref: candidate.ref,
-            ...(candidate.refusal ?? { code: 'refused', message: '' }),
-            origin,
+            ...candidate.refusal,
+            ...(candidate.origin === undefined ? {} : { origin: candidate.origin }),
           })
           continue
         }
+        const origin: SuggestionOrigin = candidate.origin
         const suggestion = candidate.suggestion
         const proposals: Proposal[] = []
         if (suggestion.kind === 'node') {
@@ -1344,7 +1357,13 @@ export class LearnSession {
         }
         for (const proposal of proposals) {
           if (suggestion.kind === 'node') candidates.set(candidate.ref, accepted.length)
-          accepted.push({ ref: candidate.ref, proposal, origin, rationale: suggestion.rationale })
+          accepted.push({
+            ref: candidate.ref,
+            proposal,
+            origin,
+            rationale: suggestion.rationale,
+            basis: suggestion.basis,
+          })
         }
       }
 
@@ -1405,6 +1424,7 @@ export class LearnSession {
           proposedBy,
           proposedAt,
           origin: item.origin,
+          ...(item.basis === undefined ? {} : { basis: item.basis }),
           ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
         })),
       )
@@ -1645,7 +1665,10 @@ export interface DistillRefusal {
   readonly ref: string
   readonly code: string
   readonly message: string
-  readonly origin: SuggestionOrigin
+  /** Where its words are. Absent when they could not be located (ADR 0011). */
+  readonly origin?: SuggestionOrigin
+  /** For `already_known`: the node the learner already has, which the observation can be sent against. */
+  readonly existingNodeId?: string
 }
 
 export type DistillOutcome =
@@ -1662,11 +1685,15 @@ export type DistillOutcome =
 /** The property under which an accepted node records the suggestion it came from. */
 const PROVENANCE_KEY = 'suggestion'
 
-/** What an accepted node keeps of its suggestion: which one it was, and the words it came from. */
+/**
+ * What an accepted node keeps of its suggestion: which one it was, the words it came from, and whether the
+ * learner said them or they were read into what was said.
+ */
 function provenanceOf(suggestion: Suggestion): Record<string, unknown> {
   return {
     [PROVENANCE_KEY]: suggestion.id,
     ...(suggestion.origin === undefined ? {} : { origin: suggestion.origin }),
+    ...(suggestion.basis === undefined ? {} : { basis: suggestion.basis }),
   }
 }
 

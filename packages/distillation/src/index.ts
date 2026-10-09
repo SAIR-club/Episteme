@@ -15,3 +15,11 @@ export {
 export type { Candidate, DistillationPolicy, Origin, Refusal, Relation, Role } from './policy.js'
 export { distill, type DistillInput, type DistillationResult } from './engine.js'
 export { RuleBasedDistiller, type RuleBasedOptions } from './rule-based.js'
+export {
+  MAX_QUOTE_LENGTH,
+  MIN_QUOTE_SIGNS,
+  canonicalText,
+  occurrenceAt,
+  occurrencesOf,
+  quoteSigns,
+} from './quotes.js'

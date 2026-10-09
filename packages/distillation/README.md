@@ -30,11 +30,28 @@ earlier question. It returns every candidate it found and **writes nothing**.
 
 - **References.** A node the agent names `q1` in episode 2 becomes `e2.q1`. Other suggestions name it
   `cand:e2.q1`, and the engine rewrites the agent's local names to these.
-- **Origin.** Each candidate's origin is the span of its `quote` in the source when the episode holds the
-  quote, and the whole episode otherwise. The origin also carries the excerpt and the time range.
+- **Canonical text.** The material is read in canonical form (`canonicalText`: line breaks as `\n`, then
+  Unicode NFC), and every span points into that text, in UTF-16 offsets. A caller stores that text, so a span
+  never needs mapping back ([ADR 0011](../../docs/decisions/0011-host-assisted-distillation.md)).
+- **Origin.** A candidate with a `quote` rests on exactly those words:
+  - the engine finds them in the episode the suggestion names in `quoteAt`, or else in the one being read;
+  - when the words occur there more than once, `quoteAt.occurrence` (1-based) says which;
+  - words that cannot be located are refused, never widened to the episode, and leave no origin.
+
+  Only a candidate with no quote rests on the whole episode. The origin carries the excerpt, the time range,
+  and the `speaker` whose turn holds the words, when one does.
+
+- **Basis.** A candidate is `stated` when its words lie in a turn whose speaker is the given `learner` (NFC,
+  trimmed, exact; no case folding), and `inferred` otherwise. A reader that says `stated` of anything else is
+  refused. Neither basis proves the learner has mastered anything.
 - **Checks.** A candidate is refused, with a code, when:
+  - its quote cannot be located (`quote_not_found`), occurs more than once with no occurrence named
+    (`quote_ambiguous`), runs across two episodes (`quote_spans_episodes`), has fewer than 2 letters or
+    digits (`quote_too_short`) or more than 1,000 characters (`quote_too_long`);
+  - it says `stated` of words the learner did not say (`basis_mismatch`);
   - its type or relation is not in the policy (`not_allowed`);
-  - it duplicates a candidate (`duplicate_candidate`) or something the learner already has (`already_known`);
+  - it duplicates a candidate (`duplicate_candidate`) or something the learner already has (`already_known`,
+    which names the `existingNodeId`: only a second node is refused, not the observation);
   - an end is unknown (`unknown_endpoint`) or depends on a refused candidate (`depends_on_refused`);
   - a state change uses a dimension or a level the policy does not allow (`not_allowed`);
   - it is over the policy's limits (`over_limit`);
@@ -50,7 +67,7 @@ earlier question. It returns every candidate it found and **writes nothing**.
 
 A `DistillationPolicy` comes from a Domain Pack. It maps the engine's roles (`concept`, `question`, `claim`,
 `evidence`, `thought`) to registered node types, and its relations (`about`, `answers`, `supports`,
-`contradicts`) to registered edge types. It also lists the state dimensions and levels that may be suggested,
+`contradicts`, `revises`) to registered edge types. It also lists the state dimensions and levels that may be suggested,
 and sets the limits per episode and per run. A role or relation the policy leaves out is never suggested.
 
 ## The rule-based distiller
@@ -66,6 +83,10 @@ works on Chinese and English:
 | a concept                  | a term is set apart in 「」『』“”《》 and is not one the learner has                                                                        |
 | answers / supports / about | a claim follows the episode's question; evidence follows its first claim; a label mentions a known node or a new concept                    |
 | a possible change of state | the learner says 我明白了 / I see (confidence medium), 还不太懂 / I'm confused (low), or 我能讲给别人 / I can explain (articulation medium) |
+
+It quotes the sentence each candidate was found in and names which occurrence it is, so words said twice point
+at the time they were said. A term with too few letters to rest on, such as a single character in 「」, is
+quoted with the line it stands in. It sets no basis of its own; the engine marks it.
 
 It finds what these patterns find. Its purpose is to make the loop real and testable; extraction quality
 belongs to a model-backed agent behind the same interface.
