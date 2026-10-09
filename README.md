@@ -193,6 +193,7 @@ opt-in.
 - [State events](docs/architecture/state-events.md)
 - [Projection](docs/architecture/projection.md)
 - [Retrieval](docs/architecture/retrieval.md)
+- [Validation sessions and diagnosis](docs/testing/diagnosis.md)
 - [ADR 0001 — The Core boundary](docs/decisions/0001-core-boundary.md)
 - [ADR 0002 — Event-sourced cognitive state](docs/decisions/0002-event-sourced-cognitive-state.md)
 - [ADR 0003 — Storage abstraction](docs/decisions/0003-storage-abstraction.md)

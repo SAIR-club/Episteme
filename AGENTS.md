@@ -72,14 +72,18 @@ Note: Vitest resolves `@episteme/*` through each package's `dist/`, so **run `pn
 - Create commits only when the user explicitly asks. Committing, pushing, or opening a pull request is never part of finishing a task: "done" means files changed, checks run, and the diff summarized, with the working tree left uncommitted. Group each commit around one coherent change.
 - Commit messages must follow Conventional Commits (full format in the [Conventional Commits](#conventional-commits) section).
 - Do not push unless the user explicitly requests it.
-- Never delete remote branches, including merged feature branches.
+- Never delete a remote branch, including a merged feature branch, without the user's explicit authorisation for that branch (see [Branch discipline](#branch-discipline)).
 - Never force-push or rewrite shared branch history.
 
 ### Per-change workflow
 
-- Before any set of edits goes into commits, cut a working branch from `main` (`git checkout -b <type>/<short-topic>`). Commit directly on `main` only when the change is a one-off fix that will not become a PR.
+Every change follows one cycle: **Issue → branch from the latest `main` → develop and test → PR → review → merge.** The next task that depends on it starts only after it has merged.
+
+- Start from an issue that states the background, scope, acceptance criteria, dependencies and what is out of scope. The PR links it.
+- Fetch first and cut the branch from the latest `origin/main` (`git fetch origin && git checkout -b <type>/<short-topic> origin/main`), never from a stale local `main` or another checkout's working tree. Nothing is committed directly to `main` (see [Branch discipline](#branch-discipline)).
 - Split the work into one commit per coherent unit (feature / refactor / docs / chore), never one big mixed commit, and never commit unrelated changes together.
-- Group related units that belong to the same module or feature area into one branch. When the user explicitly asks, open one draft PR per branch. A PR's title is a Conventional Commit and becomes the squash subject on merge.
+- Group related units that belong to the same module or feature area into one branch, and open one PR per branch when the user asks. A PR's title is a Conventional Commit and becomes the squash subject on merge.
+- Do not stack branches by default. A branch is based on another unmerged branch only when it genuinely depends on code that has not merged yet; otherwise wait for the dependency to merge and branch from `main` again. Independent work is never stacked to save time.
 
 ## Conventional Commits
 
@@ -113,7 +117,7 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 
 - Open or update a pull request only when the user explicitly asks.
 - Use a dedicated branch and follow any repository-specific branch naming convention. Do not perform feature work directly on the default branch.
-- When one branch depends on another unmerged branch, stack the PRs with `gh stack init <bottom> ... <top>` then `gh stack submit --auto` (draft PRs; `--open` only when the user asks for ready-for-review); each PR's base points at its dependency so diffs stay minimal until the base merges. `gh stack sync` keeps the stack in sync after upstream merges. **Prerequisites:** `gh stack` comes from the `github/gh-stack` extension — install it with `gh extension install github/gh-stack`; `gh` must be authenticated and have push permission on the remote repository; and GitHub Stacked PRs must be enabled for the repository (otherwise `gh stack submit` fails non-interactively with exit code 9). **Fallback:** push all branches, then create the PRs individually with `gh pr create --draft --base <base> --head <branch>` — bottom PR base on `main`, each successive PR base on its direct dependency branch. Omit `--draft` only when the user explicitly asks for ready-for-review PRs.
+- Stacked PRs are the exception (see [Per-change workflow](#per-change-workflow)). Only when one branch genuinely depends on another unmerged branch, stack the PRs with `gh stack init <bottom> ... <top>` then `gh stack submit --auto` (draft PRs; `--open` only when the user asks for ready-for-review); each PR's base points at its dependency so diffs stay minimal until the base merges. `gh stack sync` keeps the stack in sync after upstream merges. **Prerequisites:** `gh stack` comes from the `github/gh-stack` extension — install it with `gh extension install github/gh-stack`; `gh` must be authenticated and have push permission on the remote repository; and GitHub Stacked PRs must be enabled for the repository (otherwise `gh stack submit` fails non-interactively with exit code 9). **Fallback:** push all branches, then create the PRs individually with `gh pr create --draft --base <base> --head <branch>` — bottom PR base on `main`, each successive PR base on its direct dependency branch. Omit `--draft` only when the user explicitly asks for ready-for-review PRs.
 - Before opening a pull request, inspect the working tree, commits, and complete diff against the intended base branch. Remove unrelated changes from the pull request scope.
 - Run the relevant checks before opening the pull request. Open every pull request as a draft and keep it a draft until the user explicitly asks to mark it ready for review — pushing commits or opening a non-draft pull request triggers GitHub's automated AI review, so do not trigger it before the user asks for review.
 - Follow the repository's existing pull request template. Do not replace or bypass project-specific requirements.
@@ -122,7 +126,7 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 - After review feedback, address comments within scope, rerun affected checks, and summarize the resolution. Do not silently introduce unrelated changes.
 - CodeRabbit auto-review behavior follows the repository's `.coderabbit.yaml` configuration (`auto_review.enabled`, `labels`, `base_branches`, `auto_incremental_review`). A fixing commit does not guarantee a re-review — only when `auto_incremental_review` is enabled. If auto-review is paused, use `@coderabbitai resume` to resume; for a manual incremental review, use `@coderabbitai review` (do not treat `resume` as a general replacement for `auto_review.enabled: false`). Reply to each review thread: when a finding is valid, fix it and reply naming the fixing commit; when it is not applicable, reply with the reason — CodeRabbit may push back with specifics, suggest alternatives, or insist, then either fix, open a follow-up issue for valid but out-of-scope work, or hold the position. Resolve every thread before merge.
 - Do not merge, enable auto-merge, close, reopen, or change the base branch unless the user explicitly requests it.
-- Keep the remote source branch after merge.
+- Keep the remote source branch after merge unless the user explicitly authorises deleting it (see [Branch discipline](#branch-discipline)).
 
 ## Continuous Integration
 
@@ -154,7 +158,7 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 
 - One branch per task; merge back to main within 2–3 days. No long-lived parallel branches.
 - Branch naming: `<type>/<short-topic>` (e.g. `feat/search-index-cache`, `fix/daemon-start`), lowercased with dashes. Do not use a user's name, dates, or arbitrary numbers.
-- Delete branches and prune worktrees immediately after merging. Never leave worktree checkouts behind.
+- After a merge, clean up what is no longer needed: delete the local feature branch and prune its worktree, and never leave worktree checkouts behind. The remote feature branch should be cleaned up too, but an AI agent deletes a remote branch only when the user explicitly authorises it for that branch; otherwise it leaves it for the maintainer.
 - main must always be releasable; green CI is the merge gate. Nothing is pushed directly to main, including CI and documentation changes: every change lands through a PR whose CI is green.
 
 ### Commits and changelog
