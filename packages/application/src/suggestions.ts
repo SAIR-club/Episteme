@@ -77,8 +77,9 @@ export interface Suggestion {
   /** The client that asked for the distillation it came from. Provenance, not authority. */
   readonly requestedBy?: string
   /**
-   * Whether the learner said it or it is a reading of what was said, for a distilled suggestion (ADR 0011).
-   * Neither proves the learner has mastered anything.
+   * For a distilled suggestion: `stated` when its quoted words are in a turn of the learner, `inferred` when it
+   * is a reading of what was said (ADR 0011). `stated` does not mean the suggestion is what the learner meant,
+   * and neither basis proves the learner has mastered anything.
    */
   readonly basis?: 'stated' | 'inferred'
 }

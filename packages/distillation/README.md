@@ -41,9 +41,14 @@ earlier question. It returns every candidate it found and **writes nothing**.
   Only a candidate with no quote rests on the whole episode. The origin carries the excerpt, the time range,
   and the `speaker` whose turn holds the words, when one does.
 
-- **Basis.** A candidate is `stated` when its words lie in a turn whose speaker is the given `learner` (NFC,
-  trimmed, exact; no case folding), and `inferred` otherwise. A reader that says `stated` of anything else is
-  refused. Neither basis proves the learner has mastered anything.
+- **Basis.** Each candidate is `stated` or `inferred`.
+  - `stated` means its quoted words lie in a turn whose speaker is the given `learner` (NFC, trimmed, exact; no
+    case folding). It says the learner said those words. It does not say that the candidate is what they meant.
+  - A reader that says `stated` of anything else is refused.
+  - A reader that leaves the basis unset gets `stated` exactly when that holds, and `inferred` otherwise. This
+    default is for the rule-based reader, whose candidates are the learner's sentences as written.
+  - A reader that offers its own reading, such as a host's model, states the basis of every candidate.
+  - Neither basis, nor the learner's acceptance, proves the learner has mastered anything.
 - **Checks.** A candidate is refused, with a code, when:
   - its quote cannot be located (`quote_not_found`), occurs more than once with no occurrence named
     (`quote_ambiguous`), runs across two episodes (`quote_spans_episodes`), has fewer than 2 letters or

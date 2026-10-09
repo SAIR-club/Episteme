@@ -419,11 +419,16 @@ function originAt(material: Material, episode: Episode, span: Span): Origin {
 }
 
 /**
- * Whether the learner said it, or it is a reading of what was said (ADR 0011).
+ * The basis of a suggestion's quote (ADR 0011).
  *
- * Only words inside a turn whose speaker is the given `learner` can be `stated`. A reader that says `stated` of
- * anything else is refused; a reader that says nothing gets `stated` exactly when that holds, and `inferred`
- * otherwise.
+ * Only words inside a turn whose speaker is the given `learner` can be `stated`, and a reader that says `stated`
+ * of anything else is refused.
+ *
+ * A reader that leaves the basis unset gets `stated` exactly when its quote is in such a turn, and `inferred`
+ * otherwise. That default exists for the rule-based reader, whose candidates are the learner's sentences as
+ * written. A reader whose suggestions are its own reading, such as a host's model, must state the basis of
+ * every suggestion itself: an inference does not become `stated` because the words it rests on are the
+ * learner's.
  */
 function basisOf(
   suggestion: Suggestion,

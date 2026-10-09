@@ -77,10 +77,13 @@ export interface QuoteAt {
 }
 
 /**
- * Whether the learner said it (`stated`) or it is a reading of what was said (`inferred`) (ADR 0011).
+ * What a suggestion's quote is, as evidence (ADR 0011).
  *
- * `stated` means only that the quote is in a turn of the learner. Neither basis proves that the learner has
- * mastered anything.
+ * - `stated`: the quoted words are in a turn of the learner. It says the learner said those words, nothing more.
+ *   It does not say that the suggestion is what the learner meant by them.
+ * - `inferred`: the suggestion is a reading of what was said, by whichever reader made it.
+ *
+ * Neither basis proves that the learner has mastered anything, and the learner's acceptance does not either.
  */
 export type Basis = 'stated' | 'inferred'
 
