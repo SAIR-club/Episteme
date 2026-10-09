@@ -16,6 +16,7 @@ Each phase proved one claim, and each claim is held by tests rather than by narr
 | —     | a learner can use the loop, in Chinese or English, on any topic         | `apps/learn`, `tests/learn-*.test.ts`                                          |
 | —     | retrieval stays correct among hundreds of unrelated nodes               | `tests/retrieval-at-scale.test.ts`                                             |
 | 3     | an agent can propose; what is kept goes through one human-decision path | `tests/confirmation-flow.test.ts`, `tests/mcp-elicitation.test.ts`             |
+| —     | what one agent proposed and the person accepted, another agent recalls  | `tests/cross-agent-loop.test.ts`                                               |
 
 The details are in [`PHASE1_REPORT.md`](../../PHASE1_REPORT.md) and [`PHASE2_REPORT.md`](../../PHASE2_REPORT.md).
 
