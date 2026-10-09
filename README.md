@@ -204,6 +204,7 @@ opt-in.
 - [ADR 0008 — Episteme as a plugin for other agents](docs/decisions/0008-agent-plugin-surface.md)
 - [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
 - [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
+- [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
 - [Phase 1 report](PHASE1_REPORT.md)
 - [Phase 2 report](PHASE2_REPORT.md)
 

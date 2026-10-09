@@ -1,6 +1,7 @@
 # 0009 — Distillation: learning material in, suggestions out
 
-Status: **accepted** (2026-10-06).
+Status: **accepted** (2026-10-06). Amended by [ADR 0011](0011-host-assisted-distillation.md): a host may be
+the reader, and a quote that cannot be located is refused.
 
 ## Context
 

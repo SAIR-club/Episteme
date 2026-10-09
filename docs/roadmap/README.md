@@ -140,7 +140,8 @@ surface (_导入学习材料_) and the MCP `distill` tool, which feeds the revie
 Not done, deliberately:
 
 - **A model-backed distiller.** The first is rule-based: deterministic, Chinese and English, and modest in what
-  it finds. A model-backed `CognitiveAgent` replaces it behind the same interface.
+  it finds. Episteme calls no model, so the model comes from the host: [ADR 0011](../decisions/0011-host-assisted-distillation.md)
+  lets the host read the material and has Episteme verify each quote, behind the same engine and policy.
 - **Dismissing what depends on a dismissed suggestion.** Such suggestions stay in the queue, refused as
   `unresolved_candidate` if accepted, until the learner dismisses them too.
 - **Thoughts.** Distillation never suggests one. A thought is what the learner organises.
