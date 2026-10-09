@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   LearnSession,
   SourceStore,
+  SuggestionStore,
   payloadDigest,
   type DistillOutcome,
   type HostItem,
@@ -435,6 +436,105 @@ describe('a host that lost the connection, a learner who decided some, and a ret
   })
 })
 
+describe('drafts that failed to land (fault injection)', () => {
+  /**
+   * The drafts file is written to `<file>.tmp` and renamed. A directory at that path makes exactly that write
+   * fail, every time, while the sources file (its own `.tmp`) and the graph are written normally: the state a
+   * crash between the two writes leaves behind.
+   */
+  const blocked = () => `${graph}.suggestions.jsonl.tmp`
+  const block = () => mkdir(blocked())
+  const unblock = () => rm(blocked(), { recursive: true, force: true })
+  const restart = async () => {
+    await session.close()
+    session = await LearnSession.open({ filePath: graph })
+  }
+  const landingRecords = async () =>
+    (await readFile(`${graph}.suggestions.jsonl`, 'utf8').catch(() => ''))
+      .split('\n')
+      .filter((line) => line.includes('"kind":"landing"'))
+
+  it('queues the candidates once when the request is retried after a restart', async () => {
+    await block()
+    await expect(submit(CORRECTION, { submissionId: 'sub-f' })).rejects.toThrow()
+    // The source and the attempt were recorded; no draft reached the queue.
+    expect(session.sources()).toHaveLength(1)
+    expect(session.sources()[0]?.submissions).toHaveLength(1)
+    expect(session.pendingSuggestions()).toEqual([])
+    expect(await landingRecords()).toEqual([])
+
+    await unblock()
+    await restart()
+    const retried = await submit(CORRECTION, { submissionId: 'sub-f' })
+    // Read again, not answered as made: nothing of it had reached the queue.
+    expect(retried.status).toBe('pending')
+    expect(retried.suggestions).toHaveLength(3)
+    expect(session.pendingSuggestions()).toHaveLength(3)
+    expect(session.sources()).toHaveLength(1)
+    expect(session.sources()[0]?.submissions).toHaveLength(1)
+    expect(await landingRecords()).toHaveLength(1)
+    // Every draft points at the source it came from.
+    const [source] = session.sources()
+    for (const suggestion of session.pendingSuggestions()) {
+      expect(suggestion.origin?.sourceId).toBe(source?.id)
+      expect(source?.text.slice(suggestion.origin?.span.start, suggestion.origin?.span.end)).toBe(
+        suggestion.origin?.excerpt,
+      )
+    }
+
+    // From here the submission is made: the same request again changes nothing.
+    const before = await files()
+    const again = await submit(CORRECTION, { submissionId: 'sub-f' })
+    expect(again.status).toBe('duplicate_submission')
+    expect(again.receipt?.kept.map((entry) => entry.status)).toEqual([
+      'pending',
+      'pending',
+      'pending',
+    ])
+    expect(await files()).toEqual(before)
+  })
+
+  it('recovers the same way without a restart', async () => {
+    await block()
+    await expect(submit(CORRECTION, { submissionId: 'sub-g' })).rejects.toThrow()
+    await unblock()
+    const retried = await submit(CORRECTION, { submissionId: 'sub-g' })
+    expect(retried.status).toBe('pending')
+    expect(session.pendingSuggestions()).toHaveLength(3)
+    expect(session.sources()).toHaveLength(1)
+  })
+
+  it('never answers an attempt whose drafts did not land as a submission that was made', async () => {
+    await block()
+    await expect(submit(CORRECTION, { submissionId: 'sub-h' })).rejects.toThrow()
+    await unblock()
+    // A different request under the key of an attempt that queued nothing is read, not refused as a
+    // conflict, and no suggestion of the first attempt is ever reported, as dismissed or otherwise.
+    const other = await submit([CORRECTION[0] as HostItem], { submissionId: 'sub-h' })
+    expect(other.status).toBe('pending')
+    expect(other.receipt).toBeUndefined()
+    const again = await submit([CORRECTION[0] as HostItem], { submissionId: 'sub-h' })
+    expect(again.receipt?.kept).toEqual([
+      expect.objectContaining({ ref: 'old', status: 'pending' }),
+    ])
+  })
+
+  it('calls a suggestion not_pending only when its landing shows it was queued', async () => {
+    const made = await submit(CORRECTION, { submissionId: 'sub-i' })
+    for (const suggestion of made.suggestions) {
+      await session.decide(suggestion.id, { action: 'dismiss' }, 'learn-review')
+    }
+    expect(await landingRecords()).toHaveLength(1)
+    const again = await submit(CORRECTION, { submissionId: 'sub-i' })
+    expect(again.status).toBe('duplicate_submission')
+    expect(again.receipt?.kept.map((entry) => entry.status)).toEqual([
+      'not_pending',
+      'not_pending',
+      'not_pending',
+    ])
+  })
+})
+
 describe('the payload digest', () => {
   const base = { text: 'a\nb', candidates: [{ kind: 'node', ref: 'x', label: 'é' }] }
 
@@ -454,6 +554,32 @@ describe('the payload digest', () => {
     ).not.toBe(
       payloadDigest({ ...base, candidates: [{ kind: 'node', ref: 'y' }, ...base.candidates] }),
     )
+  })
+})
+
+describe('the drafts file', () => {
+  it('still reads a version 2 file, which has no landing records', async () => {
+    const path = join(directory, 'old.suggestions.jsonl')
+    const v2 = {
+      schemaVersion: 2,
+      kind: 'suggestion',
+      suggestion: {
+        id: 'sug_old',
+        proposal: { kind: 'claim', label: 'x' },
+        rationale: 'r',
+        proposedBy: 'actor_agent_old',
+        proposedAt: 1,
+      },
+    }
+    await writeFile(
+      path,
+      `${JSON.stringify(v2)}
+`,
+      'utf8',
+    )
+    const store = await SuggestionStore.open(path)
+    expect(store.get('sug_old')?.proposal).toEqual({ kind: 'claim', label: 'x' })
+    expect(store.landing('actor_agent_old', 'anything')).toBeUndefined()
   })
 })
 
