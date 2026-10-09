@@ -1,6 +1,6 @@
 {
   "name": "@episteme/storage-memory",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "In-memory GraphStorageAdapter for Episteme Core. The v0 backend: no infrastructure, fully replaceable.",

@@ -1,6 +1,6 @@
 {
   "name": "@episteme/agent",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Cognitive agent interface plus a scripted mock. AI suggests; the human confirms.",

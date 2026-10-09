@@ -1,6 +1,6 @@
 {
   "name": "@episteme/service",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The Episteme service: the single owner of a graph, serving MCP to agents and a versioned REST API to human-facing clients (ADR 0010).",

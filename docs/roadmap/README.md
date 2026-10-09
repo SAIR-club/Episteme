@@ -17,8 +17,19 @@ Each phase proved one claim, and each claim is held by tests rather than by narr
 | —     | retrieval stays correct among hundreds of unrelated nodes               | `tests/retrieval-at-scale.test.ts`                                             |
 | 3     | an agent can propose; what is kept goes through one human-decision path | `tests/confirmation-flow.test.ts`, `tests/mcp-elicitation.test.ts`             |
 | —     | what one agent proposed and the person accepted, another agent recalls  | `tests/cross-agent-loop.test.ts`                                               |
+| —     | a host's own reading is kept only with words verified in its source     | `tests/host-distillation.test.ts`, `tests/distillation-strict-quotes.test.ts`  |
 
 The details are in [`PHASE1_REPORT.md`](../../PHASE1_REPORT.md) and [`PHASE2_REPORT.md`](../../PHASE2_REPORT.md).
+Together these make v0.1.0, _First Real Learning Loop_ ([release notes](../releases/v0.1.0.md)). Every claim in
+this table is held by automated tests with scripted clients. None of it has yet been used by a real learner
+through a real agent host.
+
+## Next: one real learning loop
+
+Development is paused after v0.1.0. When it resumes, the first step is to use the loop for real, before
+building anything else: a real learner, a real Claude Code host, two learning sessions, and a check that the
+second builds on what the learner confirmed in the first. What that will measure, and in which order, is in
+[`docs/development-status.md`](../development-status.md). The phases below follow it.
 
 ## The gate, unchanged
 
@@ -137,11 +148,14 @@ decision path, and only that reaches the graph and the history. Entry points are
 surface (_导入学习材料_) and the MCP `distill` tool, which feeds the review queue only.
 `pnpm demo:distill` and `tests/distillation-loop.test.ts` take a real fragment through the whole loop.
 
+**Host-assisted distillation: implemented, not yet used with a real host.** Built to
+[ADR 0011](../decisions/0011-host-assisted-distillation.md): a host's model submits its own reading through
+`distill`, and Episteme verifies every quote exactly against the stored source before anything is queued. Keyed
+retries are idempotent and crash-consistent. `tests/host-distillation.test.ts` and the cross-agent loop hold
+it. How well a real model quotes, and how much review it costs, is not known yet.
+
 Not done, deliberately:
 
-- **A model-backed distiller.** The first is rule-based: deterministic, Chinese and English, and modest in what
-  it finds. Episteme calls no model, so the model comes from the host: [ADR 0011](../decisions/0011-host-assisted-distillation.md)
-  lets the host read the material and has Episteme verify each quote, behind the same engine and policy.
 - **Dismissing what depends on a dismissed suggestion.** Such suggestions stay in the queue, refused as
   `unresolved_candidate` if accepted, until the learner dismisses them too.
 - **Thoughts.** Distillation never suggests one. A thought is what the learner organises.

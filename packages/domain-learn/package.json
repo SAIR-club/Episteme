@@ -1,6 +1,6 @@
 {
   "name": "@episteme/domain-learn",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Learn domain pack: the vocabulary and rules of the Learn scene, registered into Core without changing it.",
