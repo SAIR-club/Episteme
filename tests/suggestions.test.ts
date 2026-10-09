@@ -2,7 +2,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, SuggestionStore, type Proposal } from '@episteme/application'
-import { seedTopic } from '@episteme/application/seed'
+import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**

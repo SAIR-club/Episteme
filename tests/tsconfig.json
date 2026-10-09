@@ -9,12 +9,10 @@
   },
   "include": ["**/*.ts"],
   "references": [
-    { "path": "../apps/learn" },
     { "path": "../apps/service" },
     { "path": "../packages/core" },
     { "path": "../packages/storage-memory" },
     { "path": "../packages/storage-local" },
-    { "path": "../packages/domain-learn" },
     { "path": "../packages/agent" },
     { "path": "../packages/sdk" },
     { "path": "../packages/application" },

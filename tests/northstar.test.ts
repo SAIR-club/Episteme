@@ -1,10 +1,9 @@
 import { asId, foldEvents, type DimensionId, type NodeId } from '@episteme/core'
 import { MockCognitiveAgent, describeWorkspace } from '@episteme/agent'
 import type { Suggestion } from '@episteme/agent'
-import { DIMENSION, NODE, learnTags } from '@episteme/domain-learn'
 import { describe, expect, it } from 'vitest'
-import { buildWorkspace, runDemo, stateKey } from '../examples/learn-session/src/demo.js'
-import { createFixture, dimensions, level } from './fixtures.js'
+import { DIMENSION, NODE, createFixture, dimensions, learnTags, level } from './fixtures.js'
+import { buildWorkspace, runDemo, stateKey } from './northstar-demo.js'
 
 /**
  * The three questions that decide whether this project is working.

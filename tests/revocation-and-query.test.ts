@@ -1,7 +1,6 @@
 import { asId, type DimensionId, type EdgeId, type NodeId } from '@episteme/core'
-import { DIMENSION, EDGE, NODE, learnTags } from '@episteme/domain-learn'
 import { describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level } from './fixtures.js'
+import { DIMENSION, EDGE, NODE, createFixture, dimensions, learnTags, level } from './fixtures.js'
 
 /**
  * Retraction, and finding things.

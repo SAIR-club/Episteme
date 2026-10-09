@@ -7,6 +7,8 @@ import {
   systemClock,
   toSerializedEvent,
   type SerializedStateEvent,
+  defineDomainPack,
+  type DomainPack,
   type ActorId,
   type DimensionId,
   type EdgeId,
@@ -17,21 +19,19 @@ import {
   type GraphNode,
   type NodeId,
   type StateValue,
+  topicTag,
+  tag,
+  type Tag,
 } from '@episteme/core'
 import {
-  DIMENSION,
-  EDGE,
   HybridRetriever,
-  NODE,
-  learnTags,
   retrieveWith,
   toAgentContext,
   type RankedEntry,
   type RelevantContext,
   type Retriever,
-} from '@episteme/domain-learn'
+} from '@episteme/core'
 import { MockCognitiveAgent } from '@episteme/agent'
-import { chineseLearnerResponder } from './responder.js'
 import {
   newSuggestionIds,
   SUGGESTED_NODE_PREFIX,
@@ -59,9 +59,210 @@ import {
   type DistillationPolicy,
   type HostItem,
 } from '@episteme/distillation'
-import { learnDistillationPolicy } from '@episteme/domain-learn/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
+
+const DIMENSION = {
+  confidence: asId<DimensionId>('confidence'),
+  articulation: asId<DimensionId>('articulation'),
+  evidence: asId<DimensionId>('evidence'),
+  conflict: asId<DimensionId>('conflict'),
+} as const
+
+const NODE = {
+  concept: asId<NodeTypeId>('concept'),
+  claim: asId<NodeTypeId>('claim'),
+  question: asId<NodeTypeId>('question'),
+} as const
+
+const EDGE = {
+  refersTo: asId<EdgeTypeId>('refers_to'),
+} as const
+
+function defaultTags(topic = 'general'): readonly Tag[] {
+  return [topicTag(topic), tag('scene', 'cognitive')]
+}
+
+export const defaultSessionPack: DomainPack = defineDomainPack('default-session-pack', {
+  tagNamespaces: [
+    { namespace: 'scene', label: 'Scene' },
+    { namespace: 'topic', label: 'Topic' },
+    { namespace: 'state', label: 'State' },
+    { namespace: 'actor', label: 'Actor' },
+    { namespace: 'system', label: 'System' },
+  ],
+  nodeTypes: [
+    { id: asId<NodeTypeId>('concept'), label: 'Concept' },
+    { id: asId<NodeTypeId>('claim'), label: 'Claim' },
+    { id: asId<NodeTypeId>('question'), label: 'Question' },
+    { id: asId<NodeTypeId>('evidence'), label: 'Evidence' },
+    { id: asId<NodeTypeId>('thought'), label: 'Thought' },
+    { id: asId<NodeTypeId>('synthesis'), label: 'Synthesis' },
+  ],
+  edgeTypes: [
+    {
+      id: asId<EdgeTypeId>('refers_to'),
+      label: 'refers to',
+      category: 'epistemic',
+      to: [asId<NodeTypeId>('concept'), asId<NodeTypeId>('question')],
+    },
+    {
+      id: asId<EdgeTypeId>('answers'),
+      label: 'answers',
+      category: 'epistemic',
+      from: [
+        asId<NodeTypeId>('claim'),
+        asId<NodeTypeId>('evidence'),
+        asId<NodeTypeId>('thought'),
+        asId<NodeTypeId>('synthesis'),
+      ],
+      to: [asId<NodeTypeId>('question')],
+    },
+    {
+      id: asId<EdgeTypeId>('supports'),
+      label: 'supports',
+      category: 'epistemic',
+      from: [
+        asId<NodeTypeId>('evidence'),
+        asId<NodeTypeId>('thought'),
+        asId<NodeTypeId>('synthesis'),
+        asId<NodeTypeId>('claim'),
+      ],
+      to: [asId<NodeTypeId>('claim')],
+    },
+    {
+      id: asId<EdgeTypeId>('contradicts'),
+      label: 'contradicts',
+      category: 'epistemic',
+      from: [
+        asId<NodeTypeId>('evidence'),
+        asId<NodeTypeId>('thought'),
+        asId<NodeTypeId>('synthesis'),
+        asId<NodeTypeId>('claim'),
+      ],
+      to: [asId<NodeTypeId>('claim')],
+    },
+    {
+      id: asId<EdgeTypeId>('prerequisite'),
+      label: 'prerequisite',
+      category: 'epistemic',
+      from: [asId<NodeTypeId>('concept')],
+      to: [asId<NodeTypeId>('concept')],
+    },
+    { id: asId<EdgeTypeId>('contains'), label: 'contains', category: 'structural' },
+    { id: asId<EdgeTypeId>('derived_from'), label: 'derived from', category: 'provenance' },
+    { id: asId<EdgeTypeId>('organized_from'), label: 'organized from', category: 'provenance' },
+    {
+      id: asId<EdgeTypeId>('synthesizes'),
+      label: 'synthesizes',
+      category: 'epistemic',
+      from: [asId<NodeTypeId>('synthesis')],
+    },
+    { id: asId<EdgeTypeId>('authored_by'), label: 'authored by', category: 'provenance' },
+    { id: asId<EdgeTypeId>('tagged_with'), label: 'tagged with', category: 'structural' },
+    { id: asId<EdgeTypeId>('evolves_to'), label: 'evolves to', category: 'structural' },
+    { id: asId<EdgeTypeId>('forks_from'), label: 'forks from', category: 'structural' },
+    { id: asId<EdgeTypeId>('same_as'), label: 'same as', category: 'identity' },
+    { id: asId<EdgeTypeId>('exemplifies'), label: 'exemplifies', category: 'epistemic' },
+  ],
+  stateDimensions: [
+    {
+      id: asId<DimensionId>('confidence'),
+      label: 'Confidence',
+      kind: 'ordinal',
+      ordered: true,
+      levels: ['low', 'medium', 'high'],
+    },
+    {
+      id: asId<DimensionId>('articulation'),
+      label: 'Articulation',
+      kind: 'ordinal',
+      ordered: true,
+      levels: ['low', 'medium', 'high'],
+    },
+    {
+      id: asId<DimensionId>('evidence'),
+      label: 'Evidence',
+      kind: 'ordinal',
+      ordered: true,
+      levels: ['none', 'weak', 'reproduced', 'derived', 'anecdotal', 'proven'],
+    },
+    {
+      id: asId<DimensionId>('conflict'),
+      label: 'Conflict',
+      kind: 'ordinal',
+      ordered: false,
+      levels: ['none', 'suspected', 'open', 'resolved'],
+    },
+    {
+      id: asId<DimensionId>('exposure'),
+      label: 'Exposure',
+      kind: 'ordinal',
+      ordered: true,
+      levels: ['none', 'seen', 'studied', 'worked'],
+    },
+    {
+      id: asId<DimensionId>('transfer'),
+      label: 'Transfer',
+      kind: 'ordinal',
+      ordered: true,
+      levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
+    },
+    {
+      id: asId<DimensionId>('source'),
+      label: 'Source',
+      kind: 'categorical',
+      levels: ['self', 'agent', 'paper', 'discussion', 'course'],
+    },
+  ],
+})
+
+export const defaultDistillationPolicy: DistillationPolicy = {
+  id: 'default',
+  nodeTypes: {
+    concept: 'concept',
+    claim: 'claim',
+    question: 'question',
+    evidence: 'evidence',
+    thought: 'thought',
+  },
+  edgeTypes: {
+    about: 'refers_to',
+    answers: 'answers',
+    supports: 'supports',
+    contradicts: 'contradicts',
+    revises: 'evolves_to',
+  },
+  stateDimensions: {
+    confidence: ['low', 'medium', 'high'],
+    articulation: ['low', 'medium', 'high'],
+    conflict: ['suspected', 'open'],
+  },
+  limits: {
+    perEpisode: 12,
+    perRun: 60,
+  },
+  propertiesFor: (role, label) =>
+    role === 'evidence' ? { text: label, kind: 'example' } : { text: label },
+}
+
+function defaultResponder(
+  input: { readonly text: string },
+  context: { readonly summary?: string },
+): { text: string; usedContext: boolean; contextSummary?: string } {
+  const summary = context.summary?.trim() ?? ''
+  if (summary === '') {
+    return {
+      text: `Let's establish the foundation first regarding "${input.text}".`,
+      usedContext: false,
+    }
+  }
+  return {
+    text: `Building on what is understood (${summary}): ${input.text}.`,
+    usedContext: true,
+    contextSummary: summary,
+  }
+}
 
 /**
  * The Learn interaction session.
@@ -280,6 +481,7 @@ export interface SessionOptions {
   readonly filePath?: string
   readonly adapter?: EmbeddingAdapter
   readonly weights?: ConstructorParameters<typeof HybridRetriever>[4]
+  readonly packs?: readonly DomainPack[]
 }
 
 /**
@@ -292,7 +494,7 @@ export interface SessionOptions {
 export class LearnSession {
   readonly #episteme: Episteme
   readonly #retriever: Retriever
-  readonly #agent = new MockCognitiveAgent({ responder: chineseLearnerResponder })
+  readonly #agent = new MockCognitiveAgent({ responder: defaultResponder })
   readonly #store: Store | undefined
   readonly #suggestions: SuggestionStore
   readonly #sources: SourceStore
@@ -328,10 +530,11 @@ export class LearnSession {
   static async open(options: SessionOptions = {}): Promise<LearnSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
+    const packs = options.packs ?? [defaultSessionPack]
 
     if (options.filePath === undefined) {
       const { compose } = await import('@episteme/sdk')
-      const episteme = compose({ actors, actorId: HUMAN })
+      const episteme = compose({ actors, actorId: HUMAN, packs })
       return new LearnSession(
         episteme,
         new HybridRetriever(
@@ -351,7 +554,7 @@ export class LearnSession {
     let suggestions: SuggestionStore
     let sources: SourceStore
     try {
-      episteme = await openEpisteme(storage, { actors, actorId: HUMAN })
+      episteme = await openEpisteme(storage, { actors, actorId: HUMAN, packs })
       // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
       suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
       // Material distilled into this graph, kept beside it like the drafts and owned with it.
@@ -410,7 +613,7 @@ export class LearnSession {
   get rules(): readonly RankRule[] {
     if (this.#retriever instanceof HybridRetriever) {
       const weights = this.#retriever.weights
-      return (Object.entries(weights) as [string, number][]).map(([signal, weight]) => ({
+      return Object.entries(weights).map(([signal, weight]) => ({
         signal,
         weight,
       }))
@@ -665,7 +868,7 @@ export class LearnSession {
       type: input.type,
       label,
       properties: { text: label, ...input.properties },
-      tags: learnTags(input.topic ?? 'general'),
+      tags: defaultTags(input.topic ?? 'general'),
       tier: input.tier,
       ...(input.source === undefined ? {} : { source: input.source }),
     })
@@ -1374,7 +1577,7 @@ export class LearnSession {
         }
       }
 
-      const policy = options.policy ?? learnDistillationPolicy
+      const policy = options.policy ?? defaultDistillationPolicy
       const reader: SourceReader = host === undefined ? 'episteme' : 'host'
       const reused = this.#sources.reusable(text, reader, host?.hostSession)
       const sourceId = reused?.id ?? `src_${randomUUID()}`
@@ -1723,7 +1926,7 @@ export class LearnSession {
           type: asId<NodeTypeId>(proposal.nodeType),
           label,
           properties: { ...proposal.properties, text: label },
-          tags: learnTags('general'),
+          tags: defaultTags('general'),
           tier: this.#tierOf(proposal.nodeType),
         })
         return preview.ok ? undefined : preview.refusal
@@ -1740,7 +1943,7 @@ export class LearnSession {
           type: NODE.claim,
           label,
           properties: { text: label },
-          tags: learnTags('general'),
+          tags: defaultTags('general'),
           tier: 'thought',
         })
         return preview.ok ? undefined : preview.refusal
@@ -2254,3 +2457,5 @@ function progressLine(touched: number, settled: number): string {
   if (touched === 0) return '你还没有记录过任何理解'
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }
+
+export { LearnSession as CognitiveSession }

@@ -2,22 +2,16 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "files": [],
   "references": [
-    { "path": "apps/learn" },
     { "path": "apps/service" },
     { "path": "packages/core" },
     { "path": "packages/storage-memory" },
     { "path": "packages/storage-local" },
-    { "path": "packages/domain-learn" },
     { "path": "packages/agent" },
     { "path": "packages/sdk" },
     { "path": "packages/application" },
     { "path": "packages/mcp" },
     { "path": "packages/distillation" },
     { "path": "packages/embeddings-http" },
-    { "path": "examples/learn-session" },
-    { "path": "examples/persistent-session" },
-    { "path": "examples/semantic-session" },
-    { "path": "examples/distill-session" },
     { "path": "tests" }
   ]
 }

@@ -9,7 +9,6 @@
   "references": [
     { "path": "../core" },
     { "path": "../storage-local" },
-    { "path": "../domain-learn" },
     { "path": "../agent" },
     { "path": "../sdk" },
     { "path": "../distillation" }

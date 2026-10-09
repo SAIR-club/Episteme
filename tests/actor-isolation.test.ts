@@ -1,7 +1,6 @@
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
-import { DIMENSION, NODE, learnTags } from '@episteme/domain-learn'
 import { describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level } from './fixtures.js'
+import { DIMENSION, NODE, createFixture, dimensions, learnTags, level } from './fixtures.js'
 
 /**
  * Understanding belongs to an actor, not to a node.

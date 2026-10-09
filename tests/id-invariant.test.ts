@@ -2,11 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, type Proposal } from '@episteme/application'
-import { seedTopic } from '@episteme/application/seed'
 import { asId, isEpistemeError, type EdgeId, type NodeId } from '@episteme/core'
-import { EDGE, NODE, learnTags } from '@episteme/domain-learn'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createFixture, type EpistemeContext } from './fixtures.js'
+import {
+  EDGE,
+  NODE,
+  createFixture,
+  learnTags,
+  seedTopic,
+  type EpistemeContext,
+} from './fixtures.js'
 
 /**
  * An id names one node or one edge for good.

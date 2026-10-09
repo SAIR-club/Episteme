@@ -2,11 +2,10 @@ import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession } from '@episteme/application'
-import { seedTopic } from '@episteme/application/seed'
 import { createMcpEndpoint } from '@episteme/mcp'
 import { API_PREFIX, handleApi, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
-import { learnProfile, type SceneProfile } from './profile.js'
+import { learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
 export interface ServiceOptions {
@@ -58,13 +57,44 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
   }
 }
 
+async function seedTopicIfPresent(
+  session: LearnSession,
+  topic?: SeedTopic,
+): Promise<{ seeded: boolean }> {
+  if (topic === undefined || topic.nodes.length === 0) return { seeded: false }
+  const existing = new Set(session.listNodes().map((node) => node.nodeId))
+  const alreadyThere = topic.nodes.some((n) => n.id !== undefined && existing.has(n.id))
+  if (alreadyThere) return { seeded: false }
+
+  let count = 0
+  for (const n of topic.nodes) {
+    await session.addNode({
+      id: n.id ?? `node_${n.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+      label: n.label,
+      kind: n.kind ?? 'concept',
+    })
+    count += 1
+  }
+  if (topic.edges !== undefined) {
+    for (const edge of topic.edges) {
+      await session.link(
+        edge.from,
+        edge.to,
+        edge.relation as Parameters<typeof session.link>[2],
+        `seed_${edge.from}_${edge.to}`,
+      )
+    }
+  }
+  return { seeded: count > 0 }
+}
+
 async function serve(
   session: LearnSession,
   graph: string,
   options: ServiceOptions,
 ): Promise<EpistemeService> {
   const profile = options.profile ?? learnProfile()
-  const { seeded } = await seedTopic(session, profile.seed)
+  const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
   const mcp = createMcpEndpoint(session)

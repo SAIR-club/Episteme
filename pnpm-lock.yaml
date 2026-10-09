@@ -39,12 +39,6 @@ importers:
         specifier: ^2.1.8
         version: 2.1.8(@types/node@22.20.5)
 
-  apps/learn:
-    dependencies:
-      '@episteme/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-
   apps/service:
     dependencies:
       '@episteme/application':
@@ -53,66 +47,6 @@ importers:
       '@episteme/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
-
-  examples/distill-session:
-    dependencies:
-      '@episteme/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-
-  examples/learn-session:
-    dependencies:
-      '@episteme/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-      '@episteme/storage-memory':
-        specifier: workspace:*
-        version: link:../../packages/storage-memory
-
-  examples/persistent-session:
-    dependencies:
-      '@episteme/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-      '@episteme/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-      '@episteme/storage-local':
-        specifier: workspace:*
-        version: link:../../packages/storage-local
-
-  examples/semantic-session:
-    dependencies:
-      '@episteme/agent':
-        specifier: workspace:*
-        version: link:../../packages/agent
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../../packages/domain-learn
-      '@episteme/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-      '@episteme/storage-local':
-        specifier: workspace:*
-        version: link:../../packages/storage-local
 
   packages/agent:
     dependencies:
@@ -131,9 +65,6 @@ importers:
       '@episteme/distillation':
         specifier: workspace:*
         version: link:../distillation
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../domain-learn
       '@episteme/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -151,15 +82,6 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
-
-  packages/domain-learn:
-    dependencies:
-      '@episteme/core':
-        specifier: workspace:*
-        version: link:../core
-      '@episteme/distillation':
-        specifier: workspace:*
-        version: link:../distillation
 
   packages/embeddings-http:
     dependencies:
@@ -181,9 +103,6 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../domain-learn
       '@episteme/storage-memory':
         specifier: workspace:*
         version: link:../storage-memory
@@ -205,9 +124,6 @@ importers:
       '@episteme/agent':
         specifier: workspace:*
         version: link:../packages/agent
-      '@episteme/app-learn':
-        specifier: workspace:*
-        version: link:../apps/learn
       '@episteme/application':
         specifier: workspace:*
         version: link:../packages/application
@@ -217,9 +133,6 @@ importers:
       '@episteme/distillation':
         specifier: workspace:*
         version: link:../packages/distillation
-      '@episteme/domain-learn':
-        specifier: workspace:*
-        version: link:../packages/domain-learn
       '@episteme/embeddings-http':
         specifier: workspace:*
         version: link:../packages/embeddings-http

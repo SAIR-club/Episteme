@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@episteme/core": "workspace:*",
-    "@episteme/domain-learn": "workspace:*",
     "@episteme/storage-memory": "workspace:*"
   }
 }

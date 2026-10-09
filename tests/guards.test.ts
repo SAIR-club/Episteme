@@ -1,8 +1,7 @@
 import { asId, isEpistemeError, type EdgeId, type NodeId, type NodeTypeId } from '@episteme/core'
-import { DIMENSION, EDGE, NODE, learnTags } from '@episteme/domain-learn'
 import type { EdgeTypeId } from '@episteme/core'
 import { describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level } from './fixtures.js'
+import { DIMENSION, EDGE, NODE, createFixture, dimensions, learnTags, level } from './fixtures.js'
 
 /**
  * A refusal must be a first-class outcome, not an exception that disappears.

@@ -1,8 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BLANK_TOPIC } from '@episteme/application/topic-file'
-import { learnProfile, startService, type EpistemeService } from '@episteme/service'
+import { BLANK_TOPIC, learnProfile, startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type McpWire } from './mcp-wire.js'
 

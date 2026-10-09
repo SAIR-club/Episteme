@@ -5,6 +5,8 @@ import {
   createFixedClock,
   createGraph,
   createRegistries,
+  retrieveRelevantContext,
+  toAgentContext,
   type Actor,
   type ActorId,
   type CoreGraph,
@@ -19,27 +21,12 @@ import {
   EDGE,
   NODE,
   learnerResponder,
-  learnDomainPack,
-  learnTags,
-  retrieveRelevantContext,
-  toAgentContext,
-} from '@episteme/domain-learn'
-import { MockCognitiveAgent, describeWorkspace } from '@episteme/agent'
+  testPack,
+  testTags as learnTags,
+} from './fixtures.js'
+import { MockCognitiveAgent } from '@episteme/agent'
 import type { AgentResponse, AgentWorkspace } from '@episteme/agent'
 import { createMemoryStorage } from '@episteme/storage-memory'
-
-/**
- * The v0 closed loop, end to end, printed as a narrative.
- *
- * The scenario is the one the project is specified around: a learner asks why a Transformer
- * needs positional encoding, forms a first claim, refines it, and then — from that earlier,
- * cruder understanding — opens a second line of inquiry about relative position. A later
- * question about RoPE is then answered differently because the earlier understanding was
- * stored.
- *
- * Runs on a fixed clock and a scripted agent, so the output is identical on every run. That
- * matters: step 9 only means anything if the agent could not have produced its answer by luck.
- */
 
 export interface DemoStep {
   readonly title: string
@@ -48,9 +35,7 @@ export interface DemoStep {
 
 export interface DemoResult {
   readonly steps: readonly DemoStep[]
-  /** The learner's understanding of the refined claim, at the end of the story. */
   readonly finalState: Readonly<Record<string, string>>
-  /** The same question asked before and after understanding was recorded. */
   readonly responseWithoutState: AgentResponse
   readonly responseWithState: AgentResponse
   readonly firstClaimEventId: EventId
@@ -101,16 +86,10 @@ export interface DemoWorld {
   readonly agentId: ActorId
 }
 
-/**
- * Builds the graph a demo or a test needs, without running the narrative.
- *
- * Exposed so a test can assemble the same world and assert on it directly, instead of
- * parsing the printed output.
- */
 export function createDemoWorld(): DemoWorld {
   const clock = createFixedClock(0)
   const registries = createRegistries()
-  applyDomainPacks([learnDomainPack], { registries })
+  applyDomainPacks([testPack], { registries })
 
   const humanId = asId<ActorId>('actor_learner')
   const agentId = asId<ActorId>('actor_scaffold')
@@ -137,12 +116,6 @@ export function createDemoWorld(): DemoWorld {
   return { graph, log, humanId, agentId }
 }
 
-/**
- * The shared knowledge skeleton the learner explores against.
- *
- * Concepts are public and shared; nothing here belongs to any one learner. That separation is
- * what lets the same graph serve a discussion or a research view later.
- */
 export function seedConcepts(world: DemoWorld): void {
   const concept = (id: NodeId, label: string, topic: string) =>
     world.graph.addNode({
@@ -181,7 +154,6 @@ export function seedConcepts(world: DemoWorld): void {
   })
 }
 
-/** The workspace an agent may see for one question: a projection plus this actor's state. */
 export function buildWorkspace(
   graph: CoreGraph,
   log: EventLog,
@@ -198,17 +170,10 @@ export function buildWorkspace(
   return { actorId, nodeIds: nodes.map((node) => node.id), state }
 }
 
-/** The key shape `buildWorkspace` uses, so scripted rules can be written against it. */
 export function stateKey(label: string, dimension: string): string {
   return `${label}#${dimension}`
 }
 
-/**
- * Asks one question with the retrieval layer in the loop.
- *
- * This is the shape a real application would use: retrieve what is relevant *to this learner*,
- * hand it to the agent, get an answer. Nothing here is special-cased for the demo.
- */
 export async function ask(
   world: DemoWorld,
   agent: MockCognitiveAgent,
@@ -236,7 +201,6 @@ export async function runDemo(): Promise<DemoResult> {
 
   const agent = new MockCognitiveAgent({ responder: learnerResponder })
 
-  // ── 1. The question ───────────────────────────────────────────────────────
   graph.addNode({
     id: asId<NodeId>('q_positional'),
     type: NODE.question,
@@ -250,15 +214,14 @@ export async function runDemo(): Promise<DemoResult> {
     title: '1. The learner asks a question',
     lines: [
       `Question: ${QUESTION_NEW}`,
-      'Shared concepts already in the graph (public, not owned by anyone):',
+      'Shared concepts already in the graph:',
       ...Object.values(CONCEPT).map((id) => `  - ${graph.getNode(id)?.label ?? id}`),
     ],
   })
 
-  // ── 2. What the agent can see before anything is understood ────────────────
   const before = await ask(world, agent, QUESTION_ROPE, { topic: 'rope' })
   steps.push({
-    title: '2. First interaction — the agent has no recorded understanding',
+    title: '2. First interaction \u2014 the agent has no recorded understanding',
     lines: [
       `Question: ${QUESTION_ROPE}`,
       `Retrieved: ${before.retrieved.join(', ') || '(nothing relevant)'}`,
@@ -267,7 +230,6 @@ export async function runDemo(): Promise<DemoResult> {
     ],
   })
 
-  // ── 3. A first, cruder claim ──────────────────────────────────────────────
   graph.addNode({
     id: CLAIM_INDEX,
     type: NODE.claim,
@@ -306,13 +268,12 @@ export async function runDemo(): Promise<DemoResult> {
     title: '3. The learner forms a first claim',
     lines: [
       `Claim: ${CLAIM_INDEX_TEXT}`,
-      `StateEvent ${first.id} → ${JSON.stringify(stateRecord(first.dimensions))}`,
+      `StateEvent ${first.id} \u2192 ${JSON.stringify(stateRecord(first.dimensions))}`,
     ],
   })
 
   const firstEventId = first.id
 
-  // ── 4. The question that forces a better claim ────────────────────────────
   graph.addNode({
     id: asId<NodeId>('q_order'),
     type: NODE.question,
@@ -327,7 +288,6 @@ export async function runDemo(): Promise<DemoResult> {
     type: NODE.claim,
     label: CLAIM_ORDER_TEXT,
     properties: { text: CLAIM_ORDER_TEXT },
-    // RoPE exists to answer exactly this limitation, so the claim sits under both topics.
     tags: [...learnTags('transformer'), 'topic:rope'],
     tier: 'thought',
     source: 'session:1',
@@ -344,7 +304,6 @@ export async function runDemo(): Promise<DemoResult> {
     from: CLAIM_ORDER,
     to: CONCEPT.selfAttention,
   })
-  // The older claim is not deleted: it is kept, and pointed forward at what replaced it.
   graph.addEdge({
     id: asId<EdgeId>('e_index_evolves_order'),
     type: EDGE.evolvesTo,
@@ -371,15 +330,11 @@ export async function runDemo(): Promise<DemoResult> {
     lines: [
       `Question: ${QUESTION_ORDER}`,
       `Claim: ${CLAIM_ORDER_TEXT}`,
-      `StateEvent ${second.id} → ${JSON.stringify(stateRecord(second.dimensions))}`,
+      `StateEvent ${second.id} \u2192 ${JSON.stringify(stateRecord(second.dimensions))}`,
       `Lineage: "${CLAIM_INDEX_TEXT}" --evolves_to--> "${CLAIM_ORDER_TEXT}"`,
-      'The earlier claim is kept. A change of mind is a new claim, never an overwrite.',
     ],
   })
 
-  // ── 5. Fork from the *earlier* understanding ──────────────────────────────
-  // Deliberately not from the tip: the interesting question ("could relative position work
-  // differently?") starts from what the learner believed *before* refining it.
   const forked = log.fork({
     from: firstEventId,
     target: CLAIM_INDEX,
@@ -395,46 +350,34 @@ export async function runDemo(): Promise<DemoResult> {
   steps.push({
     title: '5. A second path opens from the earlier understanding',
     lines: [
-      `Forked at ${firstEventId} (the medium-confidence claim), not at the latest event`,
+      `Forked at ${firstEventId}`,
       `New event ${forked.event.id} on branch ${forked.branch.id}`,
-      `Branch ancestry: ${log.branchAncestry(forked.branch.id).join(' → ')}`,
-      `Inherited state: ${JSON.stringify(stateRecord(log.stateOf(CLAIM_INDEX, humanId)))}`,
-      'The fork starts from what was understood then, so the old claim is still usable as a',
-      'starting point rather than only as history.',
     ],
   })
 
-  // ── 6. The lineage is preserved, not rewritten ────────────────────────────
   const historyIndex = log.history({ target: CLAIM_INDEX, actorId: humanId })
   steps.push({
     title: '6. Both directions remain readable',
     lines: [
-      `History of "${CLAIM_INDEX_TEXT}" (${historyIndex.length} events): ${historyIndex.map((e) => e.id).join(' → ')}`,
+      `History of "${CLAIM_INDEX_TEXT}" (${historyIndex.length} events): ${historyIndex.map((e) => e.id).join(' \u2192 ')}`,
       `Open ends for this learner: ${log.tips(humanId).length}`,
-      `The revoked-free record still shows the original reasoning: "${
-        log.getEvent(firstEventId)?.reason ?? ''
-      }"`,
     ],
   })
 
-  // ── 7. Inspectable history and a retraction ───────────────────────────────
   const revocation = log.revokeStateEvent(forked.event.id, {
     reason: 'reconsidered: the fork needs its own evidence first',
   })
   steps.push({
     title: '7. A recorded change can be retracted without being erased',
     lines: [
-      `Retracted ${revocation.eventId} (${revocation.reason ?? 'no reason given'})`,
-      `The event is still readable: ${JSON.stringify(stateRecord(log.getEvent(forked.event.id)?.dimensions ?? new Map()))}`,
+      `Retracted ${revocation.eventId}`,
       `Its effect is gone: state is now ${JSON.stringify(stateRecord(log.stateOf(CLAIM_INDEX, humanId)))}`,
-      'Deleting it would erase the fact that the learner once understood this differently.',
     ],
   })
 
-  // ── 8. A later question, with the same agent and code ─────────────────────
   const after = await ask(world, agent, QUESTION_ROPE, { topic: 'rope' })
   steps.push({
-    title: '8. Later interaction — the same question, with understanding recorded',
+    title: '8. Later interaction \u2014 the same question, with understanding recorded',
     lines: [
       `Question: ${QUESTION_ROPE}`,
       `Retrieved for this learner: ${after.retrieved.join(', ')}`,
@@ -443,7 +386,6 @@ export async function runDemo(): Promise<DemoResult> {
     ],
   })
 
-  // ── 9. The difference is the point ────────────────────────────────────────
   const originalLine = log.history({
     target: CLAIM_INDEX,
     actorId: humanId,
@@ -483,18 +425,3 @@ export async function runDemo(): Promise<DemoResult> {
     forkEventId: forked.event.id,
   }
 }
-
-/** Renders the demo as plain text, which is what `pnpm demo` prints. */
-export function formatDemo(result: DemoResult): string {
-  const blocks = result.steps.map((step) => {
-    const body = step.lines.map((line) => `   ${line}`).join('\n')
-    return `${step.title}\n${body}`
-  })
-  const finalState = Object.entries(result.finalState)
-    .map(([dimension, value]) => `${dimension}=${value}`)
-    .join(', ')
-  return [...blocks, `Final understanding of the refined claim: ${finalState}`].join('\n\n')
-}
-
-/** Kept so callers that only want a readable workspace still have one. */
-export { describeWorkspace }

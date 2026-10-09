@@ -15,7 +15,6 @@ import {
   type PersistentEventStore,
   type Registries,
 } from '@episteme/core'
-import { learnDomainPack } from '@episteme/domain-learn'
 import { createMemoryStorage } from '@episteme/storage-memory'
 
 /**
@@ -45,7 +44,7 @@ export interface ComposeOptions {
   readonly actorId?: ActorId
   /** Extra actors to register, such as the agent that assists them. */
   readonly actors?: readonly Actor[]
-  /** Domain packs to apply, in order. Defaults to the Learn pack. */
+  /** Domain packs to apply, in order. Defaults to an empty list (pure microkernel). */
   readonly packs?: readonly DomainPack[]
 }
 
@@ -70,7 +69,7 @@ export const DEFAULT_HUMAN_ID = asId<ActorId>('actor_human')
  */
 export function compose(options: ComposeOptions = {}): Episteme {
   const registries = createRegistries()
-  applyDomainPacks(options.packs ?? [learnDomainPack], { registries })
+  applyDomainPacks(options.packs ?? [], { registries })
 
   const clock = options.clock ?? systemClock
   const actorId = options.actorId ?? DEFAULT_HUMAN_ID
@@ -114,7 +113,7 @@ export async function openEpisteme(
 ): Promise<Episteme> {
   const initialState = await store.load()
   const registries = createRegistries()
-  applyDomainPacks(options.packs ?? [learnDomainPack], { registries })
+  applyDomainPacks(options.packs ?? [], { registries })
 
   const clock = options.clock ?? systemClock
   const actorId = options.actorId ?? DEFAULT_HUMAN_ID

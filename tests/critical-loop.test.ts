@@ -1,17 +1,25 @@
-import { asId, type ActorId, type EdgeId, type NodeId } from '@episteme/core'
+import {
+  asId,
+  contextSummary,
+  retrieveRelevantContext,
+  toAgentContext,
+  type ActorId,
+  type EdgeId,
+  type NodeId,
+} from '@episteme/core'
 import { MockCognitiveAgent, type AgentResponse } from '@episteme/agent'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
   EDGE,
   NODE,
-  contextSummary,
+  createFixture,
+  dimensions,
   learnerResponder,
   learnTags,
-  retrieveRelevantContext,
-  toAgentContext,
-} from '@episteme/domain-learn'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level, type EpistemeContext } from './fixtures.js'
+  level,
+  type EpistemeContext,
+} from './fixtures.js'
 
 /**
  * The mechanism proof for v0.

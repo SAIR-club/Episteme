@@ -6,7 +6,7 @@ import {
   lexiconTokens,
   retrievalTokens,
 } from '@episteme/core'
-import { hybridRetriever } from '@episteme/domain-learn'
+import { hybridRetriever } from './fixtures.js'
 import { describe, expect, it } from 'vitest'
 import { createFixture } from './fixtures.js'
 import { seedEvaluationGraph } from './retrieval-evaluation-fixtures.js'

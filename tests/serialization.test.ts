@@ -7,7 +7,6 @@ import {
   type EventId,
   type NodeId,
 } from '@episteme/core'
-import { DIMENSION, NODE, learnTags } from '@episteme/domain-learn'
 import {
   SERIALIZATION_SCHEMA_VERSION,
   deserializeRecord,
@@ -15,6 +14,7 @@ import {
   type PersistedRecord,
 } from '@episteme/storage-local'
 import { describe, expect, it } from 'vitest'
+import { DIMENSION, NODE, learnTags } from './fixtures.js'
 import { createFixture, dimensions, level } from './fixtures.js'
 
 /**
