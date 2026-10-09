@@ -2,11 +2,21 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { asId, type DimensionId, type EdgeId, type NodeId } from '@episteme/core'
-import { DIMENSION, EDGE, NODE, learnerResponder, learnTags } from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { LocalStorageAdapter, openLocalStorage } from '@episteme/storage-local'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { dimensions, level, openEpisteme, askIn, type EpistemeContext } from './fixtures.js'
+import {
+  DIMENSION,
+  EDGE,
+  NODE,
+  askIn,
+  dimensions,
+  learnerResponder,
+  learnTags,
+  level,
+  openEpisteme,
+  type EpistemeContext,
+} from './fixtures.js'
 
 /**
  * The Phase 1 claim: a user's understanding survives process restart and still affects future

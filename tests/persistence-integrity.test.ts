@@ -3,25 +3,29 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   asId,
+  contextSummary,
+  retrieveRelevantContext,
   type ActorId,
   type DimensionId,
   type EdgeId,
   type EventId,
   type NodeId,
 } from '@episteme/core'
+import { MockCognitiveAgent } from '@episteme/agent'
+import { LocalStorageAdapter, openLocalStorage } from '@episteme/storage-local'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
   EDGE,
   NODE,
-  contextSummary,
+  askIn,
+  dimensions,
   learnerResponder,
   learnTags,
-  retrieveRelevantContext,
-} from '@episteme/domain-learn'
-import { MockCognitiveAgent } from '@episteme/agent'
-import { LocalStorageAdapter, openLocalStorage } from '@episteme/storage-local'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { askIn, dimensions, level, openEpisteme, type EpistemeContext } from './fixtures.js'
+  level,
+  openEpisteme,
+  type EpistemeContext,
+} from './fixtures.js'
 
 /**
  * What must survive a restart, and what must not leak across one.

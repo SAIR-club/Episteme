@@ -1,20 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
-/**
- * The service's REST API, version 1 (ADR 0010), as the Learn page uses it.
- *
- * Tested over a real socket rather than by calling handlers directly, because everything this layer owns is
- * about the wire: routing, status codes, and the shape a Workspace reads. A test that called the handler
- * would not exercise the parts most likely to be wrong.
- */
-
-/** The Learn page, which the service serves as its Workspace when asked to. */
-const LEARN_PAGE = fileURLToPath(new URL('../apps/learn/public', import.meta.url))
 
 let directory: string
 let filePath: string
@@ -85,10 +73,16 @@ afterEach(async () => {
 
 describe('serving the interface', () => {
   it('serves the Learn page at the root when it is the Workspace', async () => {
+    const workspaceDir = join(directory, 'workspace')
+    await mkdir(workspaceDir, { recursive: true })
+    await writeFile(
+      join(workspaceDir, 'index.html'),
+      '<!doctype html><title>Episteme</title><script>fetch("/api/v1/state")</script>',
+    )
     const served = await startService({
       port: 0,
       graph: join(directory, 'served.jsonl'),
-      workspace: LEARN_PAGE,
+      workspace: workspaceDir,
     })
     try {
       const response = await fetch(`${served.url}/`)

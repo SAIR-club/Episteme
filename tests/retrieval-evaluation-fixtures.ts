@@ -1,5 +1,5 @@
 import { asId, type EdgeId, type GraphNode, type NodeId } from '@episteme/core'
-import { EDGE, NODE, learnTags } from '@episteme/domain-learn'
+import { EDGE, NODE, learnTags } from './fixtures.js'
 import type { EpistemeContext } from './fixtures.js'
 
 /**

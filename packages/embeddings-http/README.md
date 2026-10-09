@@ -16,8 +16,7 @@ need a toolchain between them and their own cognition.
 
 ```ts
 import { ollamaEmbeddingAdapter } from '@episteme/embeddings-http'
-import { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache } from '@episteme/core'
-import { hybridRetriever } from '@episteme/domain-learn'
+import { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache, hybridRetriever } from '@episteme/core'
 
 // A local server. The model name is the adapter's identity, because the cache keys on it.
 const adapter = ollamaEmbeddingAdapter({

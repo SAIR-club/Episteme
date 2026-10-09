@@ -1,17 +1,27 @@
-import { asId, retrieve, termsOf, type ActorId, type EdgeId, type NodeId } from '@episteme/core'
+import {
+  asId,
+  retrieve,
+  termsOf,
+  retrieveRelevantContext,
+  retrieveWith,
+  type ActorId,
+  type EdgeId,
+  type NodeId,
+} from '@episteme/core'
 import { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache } from '@episteme/core'
+import { describe, expect, it } from 'vitest'
 import {
   DIMENSION,
   EDGE,
   NODE,
+  createFixture,
+  dimensions,
   embeddingRetriever,
   learnTags,
+  level,
   lexicalRetriever,
-  retrieveRelevantContext,
-  retrieveWith,
-} from '@episteme/domain-learn'
-import { describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level, type EpistemeContext } from './fixtures.js'
+  type EpistemeContext,
+} from './fixtures.js'
 
 const CLAIM_LABEL = 'Self-attention alone does not encode sequence order.'
 

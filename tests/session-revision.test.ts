@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession } from '@episteme/application'
-import { seedTopic } from '@episteme/application/seed'
+import { seedTopic } from './fixtures.js'
 import { describe, expect, it } from 'vitest'
 
 /**

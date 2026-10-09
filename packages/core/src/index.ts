@@ -154,8 +154,41 @@ export { project, selectSeeds, dimensionsOf, toSubGraph } from './projection/ind
 export type { Projection, ProjectionFilter } from './projection/index.js'
 
 // ── Retrieval: getting previous understanding back ───────────────────────────
-export { retrieve, termsOf, matchedTermsIn, isStopWord } from './retrieval/index.js'
-export type { RetrievalQuery, RetrievalResult, RetrievedNode } from './retrieval/index.js'
+export {
+  retrieve,
+  termsOf,
+  matchedTermsIn,
+  isStopWord,
+  HybridRetriever,
+  LexicalGraphRetriever,
+  EmbeddingRetriever,
+  canExplain,
+  toResult,
+  DEFAULT_HYBRID_WEIGHTS,
+  retrieveRelevantContext,
+  retrieveWith,
+  summarise,
+  contextSummary,
+  settledUnderstanding,
+  hasOpenConflict,
+  toAgentContext,
+} from './retrieval/index.js'
+export type {
+  RetrievalQuery,
+  RetrievalResult,
+  RetrievedNode,
+  Retriever,
+  RetrieveQuery,
+  RankSignal,
+  SignalContribution,
+  ScoredCandidate,
+  ExplainingRetriever,
+  HybridWeights,
+  KnownUnderstanding,
+  RelevantContext,
+  RankedEntry,
+  RetrieveContextOptions,
+} from './retrieval/index.js'
 
 // ── Embedding port: semantics behind an adapter, never a Core dependency ─────
 export { EmbeddingError, embeddingKeyFor } from './embedding/index.js'

@@ -1,13 +1,20 @@
-import { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache, type NodeId } from '@episteme/core'
+import {
+  DeterministicEmbeddingAdapter,
+  InMemoryEmbeddingCache,
+  HybridRetriever,
+  type NodeId,
+  type Retriever,
+} from '@episteme/core'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
-  HybridRetriever,
+  createFixture,
+  dimensions,
   hybridRetriever,
+  level,
   lexicalRetriever,
-  type Retriever,
-} from '@episteme/domain-learn'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level, type EpistemeContext } from './fixtures.js'
+  type EpistemeContext,
+} from './fixtures.js'
 import {
   EVALUATION_CLAIM_IDS,
   RETRIEVAL_EVALUATION,

@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path'
 import { GraphLockedError } from '@episteme/application'
-import { BLANK_TOPIC, loadTopicFile } from '@episteme/application/topic-file'
-import type { SeedTopic } from '@episteme/application/seed'
-import { learnProfile } from './profile.js'
+import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
+
+async function loadTopicFile(filePath: string): Promise<SeedTopic> {
+  const { readFile } = await import('node:fs/promises')
+  const content = await readFile(filePath, 'utf8')
+  return JSON.parse(content) as SeedTopic
+}
 
 /**
  * Starts the Episteme service and prints where it is.
@@ -97,7 +101,7 @@ try {
   service = await startService({
     graph,
     port,
-    profile: learnProfile(topic),
+    profile: defaultProfile(topic),
     ...(workspacePath === undefined ? {} : { workspace: resolve(workspacePath) }),
   })
 } catch (error) {

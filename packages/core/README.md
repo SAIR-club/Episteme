@@ -31,13 +31,10 @@ import {
   createRegistries,
   createEventLog,
   createFixedClock,
-  applyDomainPacks,
 } from '@episteme/core'
-import { learnDomainPack } from '@episteme/domain-learn'
 import { createMemoryStorage } from '@episteme/storage-memory'
 
 const registries = createRegistries()
-applyDomainPacks([learnDomainPack], { registries })
 
 const clock = createFixedClock(0)
 const actorId = asId<ActorId>('actor_learner')

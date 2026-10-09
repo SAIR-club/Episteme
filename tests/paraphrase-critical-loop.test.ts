@@ -5,26 +5,29 @@ import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
   asId,
+  contextSummary,
+  HybridRetriever,
+  LexicalGraphRetriever,
+  retrieveRelevantContext,
+  toAgentContext,
   type EdgeId,
   type NodeId,
 } from '@episteme/core'
-import {
-  DIMENSION,
-  EDGE,
-  HybridRetriever,
-  LexicalGraphRetriever,
-  NODE,
-  contextSummary,
-  hybridRetriever,
-  learnerResponder,
-  learnTags,
-  retrieveRelevantContext,
-  toAgentContext,
-} from '@episteme/domain-learn'
 import { MockCognitiveAgent } from '@episteme/agent'
 import { openLocalStorage } from '@episteme/storage-local'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { askIn, dimensions, level, openEpisteme } from './fixtures.js'
+import {
+  DIMENSION,
+  EDGE,
+  NODE,
+  askIn,
+  dimensions,
+  hybridRetriever,
+  learnerResponder,
+  learnTags,
+  level,
+  openEpisteme,
+} from './fixtures.js'
 
 /**
  * The Phase 2 acceptance test.

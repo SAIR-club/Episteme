@@ -5,9 +5,5 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../storage-memory" },
-    { "path": "../domain-learn" }
-  ]
+  "references": [{ "path": "../core" }, { "path": "../storage-memory" }]
 }

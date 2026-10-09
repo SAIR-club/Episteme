@@ -1,7 +1,13 @@
 import { asId, type BranchId, type DimensionId, type EventId, type NodeId } from '@episteme/core'
-import { DIMENSION, NODE } from '@episteme/domain-learn'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level, type EpistemeContext } from './fixtures.js'
+import {
+  DIMENSION,
+  NODE,
+  createFixture,
+  dimensions,
+  level,
+  type EpistemeContext,
+} from './fixtures.js'
 
 /**
  * The branch-versus-subject invariant.
@@ -199,8 +205,8 @@ describe('branch is a line of inquiry, not a subject', () => {
 
 describe('a retrieval result names its subject, actor and branch context', () => {
   it('reports the node each entry is about, and never mixes two actors', async () => {
-    const { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache } = await import('@episteme/core')
-    const { HybridRetriever } = await import('@episteme/domain-learn')
+    const { DeterministicEmbeddingAdapter, InMemoryEmbeddingCache, HybridRetriever, retrieveWith } =
+      await import('@episteme/core')
 
     record(ORDER, DIMENSION.confidence, 'high', context.humanId)
     record(ORDER, DIMENSION.confidence, 'low', context.agentId)
@@ -212,7 +218,6 @@ describe('a retrieval result names its subject, actor and branch context', () =>
       new InMemoryEmbeddingCache(),
     )
 
-    const { retrieveWith } = await import('@episteme/domain-learn')
     const forHuman = await retrieveWith(
       hybrid,
       context.graph,

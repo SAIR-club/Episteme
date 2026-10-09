@@ -1,7 +1,6 @@
 packages:
   - 'packages/*'
   - 'apps/*'
-  - 'examples/*'
   - 'tests'
 
 # pnpm blocks dependency build scripts by default. esbuild's postinstall fetches the

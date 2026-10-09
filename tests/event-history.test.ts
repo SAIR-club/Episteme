@@ -1,7 +1,6 @@
 import { asId, type DimensionId, type EventId, type NodeId } from '@episteme/core'
-import { NODE, learnTags } from '@episteme/domain-learn'
 import { describe, expect, it } from 'vitest'
-import { createFixture, dimensions, level } from './fixtures.js'
+import { NODE, createFixture, dimensions, learnTags, level } from './fixtures.js'
 
 /**
  * History is append-only.

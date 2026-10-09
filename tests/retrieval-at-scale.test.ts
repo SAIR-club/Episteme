@@ -4,7 +4,7 @@ import {
   asId,
   type NodeId,
 } from '@episteme/core'
-import { NODE, hybridRetriever, learnTags } from '@episteme/domain-learn'
+import { NODE, hybridRetriever, learnTags } from './fixtures.js'
 import { describe, expect, it } from 'vitest'
 import { createFixture, type EpistemeContext } from './fixtures.js'
 

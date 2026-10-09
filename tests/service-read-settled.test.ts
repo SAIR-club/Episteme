@@ -1,5 +1,5 @@
 import { LearnSession } from '@episteme/application'
-import { seedTopic } from '@episteme/application/seed'
+import { seedTopic } from './fixtures.js'
 import { readSettled } from '@episteme/service'
 import { describe, expect, it } from 'vitest'
 

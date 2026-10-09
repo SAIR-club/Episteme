@@ -8,11 +8,12 @@ import type {
   CognitiveAgent,
   Suggestion,
 } from '@episteme/agent'
-import { LearnSession } from '@episteme/application'
+import {
+  LearnSession,
+  defaultDistillationPolicy as learnDistillationPolicy,
+} from '@episteme/application'
 import { RuleBasedDistiller, distill, type Candidate } from '@episteme/distillation'
-import { learnDistillationPolicy } from '@episteme/domain-learn/distillation'
-import { BLANK_TOPIC } from '@episteme/application/topic-file'
-import { learnProfile, startService } from '@episteme/service'
+import { BLANK_TOPIC, learnProfile, startService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
