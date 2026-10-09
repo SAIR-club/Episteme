@@ -44,7 +44,9 @@ what a particular person has come to understand from that material, as structure
   as separate dimensions rather than one score;
 - **history**: every change kept as an event, so "I used to think this, and now I think that" can be read back.
 
-Raw conversations and material are kept beside the graph, never in it. Nothing an agent infers becomes part of
+What was submitted to be read, a learning material or an excerpt of a conversation, is kept beside the graph
+as a source, never in it. This is not a conversation store: Episteme keeps only the excerpts it was sent, not
+whole conversations or their branches. Nothing an agent infers becomes part of
 the graph until the person decides on it. The graph records what the person accepted as a description of
 their understanding at that time. It does not prove they have mastered anything.
 
@@ -117,7 +119,10 @@ Streamable HTTP can be pointed at it; there is no stdio shim yet. An agent gets 
 | `reflect` | what the learner has recorded, grouped by what needs attention next                                  |
 | `distill` | a stretch of material or dialogue, read by Episteme, or by the host's own model with verified quotes |
 
-None of them confirms anything. The learner decides in the Workspace the service serves at `/`. For Claude
+None of them confirms anything: MCP offers no confirm tool, and the learner decides in the Workspace the
+service serves at `/`. That is a property of the MCP surface only. The REST review API behind the Workspace is
+not authenticated, so an agent with shell access could still call it and confirm its own proposal (see
+[Limitations](#limitations-in-v010)). For Claude
 Code, the command would be the one below, but **it has not been verified against a real Claude Code host yet**:
 
 ```bash
