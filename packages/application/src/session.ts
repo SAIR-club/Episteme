@@ -143,9 +143,12 @@ export const RECORDABLE_DIMENSIONS: readonly RecordableDimension[] = [
     id: DIMENSION.conflict,
     label: 'Conflict',
     labelZh: '冲突',
-    levels: ['none', 'open', 'resolved'],
+    // `suspected` is recordable so a distilled suggestion of it can be decided like any other (ADR 0011). Who
+    // decides does not change: only the learner, through the one decision path.
+    levels: ['none', 'suspected', 'open', 'resolved'],
     levelLabelsZh: [
       { level: 'none', label: '无' },
+      { level: 'suspected', label: '疑似' },
       { level: 'open', label: '未解决' },
       { level: 'resolved', label: '已解决' },
     ],

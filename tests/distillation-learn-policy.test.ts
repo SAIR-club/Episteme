@@ -72,9 +72,18 @@ describe('the Learn distillation policy', () => {
       expect(context.registries.edgeTypes.has(edgeType ?? '')).toBe(true)
     }
     for (const [dimension, levels] of Object.entries(learnDistillationPolicy.stateDimensions)) {
-      const registered = learnStateDimensions.find((definition) => definition.id === dimension)
-      expect(levels).toEqual(registered?.levels)
+      const registered: readonly string[] =
+        learnStateDimensions.find((definition) => definition.id === dimension)?.levels ?? []
+      // Every level distillation may suggest is one Learn registers. Confidence and articulation offer all of
+      // them; a conflict may only be suggested to exist, never settled or denied (ADR 0011).
+      expect(levels.every((level) => registered.includes(level))).toBe(true)
+      expect(levels).toEqual(dimension === 'conflict' ? ['suspected', 'open'] : registered)
     }
+    expect(Object.keys(learnDistillationPolicy.stateDimensions).sort()).toEqual([
+      'articulation',
+      'confidence',
+      'conflict',
+    ])
   })
 
   it('suggests a learner’s change of state only within those levels', async () => {
