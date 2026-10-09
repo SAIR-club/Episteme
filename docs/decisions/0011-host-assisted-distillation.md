@@ -92,7 +92,8 @@ A submission carries the material and, optionally:
 Every item also carries:
 
 - `quote`: the words it rests on, verbatim from the material;
-- `occurrence` (optional): which occurrence of the quote is meant (section 3);
+- `occurrence` (optional): which occurrence of the quote is meant, counted 1-based over the whole canonical
+  source text (section 3);
 - `basis`: `stated` or `inferred` (section 6);
 - `rationale`: why the host proposes it.
 
@@ -128,22 +129,34 @@ or fuzzy matching.
 **Where a quote is.** Verification belongs to the engine, which is the one authority on origins, for every
 reader:
 
-- A suggestion may say where its quote is: an episode, and an occurrence within it. Without one, the quote is
-  looked for in the episode being read, as today.
-- The host does not know Episteme's episodes. Its reader locates each host quote in the whole canonical
-  material and passes the engine the episode and the occurrence it found. The engine locates the quote again
-  from those, so a mistake in the reader cannot produce a span the engine did not check.
-- **The engine stops falling back.** A suggestion that gives a quote the engine cannot locate is refused as
-  `quote_not_found`. Only a suggestion with no quote keeps the whole episode as its origin, and only the
-  rule-based reader may produce one.
+There are two ways of saying where a quote is, and they are kept apart:
 
-**Ambiguity.** When a quote occurs more than once where it is looked for:
+- **Outside, for the host: the whole source.** The host's `occurrence` counts, 1-based, the occurrences of
+  the canonical quote in the **whole canonical source text**, in order. Overlapping occurrences count
+  separately. The host never sees episodes, and nothing it sends refers to one.
+- **Inside, for the engine: an episode.** A suggestion handed to the engine may name the episode its quote is
+  in and the occurrence within that episode. Without one, the quote is looked for in the episode being read,
+  as today. This is the engine's own field and never reaches the agent surface.
 
-- with `occurrence` (1-based), that occurrence is the origin;
-- without one, the item is refused as `quote_ambiguous`, so the host lengthens the quote or names the
-  occurrence. The first occurrence is not assumed: a learner who says "我不懂" before an explanation and again
-  after it has said two different things.
-- The rule-based reader names the occurrence when the words it quotes recur in its episode.
+The host reader converts the first into the second. It finds the named occurrence in the whole text, takes the
+episode that contains it, and counts which occurrence it is within that episode. The engine then locates the
+quote again from the episode and the occurrence, so a mistake in the reader cannot produce a span the engine
+did not check.
+
+**The engine stops falling back.** A suggestion that gives a quote the engine cannot locate is refused as
+`quote_not_found`. Only a suggestion with no quote keeps the whole episode as its origin, and only the
+rule-based reader may produce one.
+
+**Ambiguity.** For a host item, ambiguity is judged on the whole source:
+
+- If the quote occurs once in the whole text, `occurrence` may be omitted. If one is given, it must be `1`.
+- If the quote occurs more than once in the whole text, `occurrence` is required. This holds even when each
+  episode contains it only once. Without it, the item is refused as `quote_ambiguous`, and no occurrence is
+  chosen for it. The host lengthens the quote or names the occurrence. A learner who says "我不懂" before an
+  explanation and again after it has said two different things.
+- An `occurrence` greater than the number of occurrences is refused as `quote_not_found`.
+- The rule-based reader quotes inside its own episode and names the occurrence within that episode when the
+  words recur there. That is the engine's internal form, and the same no-guessing rule applies to it.
 
 **Length.** What a quote must contain is counted in letters and digits (`\p{L}` and `\p{N}`), not characters.
 A quote needs at least 2 of them, so "懂了" and "OK" pass, and "了", "？" or "..." do not. A quote may be at
@@ -155,15 +168,15 @@ one learning episode.
 
 New refusals, returned as values with codes:
 
-| code                   | when                                                                |
-| ---------------------- | ------------------------------------------------------------------- |
-| `missing_quote`        | a host item has no quote                                            |
-| `quote_not_found`      | the quote, or the named occurrence, is not in the material          |
-| `quote_ambiguous`      | the quote occurs more than once and no occurrence is named          |
-| `quote_spans_episodes` | the quote crosses an episode boundary                               |
-| `quote_too_short`      | the quote has fewer than 2 letters or digits                        |
-| `quote_too_long`       | the quote is longer than 1,000 characters                           |
-| `basis_mismatch`       | a `stated` item's quote is not in a turn of the learner (section 6) |
+| code                   | when                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `missing_quote`        | a host item has no quote                                                       |
+| `quote_not_found`      | the quote is not in the material, or the named occurrence does not exist       |
+| `quote_ambiguous`      | the quote occurs more than once in the whole source and no occurrence is named |
+| `quote_spans_episodes` | the quote crosses an episode boundary                                          |
+| `quote_too_short`      | the quote has fewer than 2 letters or digits                                   |
+| `quote_too_long`       | the quote is longer than 1,000 characters                                      |
+| `basis_mismatch`       | a `stated` item's quote is not in a turn of the learner (section 6)            |
 
 A refused item is reported with its `ref` and code and is never queued. An item that depends on a refused one
 is refused as `depends_on_refused`, as today.
@@ -194,19 +207,35 @@ claim's id, found through `recall`. `to` is the new claim, a candidate of this s
 
 Three cases that look alike are kept apart:
 
-- **The same request, retried.** A submission may carry a `submissionId`. The source records it. A second
-  submission with the same `submissionId` and the same canonical material and candidates creates nothing. It
-  returns the original source id and the suggestions from that source that are still pending, with the status
-  `duplicate_submission`. The same `submissionId` with different content is refused as `submission_conflict`.
+- **The same request, retried.** A submission may carry a `submissionId`.
+  - **Scope.** It is unique per submitting agent within one graph: the pair of the calling agent's actor and
+    the `submissionId`. Two agents that happen to use the same id never meet. A submission without an id is
+    never matched by id.
+  - **What is compared.** The source records the scope and a **payload digest**. The digest is taken over the
+    whole canonical payload: the canonical material, the title, `learner`, `hostSession`, and every candidate
+    with all its fields, in the order sent.
+  - **Same scope, same digest:** the submission is a retry. It writes nothing. It returns the original source
+    id and the suggestions from that source that are still pending, with the status `duplicate_submission`.
+  - **Same scope, different digest:** it is refused as `submission_conflict` and writes nothing, even if only
+    the order of the candidates or one field changed. A request is never treated as a retry because it merely
+    resembles one.
+  - Only a submission that stored its source is remembered. One refused as a whole, for example as too long,
+    left nothing behind, so the same id may be used again.
 - **The same words, sent again without a key.** The source records a digest of its canonical text. When an
   identical text arrives with the same `hostSession`, the existing source is reused rather than stored twice.
   A candidate whose proposal and origin (source and span) both match a pending suggestion is refused as
   `already_pending`. That is a retry by content, and nothing is lost by refusing it.
 - **The same idea, said again at another time.** This is not a duplicate. It is evidence of how
   understanding stands, and it must reach the person:
-  - A node candidate that matches a node the learner has is still refused as `already_known`, because one
-    idea is one node. The refusal returns the existing id, so the host resubmits the observation against it:
-    a state change, a relation, or a `revises` from the old claim to a new one, each with its own quote.
+  - `already_known` refuses **only the creation of a second node** for an idea the learner already has, matched
+    by type and normalised label, because one idea is one node. It says nothing against the observation. The
+    refusal carries the `existingNodeId` and the candidate's verified origin (source id, span, excerpt). The
+    source itself is stored, so the words stay traceable whatever the host does next.
+  - With that id, the host may resubmit what the new words actually show: a state change, a relation, or a
+    `revises` from the existing claim to a new one, each quoting its own words. It resubmits only what the
+    words support. **Saying something again is not by itself a change of state.** The host must not turn a
+    repetition into a higher `confidence` or `articulation` to keep the observation. If nothing changed, the
+    stored source is the record, and nothing else is proposed.
   - State changes and relations are never refused for matching what is already recorded or pending from
     another source. Two observations at two times are two suggestions, each with its own origin.
 
@@ -239,6 +268,18 @@ The basis is part of what the person decides on, and it is never rewritten:
   to its own ADR, if the timeline needs to filter by it.
 - Accepting an `inferred` state commits it as `confirmed` by the person, as any accepted suggestion is. What
   the person confirms is the agent's reading, and the record keeps that it was a reading.
+
+**Neither the basis nor the decision proves ability.**
+
+- `stated` means the learner said these words.
+- A person's acceptance means they endorse the record as describing their understanding at that time.
+- Neither demonstrates that the learner has mastered anything, or can explain, apply or transfer it.
+
+Each dimension keeps its own meaning. `confidence` is how sure the learner is, not how right. `articulation`
+is how well they can put it into words, not whether they can use it. A confirmed state is recorded as exactly
+that dimension at that level, and nothing is derived from it. No surface (`recall`, `reflect`, the review)
+may present a `stated` or confirmed state as proof of ability, and there is still no single mastery score
+([AGENTS.md](../../AGENTS.md#project-invariants)).
 
 The rule-based reader marks a state change `stated` only when the material is a dialogue and the quote is in a
 turn of the given `learner`. Otherwise it marks it `inferred`. The Workspace's distillation has no `learner`
@@ -278,6 +319,8 @@ retry that creates nothing writes nothing. Refused items are returned, not store
 - That a candidate follows from its quote. A host can quote real words and draw the wrong conclusion. The
   person sees the excerpt, its speaker and the basis, and judges.
 - That the person holds the understanding. Only the person's decision on each suggestion establishes that.
+- That the learner has mastered anything. Neither `stated` nor the person's acceptance demonstrates ability
+  (section 6).
 - Who the host is. The client name is self-declared.
 - Anything about who may decide. That belongs to ADR 0012 ([#17](https://github.com/SAIR-club/Episteme/issues/17)).
 
@@ -351,8 +394,10 @@ structure for its own design. A source with an optional `hostSession` leaves roo
 - New refusal codes: `missing_quote`, `quote_not_found`, `quote_ambiguous`, `quote_spans_episodes`,
   `quote_too_short`, `quote_too_long`, `basis_mismatch`, `submission_conflict` and `already_pending`, plus the
   status `duplicate_submission`.
-- The sources file gains `reader`, `hostSession`, `submissionId` and a digest of the text, with a schema version
-  bump that still reads the earlier version. The drafts file gains `basis`, also read compatibly.
+- The sources file gains `reader`, `hostSession`, a digest of the text, and for a keyed submission its scope
+  (agent actor and `submissionId`) and payload digest. The schema version is bumped, and the earlier version is
+  still read. The drafts file gains `basis`, also read compatibly.
+- An `already_known` refusal carries `existingNodeId` beside the origin that refusals already return.
 - The MCP surface keeps the same four tools. `distill`'s description and input schema grow. Its
   `structuredContent` keeps its shape and adds the reader.
 - Material sent by a host is personal data in plain text, like the graph. It falls under encryption at rest in
@@ -367,20 +412,20 @@ structure for its own design. A source with an optional `hostSession` leaves roo
 
 Each design point above is held by at least one test in the implementation PR:
 
-| design                        | scenario                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| canonical text and spans      | material with `\r\n` line endings, a decomposed `é` (`e` + U+0301) and Chinese text; a quote in NFC after the `é`. The stored source text is canonical, and `source.text.slice(span.start, span.end)` equals the quote exactly, also after a restart                                                                            |
-| no fallback                   | a host claim quoting words that are not in the material is refused `quote_not_found`, and no suggestion or source span is created for it; a rule-based distillation of the existing fixtures produces exactly the same suggestions and origins as before                                                                        |
-| ambiguity and occurrence      | the learner says "我还是不懂" in episode 1 and again in episode 3. Without `occurrence` the state item is refused `quote_ambiguous`; with `occurrence: 2` its origin is in episode 3                                                                                                                                            |
-| length                        | quotes "懂了" and "OK" pass; "了", "？" and "..." are refused `quote_too_short`; a 1,001-character quote is refused `quote_too_long`                                                                                                                                                                                            |
-| within one episode            | a quote that runs from the end of one episode into the next is refused `quote_spans_episodes`                                                                                                                                                                                                                                   |
-| references across episodes    | claim A quoted in episode 1, claim B in episode 3, and `revises` A → B quoted in episode 3. Accepting the `revises` first is refused `depends_on_pending`; after A and B are accepted it commits an `evolves_to` edge A → B; when A is dismissed it is refused `unresolved_candidate`. The host never sends an engine reference |
-| revising an earlier session   | an existing claim id from `recall` as `from`, a new candidate as `to`: accepted in order, it links the old node to the new one, and the old node is not revoked                                                                                                                                                                 |
-| retry with a key              | the same submission twice with one `submissionId`: the second writes nothing (sources and drafts files unchanged) and returns `duplicate_submission` with the same source id; the same id with changed material is refused `submission_conflict`                                                                                |
-| retry without a key           | the same material and candidates twice with the same `hostSession`: one source, and each repeated candidate refused `already_pending`                                                                                                                                                                                           |
-| the same idea, another time   | a claim the learner already has, said again in new material: the node is refused `already_known` with the existing id; resubmitted as a `confidence` change on that id with the new quote, it is kept as a separate suggestion, and after acceptance the node's history shows both observations with their own sources          |
-| stated and inferred           | a `stated` state whose quote is in the tutor's turn is refused `basis_mismatch`; a `stated` item without `learner` is refused; an accepted `inferred` articulation leaves `inferred` in the event's source and in the response, and the review data labels it as the agent's reading                                            |
-| conflict levels               | a host `conflict: open` is kept; `conflict: resolved` and `conflict: none` are refused `not_allowed`                                                                                                                                                                                                                            |
-| nothing written before review | after a host distillation with kept and refused items, and after a retry, the graph file is byte-for-byte unchanged and the event count is the same; only the sources and drafts files changed                                                                                                                                  |
-| provenance and readers        | a kept host suggestion has `proposedBy` and `requestedBy` equal to the calling agent's actor and its source has `reader: host`; a distillation without `candidates` still uses the rule-based reader                                                                                                                            |
-| the loop                      | the #16 `it.todo` in `tests/cross-agent-loop.test.ts` is replaced as #16 specifies, and every existing assertion there still passes                                                                                                                                                                                             |
+| design                        | scenario                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| canonical text and spans      | material with `\r\n` line endings, a decomposed `é` (`e` + U+0301) and Chinese text; a quote in NFC after the `é`. The stored source text is canonical, and `source.text.slice(span.start, span.end)` equals the quote exactly, also after a restart                                                                                                                                                                                                                        |
+| no fallback                   | a host claim quoting words that are not in the material is refused `quote_not_found`, and no suggestion or source span is created for it; a rule-based distillation of the existing fixtures produces exactly the same suggestions and origins as before                                                                                                                                                                                                                    |
+| ambiguity and occurrence      | the learner says "我还是不懂" once in episode 1 and once in episode 3, so each episode holds it once but the source holds it twice. Without `occurrence` the state item is refused `quote_ambiguous` and no origin is recorded; with `occurrence: 2` its origin is the second occurrence, in episode 3; with `occurrence: 3` it is refused `quote_not_found`; a quote that occurs once is accepted without `occurrence`, and refused `quote_not_found` with `occurrence: 2` |
+| length                        | quotes "懂了" and "OK" pass; "了", "？" and "..." are refused `quote_too_short`; a 1,001-character quote is refused `quote_too_long`                                                                                                                                                                                                                                                                                                                                        |
+| within one episode            | a quote that runs from the end of one episode into the next is refused `quote_spans_episodes`                                                                                                                                                                                                                                                                                                                                                                               |
+| references across episodes    | claim A quoted in episode 1, claim B in episode 3, and `revises` A → B quoted in episode 3. Accepting the `revises` first is refused `depends_on_pending`; after A and B are accepted it commits an `evolves_to` edge A → B; when A is dismissed it is refused `unresolved_candidate`. The host never sends an engine reference                                                                                                                                             |
+| revising an earlier session   | an existing claim id from `recall` as `from`, a new candidate as `to`: accepted in order, it links the old node to the new one, and the old node is not revoked                                                                                                                                                                                                                                                                                                             |
+| retry with a key              | agent A sends the same submission twice with one `submissionId`: the second writes nothing (sources and drafts files byte-for-byte unchanged) and returns `duplicate_submission` with the same source id. The same agent and id with the same material but one candidate changed, or the candidates reordered, is refused `submission_conflict` and writes nothing. Agent B using the same `submissionId` for its own submission is processed normally                      |
+| retry without a key           | the same material and candidates twice with the same `hostSession`: one source, and each repeated candidate refused `already_pending`                                                                                                                                                                                                                                                                                                                                       |
+| the same idea, another time   | a claim the learner already has, said again in new material. The node is refused `already_known` with `existingNodeId` and the new origin, nothing else is proposed, the new source is stored and the graph is unchanged. In a second material the learner also says "这次我很确定": a `confidence` change on `existingNodeId` quoting those words is kept as its own suggestion, and after acceptance the node's history shows both state events with their own sources    |
+| stated and inferred           | a `stated` state whose quote is in the tutor's turn is refused `basis_mismatch`; a `stated` item without `learner` is refused; an accepted `inferred` articulation leaves `inferred` in the event's source and in the response, and the review data labels it as the agent's reading. An accepted `stated` `articulation: medium` changes only `articulation`: no other dimension of that node is set, and no new field claims mastery                                      |
+| conflict levels               | a host `conflict: open` is kept; `conflict: resolved` and `conflict: none` are refused `not_allowed`                                                                                                                                                                                                                                                                                                                                                                        |
+| nothing written before review | after a host distillation with kept and refused items, and after a retry, the graph file is byte-for-byte unchanged and the event count is the same; only the sources and drafts files changed                                                                                                                                                                                                                                                                              |
+| provenance and readers        | a kept host suggestion has `proposedBy` and `requestedBy` equal to the calling agent's actor and its source has `reader: host`; a distillation without `candidates` still uses the rule-based reader                                                                                                                                                                                                                                                                        |
+| the loop                      | the #16 `it.todo` in `tests/cross-agent-loop.test.ts` is replaced as #16 specifies, and every existing assertion there still passes                                                                                                                                                                                                                                                                                                                                         |
