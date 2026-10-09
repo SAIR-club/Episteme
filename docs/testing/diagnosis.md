@@ -126,9 +126,11 @@ recency     it is simply new
 ```
 
 An irrelevant node winning on `recency` alone is a different problem from one winning on `semantic`, and only
-the second is a retrieval-quality question. `cognitive` winning is usually _correct_, because that is what the
-signal is for, so check whether the recorded state really was the learner's: read the node's history and the
-provenance of the events that set it.
+the second is a retrieval-quality question. `cognitive` winning means the ranking works as designed: the
+learner's recorded state (low confidence, an open conflict) is meant to pull a node up. It does not mean the
+result matches what the learner actually understands. The recorded state may be wrong, out of date, or set by
+an accepted agent suggestion the learner never really held. Check it: read the node's history and the
+provenance of the events that set it, and ask the learner whether it still describes them.
 
 ## Suggestions and decisions
 
