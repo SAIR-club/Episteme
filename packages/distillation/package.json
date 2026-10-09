@@ -1,6 +1,6 @@
 {
   "name": "@episteme/distillation",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Distillation: turns learning material into candidate understanding, as suggestions only (ADR 0009).",

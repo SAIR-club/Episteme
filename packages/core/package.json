@@ -1,6 +1,6 @@
 {
   "name": "@episteme/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Episteme Core: ontology, graph, state, events, guards and projection. The graph itself, and nothing else.",

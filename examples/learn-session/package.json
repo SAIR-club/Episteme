@@ -1,6 +1,6 @@
 {
   "name": "@episteme/example-learn-session",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Runnable v0 closed loop: a question, a claim, a state change, a fork, and a later answer that differs because of history.",

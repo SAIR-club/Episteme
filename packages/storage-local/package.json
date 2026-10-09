@@ -1,6 +1,6 @@
 {
   "name": "@episteme/storage-local",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Durable local storage for Episteme: an append-only JSONL backend that implements the graph and event-log ports.",

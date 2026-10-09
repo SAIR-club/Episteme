@@ -1,6 +1,6 @@
 {
   "name": "@episteme/sdk",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Composition surface: one place where storage, registries, graph and event log are wired in the correct order.",

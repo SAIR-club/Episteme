@@ -1,6 +1,6 @@
 {
   "name": "@episteme/application",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "The use-case layer every surface drives: ask, record, add, list, progress, over one learner's graph.",

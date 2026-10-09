@@ -1,6 +1,6 @@
 {
   "name": "@episteme/example-distill-session",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Distillation end to end: a real learning dialogue becomes suggestions, the learner decides, and only what they accept reaches the graph.",
