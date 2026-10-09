@@ -77,6 +77,8 @@ export type Candidate =
       readonly origin: Origin
       readonly status: 'suggested'
       readonly refusal?: undefined
+      /** The reader's own name for it, when it gave one. */
+      readonly readerRef?: string
     }
   | {
       readonly ref: string
@@ -84,4 +86,5 @@ export type Candidate =
       readonly origin?: Origin
       readonly status: 'refused'
       readonly refusal: Refusal
+      readonly readerRef?: string
     }

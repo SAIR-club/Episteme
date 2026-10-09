@@ -91,6 +91,9 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
     }
 
     const keep = (ref: string, given: Suggestion, refusal: Refusal | undefined): void => {
+      // A node's own name was replaced by the engine reference; the reader's name for anything else is its own.
+      const readerRef = localRefs.get(ref) ?? given.ref
+      const named = readerRef === undefined ? {} : { readerRef }
       const located = locate(material, episodes, episode, given)
       const origin = 'origin' in located ? located.origin : undefined
       const basis = basisOf(given, origin, learner)
@@ -111,7 +114,7 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
       if (reason === undefined && origin !== undefined) {
         keptInEpisode += 1
         keptInRun += 1
-        candidates.push({ ref, suggestion, origin, status: 'suggested' })
+        candidates.push({ ref, suggestion, origin, status: 'suggested', ...named })
       } else if (reason !== undefined) {
         candidates.push({
           ref,
@@ -119,6 +122,7 @@ export async function distill(input: DistillInput): Promise<DistillationResult> 
           ...(origin === undefined ? {} : { origin }),
           status: 'refused',
           refusal: reason,
+          ...named,
         })
       }
     }

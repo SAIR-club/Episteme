@@ -16,6 +16,13 @@ export type { Candidate, DistillationPolicy, Origin, Refusal, Relation, Role } f
 export { distill, type DistillInput, type DistillationResult } from './engine.js'
 export { RuleBasedDistiller, type RuleBasedOptions } from './rule-based.js'
 export {
+  hostRefusalOf,
+  prepareHostReading,
+  type HostItem,
+  type HostReading,
+  type HostRefusal,
+} from './host-reader.js'
+export {
   MAX_QUOTE_LENGTH,
   MIN_QUOTE_SIGNS,
   canonicalText,

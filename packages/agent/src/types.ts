@@ -149,6 +149,8 @@ export interface EdgeSuggestion {
   readonly from: string
   readonly to: string
   readonly rationale: string
+  /** The reader's own name for it, given back with the result so the reader can tell what became of it. */
+  readonly ref?: string
   readonly quote?: string
   readonly quoteAt?: QuoteAt
   readonly basis?: Basis
@@ -169,6 +171,8 @@ export interface StateChangeSuggestion {
   readonly dimensions: Readonly<Record<string, StateValue>>
   readonly evidence: readonly string[]
   readonly rationale: string
+  /** The reader's own name for it, given back with the result so the reader can tell what became of it. */
+  readonly ref?: string
   readonly quote?: string
   readonly quoteAt?: QuoteAt
   readonly basis?: Basis
