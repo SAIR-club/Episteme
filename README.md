@@ -70,8 +70,9 @@ what is proven and what is not: [docs/releases/v0.1.0.md](docs/releases/v0.1.0.m
 **`pnpm serve`** starts the Episteme service and a local interface where a learner asks a question in their
 own words, sees which of their own prior understanding was retrieved **and why**, records what they now
 understand, reviews what agents suggested, and watches what is recalled next change because of it. Agents
-reach the same graph over MCP: they can recall, propose and submit readings of material, and never confirm
-anything. Everything is written to plain JSONL files and survives closing the process.
+reach the same graph over MCP: they can recall, propose and submit readings of material, and MCP gives them no
+way to confirm anything (the REST review API is not yet protected; see [Limitations](#limitations-in-v010)).
+Everything is written to plain JSONL files and survives closing the process.
 
 ![The Learn surface](docs/images/learn-surface.png)
 
@@ -166,7 +167,7 @@ episteme/
 │   ├── sdk/                Composition: the one place the layers are wired in order
 │   ├── application/        The use-case layer every surface drives (LearnSession)
 │   ├── distillation/       Learning material → episodes → candidate understanding, as suggestions only
-│   ├── mcp/                The MCP surface: an agent can recall, propose, reflect and distill, never confirm
+│   ├── mcp/                The MCP surface: recall, propose, reflect and distill; no confirm tool
 │   ├── agent/              CognitiveAgent interface + a scripted mock used as the test double
 │   ├── domain-forum/       [placeholder] Forum domain pack
 │   └── logic-bridge/       [placeholder] optional formalisation (Lean, Datalog, SMT)
