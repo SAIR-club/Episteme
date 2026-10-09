@@ -16,8 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "prepare": "simple-git-hooks",
     "demo": "pnpm --filter @episteme/example-learn-session demo",
     "demo:persistent": "pnpm --filter @episteme/example-persistent-session demo",
     "demo:semantic": "pnpm --filter @episteme/example-semantic-session demo",
@@ -26,12 +27,16 @@
     "serve": "pnpm --filter @episteme/service build && node apps/service/dist/serve.js --workspace apps/learn/public",
     "check": "pnpm typecheck && pnpm lint && pnpm build && pnpm test"
   },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm format:check"
+  },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@eslint/js": "^9.15.0",
     "@types/node": "^22.10.0",
     "eslint": "^9.15.0",
     "globals": "^15.12.0",
-    "prettier": "^3.4.0",
+    "simple-git-hooks": "^2.14.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.16.0",
     "vite-tsconfig-paths": "^5.1.4",
