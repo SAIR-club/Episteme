@@ -33,6 +33,7 @@ import {
 import { MockCognitiveAgent } from '@episteme/agent'
 import { chineseLearnerResponder } from './responder.js'
 import {
+  newSuggestionIds,
   SUGGESTED_NODE_PREFIX,
   SuggestionStore,
   type Proposal,
@@ -40,13 +41,23 @@ import {
   type Suggestion,
   type SuggestionOrigin,
 } from './suggestions.js'
-import { SourceStore, type Source } from './sources.js'
+import {
+  SourceStore,
+  payloadDigest,
+  textDigest,
+  type Source,
+  type SourceReader,
+  type SourceSubmission,
+} from './sources.js'
 import { CANDIDATE_PREFIX, type CognitiveAgent } from '@episteme/agent'
 import {
   RuleBasedDistiller,
   canonicalText,
   distill,
+  hostRefusalOf,
+  prepareHostReading,
   type DistillationPolicy,
+  type HostItem,
 } from '@episteme/distillation'
 import { learnDistillationPolicy } from '@episteme/domain-learn/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
@@ -1236,18 +1247,27 @@ export class LearnSession {
   /**
    * Distils learning material into pending suggestions (ADR 0009). Changes no understanding.
    *
-   * The material is kept beside the graph, never in it. It is split into episodes, and the distiller's
-   * candidates are checked against the domain's policy. Each kept candidate then becomes a pending suggestion,
-   * through the same checks `propose` applies, carrying the words it came from. A candidate that refers to
-   * another, such as a claim answering a question found with it, refers to that suggestion as
-   * `cand:<id>`, and can be accepted only after it. Nothing reaches the graph or the history until the
-   * learner decides.
+   * The material is kept beside the graph, never in it, in canonical form (`canonicalText`), and every span
+   * points into that text. It is split into episodes, and the reader's candidates are checked against the
+   * domain's policy. Each kept candidate then becomes a pending suggestion, through the same checks `propose`
+   * applies, carrying the words it came from. A candidate that refers to another, such as a claim answering a
+   * question found with it, refers to that suggestion as `cand:<id>`, and can be accepted only after it. Nothing
+   * reaches the graph or the history until the learner decides.
+   *
+   * The reader is Episteme's rule-based one, or, with `host`, the host's own model (ADR 0011). Then Episteme's
+   * reader does not also run, the host's items are verified and read through the same engine, what is kept is
+   * proposed by `requestedBy`, and refusals are reported under the host's own refs. `learner` names the
+   * learner's speaker label in a dialogue; without it nothing is `stated`.
+   *
+   * Repetition (ADR 0011 §5):
+   * - a host submission with a `submissionId` is remembered with its scope (`requestedBy`) and the digest of
+   *   its whole payload. The same again writes nothing and answers with the original receipt and each
+   *   candidate's current status; a different payload under the same id is refused;
+   * - the same text, read by the same reader in the same `hostSession`, reuses its source, and a candidate whose
+   *   proposal and origin both match a pending suggestion is refused as `already_pending`.
    *
    * Bounded: material longer than `MAX_MATERIAL` characters, or a queue already holding `MAX_PENDING`
    * suggestions, is refused as a value, before anything is kept.
-   *
-   * The material is kept in canonical form (`canonicalText`), and every span points into that text. `learner`
-   * names the learner's speaker label in a dialogue; without it nothing distilled is `stated` (ADR 0011).
    */
   distill(
     material: { readonly title?: string; readonly text: string },
@@ -1256,6 +1276,11 @@ export class LearnSession {
       readonly agent?: CognitiveAgent
       readonly policy?: DistillationPolicy
       readonly learner?: string
+      readonly host?: {
+        readonly candidates: readonly HostItem[]
+        readonly hostSession?: string
+        readonly submissionId?: string
+      }
     } = {},
   ): Promise<DistillOutcome> {
     return this.#exclusive(async (): Promise<DistillOutcome> => {
@@ -1275,6 +1300,58 @@ export class LearnSession {
           },
         }
       }
+      const host = options.host
+      const submittedBy = options.requestedBy
+      if (host !== undefined && host.candidates.length > MAX_HOST_ITEMS) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'too_many_candidates',
+            message: `${host.candidates.length} items are more than the ${MAX_HOST_ITEMS} one reading may carry; split the material`,
+          },
+        }
+      }
+      if (host !== undefined && submittedBy === undefined) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'invalid_request',
+            message: 'a host reading needs the agent that submitted it',
+          },
+        }
+      }
+
+      // A keyed submission made before is answered from what it stored, and nothing is written (ADR 0011 §5).
+      const keyed =
+        host?.submissionId === undefined || submittedBy === undefined
+          ? undefined
+          : {
+              by: submittedBy,
+              id: host.submissionId,
+              payloadDigest: payloadDigest({
+                text,
+                ...(material.title === undefined ? {} : { title: material.title }),
+                ...(options.learner === undefined ? {} : { learner: options.learner }),
+                ...(host.hostSession === undefined ? {} : { hostSession: host.hostSession }),
+                candidates: host.candidates,
+              }),
+            }
+      if (keyed !== undefined) {
+        const earlier = this.#sources.submission(keyed.by, keyed.id)
+        if (earlier !== undefined) {
+          if (earlier.submission.payloadDigest !== keyed.payloadDigest) {
+            return {
+              ok: false,
+              refusal: {
+                code: 'submission_conflict',
+                message: `submission "${keyed.id}" was already made with a different payload; nothing was changed, and a new request needs a new submissionId`,
+              },
+            }
+          }
+          return this.#resubmitted(earlier.source, earlier.submission)
+        }
+      }
+
       if (this.#suggestions.list().length >= MAX_PENDING) {
         return {
           ok: false,
@@ -1286,8 +1363,20 @@ export class LearnSession {
       }
 
       const policy = options.policy ?? learnDistillationPolicy
-      const agent = options.agent ?? new RuleBasedDistiller({ policy })
-      const sourceId = `src_${randomUUID()}`
+      const reader: SourceReader = host === undefined ? 'episteme' : 'host'
+      const reused = this.#sources.reusable(text, reader, host?.hostSession)
+      const sourceId = reused?.id ?? `src_${randomUUID()}`
+      const reading =
+        host === undefined
+          ? undefined
+          : prepareHostReading({
+              sourceId,
+              text,
+              items: host.candidates,
+              policy,
+              actorId: HUMAN,
+            })
+      const agent = reading?.reader ?? options.agent ?? new RuleBasedDistiller({ policy })
       const result = await distill({
         material: { sourceId, text },
         agent,
@@ -1299,8 +1388,12 @@ export class LearnSession {
         ...(options.learner === undefined ? {} : { learner: options.learner }),
       })
 
-      const proposedBy = `actor_agent_${agent.id}`
-      const refused: DistillRefusal[] = []
+      // A host's model did the reading, so the agent that submitted it proposes what is kept.
+      const proposedBy = reading === undefined ? `actor_agent_${agent.id}` : (submittedBy ?? '')
+      const refused: DistillRefusal[] = (reading?.refused ?? []).map(({ ref, refusal }) => ({
+        ref,
+        ...refusal,
+      }))
       const accepted: {
         ref: string
         proposal: Proposal
@@ -1317,14 +1410,21 @@ export class LearnSession {
 
       for (const candidate of result.candidates) {
         if (candidate.status === 'refused') {
-          // A quote that could not be located has no origin, and none is made up for it.
+          // Told under the host's own refs when a host read it. A quote that could not be located has no
+          // origin, and none is made up for it.
+          const told =
+            reading === undefined
+              ? { ref: candidate.ref, refusal: candidate.refusal }
+              : hostRefusalOf(reading, candidate)
+          if (told === undefined) continue
           refused.push({
-            ref: candidate.ref,
-            ...candidate.refusal,
+            ref: told.ref,
+            ...told.refusal,
             ...(candidate.origin === undefined ? {} : { origin: candidate.origin }),
           })
           continue
         }
+        const ref = reading === undefined ? candidate.ref : (candidate.readerRef ?? candidate.ref)
         const origin: SuggestionOrigin = candidate.origin
         const suggestion = candidate.suggestion
         const proposals: Proposal[] = []
@@ -1351,7 +1451,7 @@ export class LearnSession {
         }
         if (proposals.length === 0) {
           refused.push({
-            ref: candidate.ref,
+            ref,
             code: 'depends_on_refused',
             message: 'it depends on a candidate that was not kept',
             origin,
@@ -1361,7 +1461,7 @@ export class LearnSession {
         for (const proposal of proposals) {
           if (suggestion.kind === 'node') candidates.set(candidate.ref, accepted.length)
           accepted.push({
-            ref: candidate.ref,
+            ref,
             proposal,
             origin,
             rationale: suggestion.rationale,
@@ -1370,12 +1470,37 @@ export class LearnSession {
         }
       }
 
-      // The same checks `propose` applies, with references to this batch's own nodes standing in for nodes.
+      // The same checks `propose` applies, with references to this batch's own nodes standing in for nodes. A
+      // candidate that repeats a pending suggestion, the same proposal from the same words, is not queued
+      // twice; what refers to it refers to the pending one instead.
+      const pending = this.#suggestions.list()
       const kept: typeof accepted = []
       const keptIndex = new Map<number, number>()
+      const pendingAs = new Map<number, string>()
       for (const [index, item] of accepted.entries()) {
         const local = localReferences(item.proposal)
-        const brokenReference = local.some((reference) => !keptIndex.has(reference))
+        const brokenReference = local.some(
+          (reference) => !keptIndex.has(reference) && !pendingAs.has(reference),
+        )
+        const repeated = brokenReference
+          ? undefined
+          : pending.find((suggestion) =>
+              repeats(
+                suggestion,
+                bindLocalReferences(item.proposal, (reference) => pendingAs.get(reference)),
+                item.origin,
+              ),
+            )
+        if (repeated !== undefined) {
+          pendingAs.set(index, repeated.id)
+          refused.push({
+            ref: item.ref,
+            code: 'already_pending',
+            message: `the same suggestion from the same words is already waiting as "${repeated.id}"`,
+            origin: item.origin,
+          })
+          continue
+        }
         const refusal = brokenReference
           ? { code: 'depends_on_refused', message: 'it depends on a candidate that was not kept' }
           : this.#refusalOf(withoutLocalReferences(item.proposal), {
@@ -1391,7 +1516,7 @@ export class LearnSession {
       }
 
       // The limit holds for what this run would add too, not only for what was waiting before it.
-      const waiting = this.#suggestions.list().length
+      const waiting = pending.length
       if (waiting + kept.length > MAX_PENDING) {
         return {
           ok: false,
@@ -1402,37 +1527,141 @@ export class LearnSession {
         }
       }
 
-      await this.#sources.add({
-        id: sourceId,
-        title: material.title?.trim() || firstLine(text),
-        text,
-        kind: result.episodes[0]?.kind ?? 'prose',
-        episodes: result.episodes.map((episode) => ({
-          id: episode.id,
-          span: episode.span,
-          ...(episode.time === undefined ? {} : { time: episode.time }),
-        })),
-        addedAt: systemClock.now(),
-        ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
-      })
-
-      const proposedAt = systemClock.now()
-      const suggestions = await this.#suggestions.addAll(kept.length, (ids) =>
-        kept.map((item) => ({
-          proposal: bindLocalReferences(item.proposal, (reference) => {
-            const at = keptIndex.get(reference)
-            return at === undefined ? undefined : ids[at]
-          }),
-          rationale: item.rationale,
-          proposedBy,
-          proposedAt,
-          origin: item.origin,
-          ...(item.basis === undefined ? {} : { basis: item.basis }),
+      // The ids are chosen first, so the receipt of a keyed submission can name them, and it is stored with the
+      // source before any draft: a draft's origin never points at nothing.
+      const ids = newSuggestionIds(kept.length)
+      const now = systemClock.now()
+      const submission: SourceSubmission | undefined =
+        keyed === undefined
+          ? undefined
+          : {
+              ...keyed,
+              at: now,
+              receipt: {
+                kept: kept.map((item, at) => ({ ref: item.ref, suggestionId: ids[at] ?? '' })),
+                refused: refused.map(({ ref, code }) => ({ ref, code })),
+              },
+            }
+      if (reused === undefined) {
+        await this.#sources.put({
+          id: sourceId,
+          title: canonicalText(material.title?.trim() || firstLine(text)),
+          text,
+          kind: result.episodes[0]?.kind ?? 'prose',
+          episodes: result.episodes.map((episode) => ({
+            id: episode.id,
+            span: episode.span,
+            ...(episode.time === undefined ? {} : { time: episode.time }),
+          })),
+          addedAt: now,
           ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
-        })),
+          reader,
+          digest: textDigest(text),
+          ...(host?.hostSession === undefined ? {} : { hostSession: host.hostSession }),
+          ...(submission === undefined ? {} : { submissions: [submission] }),
+        })
+      } else if (submission !== undefined) {
+        await this.#sources.put({
+          ...reused,
+          submissions: [...(reused.submissions ?? []), submission],
+        })
+      }
+
+      const suggestions = await this.#suggestions.addAll(
+        kept.length,
+        (chosen) =>
+          kept.map((item) => ({
+            proposal: bindLocalReferences(item.proposal, (reference) => {
+              const at = keptIndex.get(reference)
+              return at === undefined ? pendingAs.get(reference) : chosen[at]
+            }),
+            rationale: item.rationale,
+            proposedBy,
+            proposedAt: now,
+            origin: item.origin,
+            ...(item.basis === undefined ? {} : { basis: item.basis }),
+            ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
+          })),
+        ids,
       )
-      return { ok: true, sourceId, episodes: result.episodes.length, suggestions, refused }
+      return {
+        ok: true,
+        status: 'pending',
+        reader,
+        sourceId,
+        episodes: result.episodes.length,
+        suggestions,
+        refused,
+      }
     })
+  }
+
+  /**
+   * The answer to a keyed submission made again: what it stored, and what has become of each suggestion since.
+   * Writes nothing.
+   */
+  #resubmitted(source: Source, submission: SourceSubmission): DistillOutcome {
+    const kept = submission.receipt.kept.map(({ ref, suggestionId }) => ({
+      ref,
+      suggestionId,
+      ...this.#currentStatusOf(suggestionId),
+    }))
+    return {
+      ok: true,
+      status: 'duplicate_submission',
+      reader: source.reader,
+      sourceId: source.id,
+      episodes: source.episodes.length,
+      suggestions: kept.flatMap(({ suggestionId }) => {
+        const still = this.#suggestions.get(suggestionId)
+        return still === undefined ? [] : [still]
+      }),
+      refused: submission.receipt.refused.map(({ ref, code }) => ({
+        ref,
+        code,
+        message: 'refused when this submission was first made',
+      })),
+      receipt: {
+        submissionId: submission.id,
+        submittedBy: submission.by,
+        sourceId: source.id,
+        reader: source.reader,
+        ...(source.hostSession === undefined ? {} : { hostSession: source.hostSession }),
+        storedAt: submission.at,
+        kept,
+        refused: submission.receipt.refused,
+      },
+    }
+  }
+
+  /**
+   * What has become of a suggestion: still pending; accepted or modified, with what it committed, found through
+   * the provenance the graph keeps; or no longer pending with nothing committed from it, which is a dismissal.
+   */
+  #currentStatusOf(suggestionId: string): SubmissionStatus {
+    if (this.#suggestions.get(suggestionId) !== undefined) return { status: 'pending' }
+    const decided = (source: string | undefined): 'accepted' | 'modified' =>
+      /, modified via /u.test(source ?? '') ? 'modified' : 'accepted'
+    const graph = this.#episteme.graph
+    for (const node of graph.listNodes()) {
+      if (node.revoked !== true && node.properties[PROVENANCE_KEY] === suggestionId) {
+        return { status: decided(node.source), committed: { kind: 'node', id: node.id } }
+      }
+    }
+    const named = `suggestion ${suggestionId} from `
+    for (const edge of graph.listEdges()) {
+      if (edge.revoked !== true && edge.source?.includes(named) === true) {
+        return { status: decided(edge.source), committed: { kind: 'edge', id: edge.id } }
+      }
+    }
+    for (const node of graph.listNodes()) {
+      for (const event of this.#episteme.log.history({ target: node.id, actorId: HUMAN })) {
+        if ([...event.dimensions.values()].some((value) => value.sourceOf === suggestionId)) {
+          return { status: decided(event.source), committed: { kind: 'event', id: event.id } }
+        }
+      }
+    }
+    return { status: 'not_pending' }
   }
 
   /** Why a proposal could never be accepted, or `undefined` when it could be. */
@@ -1663,6 +1892,9 @@ export const MAX_MATERIAL = 20_000
 /** A queue holding this many suggestions takes no more distillations until some are decided. */
 export const MAX_PENDING = 500
 
+/** At most this many items in one host reading (ADR 0011 §9). */
+export const MAX_HOST_ITEMS = 100
+
 /** A candidate distillation found and did not offer, with why, and the words it came from. */
 export interface DistillRefusal {
   readonly ref: string
@@ -1677,13 +1909,47 @@ export interface DistillRefusal {
 export type DistillOutcome =
   | {
       readonly ok: true
+      /** `pending`: this request was read. `duplicate_submission`: it was made before, and nothing was written. */
+      readonly status: 'pending' | 'duplicate_submission'
+      readonly reader: SourceReader
       readonly sourceId: string
       readonly episodes: number
-      /** What now waits for the learner. */
+      /** What now waits for the learner: from this request, or, for a repeated one, what is still pending of it. */
       readonly suggestions: readonly Suggestion[]
       readonly refused: readonly DistillRefusal[]
+      /** For a repeated keyed submission: what it was, and what has become of it. */
+      readonly receipt?: SubmissionReceipt
     }
   | { readonly ok: false; readonly refusal: MutationRefusal }
+
+/** What has become of a suggestion a submission kept (ADR 0011 §5). */
+export type SubmissionStatus =
+  | { readonly status: 'pending' }
+  | {
+      readonly status: 'accepted' | 'modified'
+      /** What the decision committed, found through the provenance the graph keeps. */
+      readonly committed: { readonly kind: 'node' | 'edge' | 'event'; readonly id: string }
+    }
+  /** No longer pending, and nothing in the graph came from it: it was dismissed. */
+  | { readonly status: 'not_pending' }
+
+/** The receipt of a keyed submission, given when it is made again. Nothing is re-queued. */
+export interface SubmissionReceipt {
+  readonly submissionId: string
+  readonly submittedBy: string
+  readonly sourceId: string
+  readonly reader: SourceReader
+  readonly hostSession?: string
+  /** When the submission was first made and stored. */
+  readonly storedAt: number
+  /** Each suggestion it kept, under the submitter's ref, with what has become of it. */
+  readonly kept: readonly ({
+    readonly ref: string
+    readonly suggestionId: string
+  } & SubmissionStatus)[]
+  /** What it refused, under the submitter's ref. */
+  readonly refused: readonly { readonly ref: string; readonly code: string }[]
+}
 
 /** The property under which an accepted node records the suggestion it came from. */
 const PROVENANCE_KEY = 'suggestion'
@@ -1746,6 +2012,35 @@ function bindLocalReferences(
 
 /** Stands in, while checking a batch, for a node of the same batch that has no id yet. */
 const BATCH_PLACEHOLDER = '__batch__'
+
+/**
+ * Whether a pending suggestion is this one again: the same proposal, from the same words of the same source
+ * (ADR 0011 §5). Either alone is not a repetition: the same idea said elsewhere, or other words read at the same
+ * place, are new observations.
+ */
+function repeats(pending: Suggestion, proposal: Proposal, origin: SuggestionOrigin): boolean {
+  const at = pending.origin
+  return (
+    at !== undefined &&
+    at.sourceId === origin.sourceId &&
+    at.span.start === origin.span.start &&
+    at.span.end === origin.span.end &&
+    stableJson(normalized(pending.proposal)) === stableJson(normalized(proposal))
+  )
+}
+
+/** JSON with object keys in order, so two equal values compare equal however they were built. */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_, field: unknown) =>
+    typeof field === 'object' && field !== null && !Array.isArray(field)
+      ? Object.fromEntries(
+          Object.entries(field as Record<string, unknown>).sort(([left], [right]) =>
+            left < right ? -1 : left > right ? 1 : 0,
+          ),
+        )
+      : field,
+  )
+}
 
 function firstLine(text: string): string {
   const line = text.trim().split(/\r?\n/u)[0] ?? ''

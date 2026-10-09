@@ -61,6 +61,14 @@ export interface SuggestionOrigin {
   readonly speaker?: string
 }
 
+/**
+ * Fresh ids for drafts. Random rather than counted: a counter restarts once every draft has been resolved, and
+ * an agent still holding an old id would then refer to a different suggestion than it was told about.
+ */
+export function newSuggestionIds(count: number): readonly string[] {
+  return Array.from({ length: count }, () => `sug_${randomUUID()}`)
+}
+
 /** How a proposal names a node suggested alongside it. */
 export const SUGGESTED_NODE_PREFIX = 'cand:'
 
@@ -190,13 +198,15 @@ export class SuggestionStore {
    * Keeps several drafts in one write, such as everything one distillation yields.
    *
    * Their ids are chosen before any is kept, so a draft may refer to another of the same batch: `refer`
-   * receives the ids in order and returns the drafts to keep.
+   * receives the ids in order and returns the drafts to keep. A caller that has to record the ids before the
+   * drafts are kept, such as a submission's receipt, chooses them with `newSuggestionIds` and passes them in.
    */
   async addAll(
     count: number,
     refer: (ids: readonly string[]) => readonly Omit<Suggestion, 'id'>[],
+    chosen: readonly string[] = newSuggestionIds(count),
   ): Promise<readonly Suggestion[]> {
-    const ids = Array.from({ length: count }, () => `sug_${randomUUID()}`)
+    const ids = chosen
     const kept = refer(ids).map((draft, index): Suggestion => ({
       id: ids[index] ?? `sug_${randomUUID()}`,
       ...draft,
