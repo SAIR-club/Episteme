@@ -138,4 +138,4 @@ on something named.
    tree, scheduling, real-time updates, multi-user access, shared subject knowledge, and Forum as a second
    scene.
 
-The [roadmap](../roadmap/README.md) turns these into phases and records what each one proves.
+The [roadmap](../planning/roadmap.md) turns these into phases and records what each one proves.
