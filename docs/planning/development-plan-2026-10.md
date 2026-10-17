@@ -106,36 +106,36 @@ MindLink 启动器 = Episteme service + MindLink 场景配置（profile）
 
 ## 7. Issue 清单
 
-建 issue 时会把编号回填到下表。
+每一项的完整需求和给 AI 的提示词都在对应的 issue 里。
 
 | id   | 仓库      | 标题                                    | 依赖             | 波次 |
 | ---- | --------- | --------------------------------------- | ---------------- | ---- |
-| M0   | Episteme  | 合并清理 PR，接受 ADR 0013/0014（维护者） | —               | W0   |
-| V1   | Episteme  | 用真实 Claude Code 跑通一次学习闭环     | —                | W0   |
-| A1   | Episteme  | ADR 0015：对话线程与场景记录            | —                | W0   |
-| A2   | Episteme  | ADR 0016：托管确认                      | —                | W0   |
-| A3   | Episteme  | ADR 0012 扩展：共享服务的身份与令牌     | #17              | W0   |
-| E1   | Episteme  | M2：只提供已注册的等级 + vocabulary 接口 | M0               | W1   |
-| E2   | Episteme  | M3：场景配置与扩展点                    | E1               | W1   |
-| E3   | Episteme  | S1：身份与令牌                          | A3               | W1   |
-| E4   | Episteme  | S2 + S3：可见性与每 actor 一个 session  | E2、E3           | W2   |
-| E5   | Episteme  | S4：发布记录                            | E4               | W2   |
-| E6   | Episteme  | 对话线程与场景记录的实现                | A1、E4           | W2   |
-| E7   | Episteme  | S5–S7：发布、浏览、复用、更新 API       | E5、E6           | W3   |
-| E8   | Episteme  | 托管确认的实现                          | A2、E4           | W3   |
-| E9   | Episteme  | 分层上下文与项目范围的 recall           | E6               | W3   |
-| E10  | Episteme  | 共享服务部署                            | E3、E7           | W4   |
-| L1   | MindLink  | 改名为 MindLink + 固定 Episteme 版本（M1） | —              | W1   |
-| L2   | MindLink  | 模块格式与加载器                        | L1               | W1   |
-| L3   | MindLink  | 内置模块内容：定向与获取（1–7）         | L2 的格式        | W1   |
-| L4   | MindLink  | 内置模块内容：构建、检验与沉淀（8–16）  | L2 的格式        | W1   |
-| L5   | MindLink  | M4 + M5：接入 Episteme 检索，启动器与 Workspace 重建 | E2  | W2   |
-| L6   | MindLink  | 工作流引擎与 MindLink MCP 工具          | L2、L5           | W2   |
-| L7   | MindLink  | 学习项目、入门问卷与画像                | L5、E6           | W2   |
-| L8   | MindLink  | 引导式提问                              | L6               | W3   |
-| L9   | MindLink  | Workspace：线程树、进度滑块、复习安排、托管开关 | L5、E6、E8 | W3   |
-| L10  | MindLink  | Workspace：发布、浏览、复用、更新       | L5、E7           | W3   |
-| L11  | MindLink  | 宿主 skill 包（Claude Code / Codex / WorkBuddy） | L6     | W3   |
-| L12  | MindLink  | 端到端测试、真实宿主验证与比赛演示      | 全部             | W4   |
-| D1   | discussion | 仓库骨架与接口占位                      | E2               | W1   |
-| X1   | Episteme  | 对外发布：英文 README、一行安装、演示视频 | V1、E3          | W4   |
+| [M0](https://github.com/SAIR-club/Episteme/issues/31) | Episteme  | 合并清理 PR，接受 ADR 0013/0014（维护者） | —               | W0   |
+| [V1](https://github.com/SAIR-club/Episteme/issues/32) | Episteme  | 用真实 Claude Code 跑通一次学习闭环     | —                | W0   |
+| [A1](https://github.com/SAIR-club/Episteme/issues/33) | Episteme  | ADR 0015：对话线程与场景记录            | —                | W0   |
+| [A2](https://github.com/SAIR-club/Episteme/issues/34) | Episteme  | ADR 0016：托管确认                      | —                | W0   |
+| [A3](https://github.com/SAIR-club/Episteme/issues/35) | Episteme  | ADR 0012 扩展：共享服务的身份与令牌     | #17              | W0   |
+| [E1](https://github.com/SAIR-club/Episteme/issues/36) | Episteme  | M2：只提供已注册的等级 + vocabulary 接口 | M0               | W1   |
+| [E2](https://github.com/SAIR-club/Episteme/issues/37) | Episteme  | M3：场景配置与扩展点                    | E1               | W1   |
+| [E3](https://github.com/SAIR-club/Episteme/issues/38) | Episteme  | S1：身份与令牌                          | A3               | W1   |
+| [E4](https://github.com/SAIR-club/Episteme/issues/39) | Episteme  | S2 + S3：可见性与每 actor 一个 session  | E2、E3           | W2   |
+| [E5](https://github.com/SAIR-club/Episteme/issues/40) | Episteme  | S4：发布记录                            | E4               | W2   |
+| [E6](https://github.com/SAIR-club/Episteme/issues/41) | Episteme  | 对话线程与场景记录的实现                | A1、E4           | W2   |
+| [E7](https://github.com/SAIR-club/Episteme/issues/42) | Episteme  | S5–S7：发布、浏览、复用、更新 API       | E5、E6           | W3   |
+| [E8](https://github.com/SAIR-club/Episteme/issues/43) | Episteme  | 托管确认的实现                          | A2、E4           | W3   |
+| [E9](https://github.com/SAIR-club/Episteme/issues/44) | Episteme  | 分层上下文与项目范围的 recall           | E6               | W3   |
+| [E10](https://github.com/SAIR-club/Episteme/issues/45) | Episteme  | 共享服务部署                            | E3、E7           | W4   |
+| [L1](https://github.com/SAIR-club/learner/issues/4) | MindLink  | 改名为 MindLink + 固定 Episteme 版本（M1） | —              | W1   |
+| [L2](https://github.com/SAIR-club/learner/issues/5) | MindLink  | 模块格式与加载器                        | L1               | W1   |
+| [L3](https://github.com/SAIR-club/learner/issues/6) | MindLink  | 内置模块内容：定向与获取（1–7）         | L2 的格式        | W1   |
+| [L4](https://github.com/SAIR-club/learner/issues/7) | MindLink  | 内置模块内容：构建、检验与沉淀（8–16）  | L2 的格式        | W1   |
+| [L5](https://github.com/SAIR-club/learner/issues/8) | MindLink  | M4 + M5：接入 Episteme 检索，启动器与 Workspace 重建 | E2  | W2   |
+| [L6](https://github.com/SAIR-club/learner/issues/9) | MindLink  | 工作流引擎与 MindLink MCP 工具          | L2、L5           | W2   |
+| [L7](https://github.com/SAIR-club/learner/issues/10) | MindLink  | 学习项目、入门问卷与画像                | L5、E6           | W2   |
+| [L8](https://github.com/SAIR-club/learner/issues/11) | MindLink  | 引导式提问                              | L6               | W3   |
+| [L9](https://github.com/SAIR-club/learner/issues/12) | MindLink  | Workspace：线程树、进度滑块、复习安排、托管开关 | L5、E6、E8 | W3   |
+| [L10](https://github.com/SAIR-club/learner/issues/13) | MindLink  | Workspace：发布、浏览、复用、更新       | L5、E7           | W3   |
+| [L11](https://github.com/SAIR-club/learner/issues/14) | MindLink  | 宿主 skill 包（Claude Code / Codex / WorkBuddy） | L6     | W3   |
+| [L12](https://github.com/SAIR-club/learner/issues/15) | MindLink  | 端到端测试、真实宿主验证与比赛演示      | 全部             | W4   |
+| [D1](https://github.com/SAIR-club/discussion/issues/1) | discussion | 仓库骨架与接口占位                      | E2               | W1   |
+| [X1](https://github.com/SAIR-club/Episteme/issues/46) | Episteme  | 对外发布：英文 README、一行安装、演示视频 | V1、E3          | W4   |
