@@ -29,7 +29,7 @@ through a real agent host.
 Development is paused after v0.1.0. When it resumes, the first step is to use the loop for real, before
 building anything else: a real learner, a real Claude Code host, two learning sessions, and a check that the
 second builds on what the learner confirmed in the first. What that will measure, and in which order, is in
-[`docs/development-status.md`](../development-status.md). The phases below follow it.
+[`docs/planning/current-plan.md`](current-plan.md). The phases below follow it.
 
 ## The gate, unchanged
 

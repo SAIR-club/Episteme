@@ -30,7 +30,7 @@
 | Workspace 页面                           | `apps/learn/public/index.html`                                          |
 | 闭环的可执行定义                         | `tests/cross-agent-loop.test.ts`                                        |
 
-开发约定见 [AGENTS.md](../AGENTS.md)，架构全貌见[目标架构](architecture/target.md)，各版本的变化见 [CHANGELOG](../CHANGELOG.md)。
+开发约定见 [AGENTS.md](../../AGENTS.md)，架构全貌见[目标架构](../architecture/target.md)，各版本的变化见 [CHANGELOG](../../CHANGELOG.md)。
 
 ## 尚未验证的关键假设
 
@@ -70,7 +70,7 @@ v0.1.0 的闭环只在自动化测试中成立。以下假设决定它在真实�
 3. **第一次学习会话。** 用一段提示词规定 Host 的行为：回答前先调用 `recall`；学完一段后调用 `distill` 提交带引用的候选；只把学习者原话标为 `stated`；不得调用 REST 审阅接口。
 4. **审阅。** 学习者在 Workspace 中逐条决定。页面不显示 `basis`，所以观察者需要对照 `/api/v1/suggestions` 的数据检查。
 5. **第二次学习会话。** 在全新的会话中提出相关问题，并与没有接入 Episteme 的会话对比，确认 `recall` 取回了第一次确认的理解，且回答建立在它之上。
-6. **记录。** 按 [docs/testing/diagnosis.md](testing/diagnosis.md) 的流程诊断，结果写入 [docs/testing/human-validation-log.md](testing/human-validation-log.md)。
+6. **记录。** 按 [docs/testing/diagnosis.md](../testing/diagnosis.md) 的流程诊断，结果写入 [docs/testing/human-validation-log.md](../testing/human-validation-log.md)。
 
 在这次验证完成之前，不要先开发插件、skill、对话树或新的理解评价机制。下一步做什么，应当由这次验证的结果决定。
 
