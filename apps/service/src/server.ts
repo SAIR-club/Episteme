@@ -13,7 +13,7 @@ export interface ServiceOptions {
   readonly graph?: string
   readonly port?: number
   readonly host?: string
-  /** The scene the service is composed with. Defaults to Learn. */
+  /** The scene the service is composed with. Defaults to the deprecated built-in Learn profile. */
   readonly profile?: SceneProfile
   /** A directory holding a prebuilt Workspace to serve at `/`. Without one, `/` says how to connect. */
   readonly workspace?: string
@@ -46,11 +46,12 @@ const MCP_PATH = '/mcp'
  */
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
-  const session = await LearnSession.open({ filePath: graph })
+  const profile = options.profile ?? learnProfile()
+  const session = await LearnSession.open({ filePath: graph, scene: profile.scene })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
-    return await serve(session, graph, options)
+    return await serve(session, graph, profile, options)
   } catch (error) {
     await session.close()
     throw error
@@ -91,9 +92,9 @@ async function seedTopicIfPresent(
 async function serve(
   session: LearnSession,
   graph: string,
+  profile: SceneProfile,
   options: ServiceOptions,
 ): Promise<EpistemeService> {
-  const profile = options.profile ?? learnProfile()
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.

@@ -12,11 +12,11 @@ import {
   type ServerContext,
 } from '@modelcontextprotocol/server'
 import {
-  RECORDABLE_DIMENSIONS,
   SUGGESTED_NODE_PREFIX,
   type Decision,
   type LearnSession,
   type Proposal,
+  type RecordableDimension,
   type Suggestion,
 } from '@episteme/application'
 
@@ -84,7 +84,7 @@ interface DecisionContent {
  *
  * The same schema validates the answer, so what the learner can submit and what is accepted cannot differ.
  */
-function decisionSchema(proposal: Proposal) {
+function decisionSchema(proposal: Proposal, dimensions: readonly RecordableDimension[]) {
   // Titled options are `oneOf` with `const` and `title`, the form the elicitation spec defines.
   const choice = {
     type: 'string',
@@ -97,9 +97,7 @@ function decisionSchema(proposal: Proposal) {
   }
   switch (proposal.kind) {
     case 'state': {
-      const dimension = RECORDABLE_DIMENSIONS.find(
-        (candidate) => candidate.id === proposal.dimension,
-      )
+      const dimension = dimensions.find((candidate) => candidate.id === proposal.dimension)
       const levels = dimension?.levelLabelsZh ?? []
       return fromJsonSchema<DecisionContent>({
         type: 'object',
@@ -147,7 +145,7 @@ export async function askLearner(
     inputRequests: {
       [DECISION_KEY]: inputRequired.elicit({
         message: describeForLearner(session, suggestion),
-        requestedSchema: decisionSchema(suggestion.proposal),
+        requestedSchema: decisionSchema(suggestion.proposal, session.recordableDimensions),
       }),
     },
     requestState: await codec.mint({ suggestionId: suggestion.id }, context),
@@ -183,7 +181,7 @@ export async function resolveAnswer(
   const content = acceptedContent(
     context.mcpReq.inputResponses,
     DECISION_KEY,
-    decisionSchema(suggestion.proposal),
+    decisionSchema(suggestion.proposal, session.recordableDimensions),
   )
   const decision = content === undefined ? undefined : decisionFrom(content, suggestion.proposal)
   if (decision === undefined) {
@@ -254,7 +252,7 @@ function describeForLearner(session: LearnSession, suggestion: Suggestion): stri
   let what: string
   switch (proposal.kind) {
     case 'state': {
-      const dimension = RECORDABLE_DIMENSIONS.find(
+      const dimension = session.recordableDimensions.find(
         (candidate) => candidate.id === proposal.dimension,
       )
       const level =

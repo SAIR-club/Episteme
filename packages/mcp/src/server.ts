@@ -10,11 +10,11 @@ import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } f
 import {
   MAX_HOST_ITEMS,
   MAX_MATERIAL,
-  RECORDABLE_DIMENSIONS,
   type DistillOutcome,
   type HostItem,
   type LearnSession,
   type Proposal,
+  type RecordableDimension,
   type RecallResult,
   type ProgressSummary,
 } from '@episteme/application'
@@ -77,46 +77,49 @@ interface ProposeInput {
   level?: string
 }
 
-const PROPOSE_INPUT = fromJsonSchema<ProposeInput>({
-  type: 'object',
-  properties: {
-    kind: {
-      type: 'string',
-      enum: ['claim', 'link', 'state'],
-      description:
-        'claim: a new claim (label, optional about). link: connect two existing nodes (from, to, relation). state: a change on one dimension of an existing node (target, dimension, level).',
+/** The `propose` input, with the dimensions and levels this session's scene lets a person record. */
+function proposeInput(dimensions: readonly RecordableDimension[]) {
+  return fromJsonSchema<ProposeInput>({
+    type: 'object',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['claim', 'link', 'state'],
+        description:
+          'claim: a new claim (label, optional about). link: connect two existing nodes (from, to, relation). state: a change on one dimension of an existing node (target, dimension, level).',
+      },
+      rationale: {
+        type: 'string',
+        minLength: 1,
+        description: 'Why you propose this, so the learner can judge it.',
+      },
+      label: { type: 'string', description: 'claim: the claim, as the learner would state it.' },
+      about: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'claim: ids of the concepts or questions the claim is about.',
+      },
+      from: { type: 'string', description: 'link: the id of the node the edge starts from.' },
+      to: { type: 'string', description: 'link: the id of the node the edge points to.' },
+      relation: {
+        type: 'string',
+        description: 'link: a registered edge type, for example refers_to, supports, contradicts.',
+      },
+      target: { type: 'string', description: 'state: the id of the node the change is about.' },
+      dimension: {
+        type: 'string',
+        enum: dimensions.map((dimension) => dimension.id),
+        description: 'state: which dimension of the learner’s understanding.',
+      },
+      level: {
+        type: 'string',
+        description: `state: the proposed level. ${dimensions.map((dimension) => `${dimension.id}: ${dimension.levels.join(' | ')}`).join('; ')}.`,
+      },
     },
-    rationale: {
-      type: 'string',
-      minLength: 1,
-      description: 'Why you propose this, so the learner can judge it.',
-    },
-    label: { type: 'string', description: 'claim: the claim, as the learner would state it.' },
-    about: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'claim: ids of the concepts or questions the claim is about.',
-    },
-    from: { type: 'string', description: 'link: the id of the node the edge starts from.' },
-    to: { type: 'string', description: 'link: the id of the node the edge points to.' },
-    relation: {
-      type: 'string',
-      description: 'link: a registered edge type, for example refers_to, supports, contradicts.',
-    },
-    target: { type: 'string', description: 'state: the id of the node the change is about.' },
-    dimension: {
-      type: 'string',
-      enum: RECORDABLE_DIMENSIONS.map((dimension) => dimension.id),
-      description: 'state: which dimension of the learner’s understanding.',
-    },
-    level: {
-      type: 'string',
-      description: `state: the proposed level. ${RECORDABLE_DIMENSIONS.map((dimension) => `${dimension.id}: ${dimension.levels.join(' | ')}`).join('; ')}.`,
-    },
-  },
-  required: ['kind', 'rationale'],
-  additionalProperties: false,
-})
+    required: ['kind', 'rationale'],
+    additionalProperties: false,
+  })
+}
 
 interface DistillInput {
   title?: string
@@ -263,7 +266,7 @@ export function createEpistemeMcpServer(
       title: 'Propose a change to the learner’s understanding',
       description:
         'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the learner decides on it themselves; you cannot decide for them. If your host can show the learner a form, they are asked right away; otherwise it waits in their review queue. A proposal that could never be accepted is refused with the reason.',
-      inputSchema: PROPOSE_INPUT,
+      inputSchema: proposeInput(session.recordableDimensions),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async (input, context) => {

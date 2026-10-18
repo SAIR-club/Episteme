@@ -1,3 +1,5 @@
+import { learnScene, type SessionScene } from '@episteme/application'
+
 /**
  * What the service is composed with for one scene (ADR 0010, decision 8).
  */
@@ -67,14 +69,24 @@ export interface SceneProfile {
   readonly name: string
   /** Seeded on first start, before the service accepts a request. Seeding is idempotent. */
   readonly seed: SeedTopic
+  /** The packs, distillation policy and recordable dimensions the session is opened with (ADR 0013). */
+  readonly scene: SessionScene
 }
 
-/** Default scene profile with blank starting topic. */
+/**
+ * A profile on the built-in Learn scene with a blank starting topic, for the development CLI.
+ *
+ * @deprecated Its scene is the deprecated built-in Learn scene. A scene's own launcher supplies its profile.
+ */
 export function defaultProfile(seed: SeedTopic = BLANK_TOPIC): SceneProfile {
-  return { name: 'default', seed }
+  return { name: 'default', seed, scene: learnScene }
 }
 
-/** The Learn scene, starting from `topic`, or from the transformer demonstration topic. */
+/**
+ * The Learn scene, starting from `topic`, or from the transformer demonstration topic.
+ *
+ * @deprecated MindLink supplies the Learn profile (ADR 0013); this one is removed in step M6.
+ */
 export function learnProfile(topic: SeedTopic = TRANSFORMERS): SceneProfile {
-  return { name: 'learn', seed: topic }
+  return { name: 'learn', seed: topic, scene: learnScene }
 }

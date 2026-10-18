@@ -1,10 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import {
-  RECORDABLE_DIMENSIONS,
-  isRefusal,
-  type Decision,
-  type LearnSession,
-} from '@episteme/application'
+import { isRefusal, type Decision, type LearnSession } from '@episteme/application'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -228,7 +223,7 @@ export async function handleApi(
         ...at(session),
         scene: profile.name,
         topic: { title: profile.seed.title, about: profile.seed.about, seeded },
-        dimensions: RECORDABLE_DIMENSIONS,
+        dimensions: session.recordableDimensions,
         nodes,
         understanding,
         openEnds: session.openEnds(),
