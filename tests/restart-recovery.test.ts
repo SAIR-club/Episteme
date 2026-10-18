@@ -131,7 +131,7 @@ describe('restart recovery', () => {
   })
 
   it('carries understanding across a restart and changes the next interaction', async () => {
-    // 鈹€鈹€ Session 1 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ── Session 1 ────────────────────────────────────────────────────────────
     const storageA = await openLocalStorage(filePath)
     const session1 = await openEpisteme(storageA)
     expect(session1.log.eventCount).toBe(0)
@@ -159,14 +159,14 @@ describe('restart recovery', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    // 鈹€鈹€ Shutdown 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ── Shutdown ─────────────────────────────────────────────────────────────
     // Nothing is shared with what follows: a second adapter reads the file from scratch.
     const storageB = new LocalStorageAdapter(filePath)
     const loaded = await storageB.open()
 
     expect(loaded.events.events.length).toBe(session1.log.eventCount)
 
-    // 鈹€鈹€ Session 2: a new process, the same history 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // ── Session 2: a new process, the same history ────────────────────────────
     const session2 = await openEpisteme(storageB)
 
     // The understanding is back, derived from the reloaded events rather than a saved snapshot.
