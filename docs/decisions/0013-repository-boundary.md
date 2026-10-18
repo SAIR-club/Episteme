@@ -114,6 +114,29 @@ marks them **legacy**: they are read and displayed, never offered for new input.
 current one (`weak` → `anecdotal`?) is a question of meaning, not a migration, and is left to a later ADR if it
 is ever needed. A v0.1.0 graph is opened by Learner's launcher, not by Episteme's development CLI.
 
+### Scene extensions
+
+Added while implementing step M3 (#37). A scene needs tools and routes of its own: MindLink, for example,
+offers `workflow_next` to agents and project settings to its Workspace. It cannot open a second process (ADR
+0010), so the service mounts them from the profile it is started with.
+
+- **`SceneProfile.scene`** is a `SessionScene`: the packs the graph is composed with, the distillation policy
+  `distill` uses when none is named, and the dimensions a person may record by hand. The application has no
+  scene of its own; until step M6 a session opened without one uses the deprecated built-in Learn scene.
+- **`SceneProfile.mcpTools`** are registered beside `recall`, `propose`, `distill` and `reflect`. A name that
+  repeats one of them, or another scene tool, stops the service at start.
+- **`SceneProfile.routes`** are served under `/api/v1/scene/<profile name><path>`, behind the same boundary and
+  with the same error format as every other route. A path without a leading `/`, or a method and path declared
+  twice, stops the service at start.
+- **Both receive a `SceneView`, never the session.** The view reads, proposes and distills; it has no `decide`,
+  `record`, `addNode`, `link`, `graph` or `log`, at run time as well as in its type. A scene extension is
+  reachable by an agent, so handing it the session would give an agent a way around the one human-decision
+  path. Anything a scene wants to change is proposed and waits for the person.
+- A refusal a handler throws is answered as a refusal: `isError` with its code over MCP, 422 over REST.
+
+What a scene extension may not do is the same as what an agent may not do. When a scene needs a capability
+the view does not offer, the capability is added to Episteme's application first, under the same rules.
+
 ## Migration
 
 Each step is one PR, keeps both repositories' CI green, and can be reverted on its own. No step changes the

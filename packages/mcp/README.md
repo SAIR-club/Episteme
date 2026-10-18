@@ -81,7 +81,7 @@ away, using the multi-round-trip model of MCP 2026-07-28 (ADR 0008):
 1. `propose` keeps the draft and returns `input_required`. The result carries a form offering accept, modify
    or dismiss, plus the one field a modification of this kind changes, and a `requestState` naming the draft.
 2. The host shows the form to the user and retries the original call, with the answer in `inputResponses`.
-3. The retry hands the answer to `LearnSession.decide()`, the same path the Learn review queue uses.
+3. The retry hands the answer to `CognitiveSession.decide()`, the same path the Learn review queue uses.
 
 Both values that come back are treated as untrusted. `requestState` is sealed with an HMAC under a key held
 only by the host process, expires after fifteen minutes, and is bound to the method. A forged or expired

@@ -74,6 +74,7 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | route                             | does                                                                                                                               | changes anything |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | `GET /api/v1/state`               | everything a Workspace draws in one read: nodes, understanding, open ends, progress, pending suggestions, dimensions, scene, topic | no               |
+| `GET /api/v1/vocabulary`          | every registered dimension with its levels, which levels are legacy, and whether the scene lets a person record it                 | no               |
 | `GET /api/v1/suggestions`         | the pending suggestions                                                                                                            | no               |
 | `POST /api/v1/recall`             | `{ question }` → what is already understood that bears on it, and why. Same result as MCP `recall`                                 | no               |
 | `GET /api/v1/reflect`             | progress and the number of pending suggestions. Same result as MCP `reflect`                                                       | no               |
@@ -82,6 +83,9 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `POST /api/v1/distill`            | `{ text, title? }` → pending suggestions distilled from material. Same result as MCP `distill`                                     | drafts only      |
 | `POST /api/v1/record`             | `{ target, dimensions, reason? }` → what the person states about their own understanding                                           | yes              |
 | `POST /api/v1/nodes`              | `{ label, kind?: claim \| concept }` → a node of the person's own                                                                  | yes              |
+
+A scene may add routes of its own under `/api/v1/scene/<profile name>/…` (ADR 0013, _Scene extensions_). They
+answer with the same revision fields and error format, and cannot decide or record.
 
 There is no route that answers a question. The service recalls, validates, records and projects. Writing an
 answer from what was recalled belongs to the agent, or to a client that has one.
