@@ -1,6 +1,6 @@
 import type {
   ActorId,
-  CoreGraph,
+  GraphReadView,
   EventLog,
   GraphNode,
   NodeId,
@@ -74,7 +74,7 @@ export interface RetrieveContextOptions {
  * Retrieves the cognitive context relevant to a query.
  */
 export function retrieveRelevantContext(
-  graph: CoreGraph,
+  graph: GraphReadView,
   log: EventLog,
   question: string,
   options: RetrieveContextOptions = {},
@@ -93,7 +93,7 @@ export function retrieveRelevantContext(
  */
 export async function retrieveWith(
   retriever: Retriever,
-  graph: CoreGraph,
+  graph: GraphReadView,
   log: EventLog,
   question: string,
   options: RetrieveContextOptions = {},

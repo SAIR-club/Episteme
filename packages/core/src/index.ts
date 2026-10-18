@@ -151,6 +151,12 @@ export { toSerializedEvent, fromSerializedEvent } from './events/serialization.j
 
 // ── Projection: one graph, many views ────────────────────────────────────────
 export { project, selectSeeds, dimensionsOf, toSubGraph } from './projection/index.js'
+export {
+  isEdgeVisible,
+  isNodeVisible,
+  visibleTo,
+  type GraphReadView,
+} from './visibility/index.js'
 export type { Projection, ProjectionFilter } from './projection/index.js'
 
 // ── Retrieval: getting previous understanding back ───────────────────────────

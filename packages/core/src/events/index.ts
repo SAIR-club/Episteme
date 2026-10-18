@@ -1,6 +1,7 @@
 import { EpistemeError, isEpistemeError } from '../errors.js'
 import type { GuardGraphView, GraphMutation } from '../guards/index.js'
 import type { Registries } from '../graph/registries.js'
+import { isNodeVisible } from '../visibility/index.js'
 import { validateMutation } from '../guards/index.js'
 import type { CognitiveStateView } from '../graph/graph.js'
 import { asId } from '../ontology/ids.js'
@@ -621,6 +622,21 @@ export class EventLog implements CognitiveStateView {
       dimensions: request.dimensions,
     }
     validateMutation(mutation, { registries: this.#registries, graph: this.#graph })
+    // A person can only hold state on what they can see (ADR 0014, decision 3). Otherwise a commit would
+    // reach into someone else's private node, and its history would then make that node visible to them.
+    // Visibility is about people: an agent's state is its own axis (state belongs to the actor), and an agent
+    // has no private space to protect or to reach out of.
+    const target = this.#graph.getNode(request.target)
+    if (
+      target !== undefined &&
+      this.#graph.getActor(request.actorId)?.kind === 'human' &&
+      !isNodeVisible(target, request.actorId, (node, actor) => this.hasState(node, actor))
+    ) {
+      throw new EpistemeError(
+        'guard_rejected',
+        `"${request.target}" is not visible to ${request.actorId}, so it cannot hold their state`,
+      )
+    }
 
     const parent = this.#continuationOn(branch.id)
     const event: Mutable<StateEvent> = {

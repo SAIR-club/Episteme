@@ -56,6 +56,17 @@ export interface Episteme {
   readonly actorId: ActorId
   /** Writes the event history through the store, if one is configured. */
   persist(): Promise<void>
+  /**
+   * Registers an actor met after composing, such as a person signing in to a shared service. Both views of the
+   * graph learn it, so the log's validation knows a confirming human as well as the application does. An actor
+   * already registered is left as it is.
+   */
+  registerActor(actor: Actor): void
+}
+
+/** Registers `actor` on each graph that does not know it yet. */
+function registerOn(graphs: readonly CoreGraph[], actor: Actor): void {
+  for (const graph of graphs) if (graph.getActor(actor.id) === undefined) graph.registerActor(actor)
 }
 
 export const DEFAULT_HUMAN_ID = asId<ActorId>('actor_human')
@@ -98,6 +109,7 @@ export function compose(options: ComposeOptions = {}): Episteme {
     registries,
     actorId,
     persist: () => log.persist(),
+    registerActor: (actor) => registerOn([graph, wired], actor),
   }
 }
 
@@ -133,7 +145,14 @@ export async function openEpisteme(
   const wired = createGraph({ storage: store, registries, state: log, clock, actorId })
   for (const actor of options.actors ?? []) wired.registerActor(actor)
 
-  return { graph: wired, log, registries, actorId, persist: () => log.persist() }
+  return {
+    graph: wired,
+    log,
+    registries,
+    actorId,
+    persist: () => log.persist(),
+    registerActor: (actor) => registerOn([graph, wired], actor),
+  }
 }
 
 /** An in-memory instance on a fixed clock, for a demo or a test that must be reproducible. */
