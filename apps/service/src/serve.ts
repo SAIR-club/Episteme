@@ -39,6 +39,7 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `        --public-origin <地址>  共享部署对外的地址，例如 https://episteme.example.edu\n` +
       `        --host <地址>       监听地址（默认 127.0.0.1）\n` +
       `        --trust-elicitation 共享模式下仍把 agent 弹出的表单回答当作本人的决定\n` +
+      `        --sharing           允许发布理解（ADR 0014）；第一次发布前会先备份图谱文件\n` +
       `    -h, --help              显示这份说明\n` +
       `\n  管理用户和令牌（作用于 --users 指定的文件）：\n` +
       `    pnpm serve users add <名字>\n` +
@@ -161,6 +162,7 @@ try {
     profile: defaultProfile(topic),
     ...(workspacePath === undefined ? {} : { workspace: resolve(workspacePath) }),
     ...(host === undefined ? {} : { host }),
+    sharing: argv.includes('--sharing'),
     ...(shared
       ? {
           mode: 'shared' as const,
