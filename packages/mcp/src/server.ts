@@ -12,7 +12,7 @@ import {
   MAX_MATERIAL,
   type DistillOutcome,
   type HostItem,
-  type LearnSession,
+  type CognitiveSession,
   type Proposal,
   type RecordableDimension,
   type RecallResult,
@@ -236,7 +236,7 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
 
 /** One MCP server over one session. Built per request by the HTTP endpoint; it holds no state of its own. */
 export function createEpistemeMcpServer(
-  session: LearnSession,
+  session: CognitiveSession,
   codec: RequestStateCodec<PendingDecisionState>,
 ): McpServer {
   // Every echoed `requestState` is verified before a handler runs. A forged or expired one never reaches it.

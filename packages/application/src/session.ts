@@ -274,13 +274,13 @@ export interface SessionOptions {
 }
 
 /**
- * A live Learn session.
+ * A live session over one graph, for one scene.
  *
  * Holds one composed instance and one retriever, so every call reads the same graph and the same event
  * history. Rebuilding the retriever per call would reintroduce the possibility of a display that does not
  * match the answer it accompanies.
  */
-export class LearnSession {
+export class CognitiveSession {
   readonly #episteme: Episteme
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: defaultResponder })
@@ -319,7 +319,7 @@ export class LearnSession {
    * The ordering — load, then compose — is the rule `@episteme/sdk` exists to hold, so this does not
    * repeat it.
    */
-  static async open(options: SessionOptions = {}): Promise<LearnSession> {
+  static async open(options: SessionOptions = {}): Promise<CognitiveSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
     const scene = options.scene ?? learnScene
@@ -328,7 +328,7 @@ export class LearnSession {
     if (options.filePath === undefined) {
       const { compose } = await import('@episteme/sdk')
       const episteme = compose({ actors, actorId: HUMAN, packs })
-      return new LearnSession(
+      return new CognitiveSession(
         scene,
         episteme,
         new HybridRetriever(
@@ -358,7 +358,7 @@ export class LearnSession {
       await storage.close()
       throw error
     }
-    const session = new LearnSession(
+    const session = new CognitiveSession(
       scene,
       episteme,
       new HybridRetriever(
@@ -2278,4 +2278,7 @@ function progressLine(touched: number, settled: number): string {
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }
 
-export { LearnSession as CognitiveSession }
+/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3); the alias is removed one release later. */
+export const LearnSession = CognitiveSession
+/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3). */
+export type LearnSession = CognitiveSession

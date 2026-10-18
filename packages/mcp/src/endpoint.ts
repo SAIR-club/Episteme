@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
-import type { LearnSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import {
   createMcpHandler,
   hostHeaderValidationResponse,
@@ -35,7 +35,7 @@ export interface McpEndpoint {
 /** Bounded like the SDK's own default, so a hostile body cannot exhaust memory before the SDK sees it. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
-export function createMcpEndpoint(session: LearnSession): McpEndpoint {
+export function createMcpEndpoint(session: CognitiveSession): McpEndpoint {
   // One codec for the endpoint's lifetime: a server is built per request, and the round that verifies a
   // learner's answer is a different request from the one that asked.
   const codec = createDecisionCodec()

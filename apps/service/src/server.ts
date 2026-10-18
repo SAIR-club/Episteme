@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession } from '@episteme/application'
+import { CognitiveSession } from '@episteme/application'
 import { createMcpEndpoint } from '@episteme/mcp'
 import { API_PREFIX, handleApi, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
@@ -47,7 +47,7 @@ const MCP_PATH = '/mcp'
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
   const profile = options.profile ?? learnProfile()
-  const session = await LearnSession.open({ filePath: graph, scene: profile.scene })
+  const session = await CognitiveSession.open({ filePath: graph, scene: profile.scene })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
@@ -59,7 +59,7 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
 }
 
 async function seedTopicIfPresent(
-  session: LearnSession,
+  session: CognitiveSession,
   topic?: SeedTopic,
 ): Promise<{ seeded: boolean }> {
   if (topic === undefined || topic.nodes.length === 0) return { seeded: false }
@@ -90,7 +90,7 @@ async function seedTopicIfPresent(
 }
 
 async function serve(
-  session: LearnSession,
+  session: CognitiveSession,
   graph: string,
   profile: SceneProfile,
   options: ServiceOptions,

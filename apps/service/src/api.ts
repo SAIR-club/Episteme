@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isRefusal, type Decision, type LearnSession } from '@episteme/application'
+import { isRefusal, type Decision, type CognitiveSession } from '@episteme/application'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -15,7 +15,7 @@ import type { SceneProfile } from './profile.js'
 export const API_PREFIX = '/api/v1'
 
 export interface ApiContext {
-  readonly session: LearnSession
+  readonly session: CognitiveSession
   readonly profile: SceneProfile
   /** Whether this start seeded the profile's topic, or found it already there. */
   readonly seeded: boolean
@@ -25,7 +25,7 @@ export interface ApiContext {
  * Which state a result describes: the session's revision, and the epoch it counts within. A revision alone
  * starts again from zero after a restart, so only the pair identifies a state.
  */
-function at(session: LearnSession): { readonly epoch: string; readonly revision: number } {
+function at(session: CognitiveSession): { readonly epoch: string; readonly revision: number } {
   return { epoch: session.epoch, revision: session.revision }
 }
 
@@ -37,7 +37,7 @@ function at(session: LearnSession): { readonly epoch: string; readonly revision:
  * revision the change left behind, which would claim the result describes that state.
  */
 export async function readSettled<T>(
-  session: LearnSession,
+  session: CognitiveSession,
   read: () => Promise<T>,
 ): Promise<{ readonly epoch: string; readonly revision: number; readonly result: T }> {
   const before = session.revision

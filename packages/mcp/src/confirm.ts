@@ -14,7 +14,7 @@ import {
 import {
   SUGGESTED_NODE_PREFIX,
   type Decision,
-  type LearnSession,
+  type CognitiveSession,
   type Proposal,
   type RecordableDimension,
   type Suggestion,
@@ -26,7 +26,7 @@ import {
  * MCP 2026-07-28 elicitation is a multi-round-trip: `propose` keeps the draft and returns `inputRequired`, a
  * form the host shows the user, plus a `requestState` naming the draft. The host retries the original call
  * with the user's answer in `inputResponses`. This module builds the form and reads the answer. It does not
- * decide anything itself: the decision goes to `LearnSession.decide`, the path every channel shares.
+ * decide anything itself: the decision goes to `CognitiveSession.decide`, the path every channel shares.
  *
  * Both values that come back are attacker-controlled. `requestState` is sealed with an HMAC under a key only
  * this process holds, expires, and is bound to the method, so a client cannot point a retry at a draft it was
@@ -136,7 +136,7 @@ function decisionSchema(proposal: Proposal, dimensions: readonly RecordableDimen
 
 /** Puts a freshly kept draft in front of the learner, through the host. */
 export async function askLearner(
-  session: LearnSession,
+  session: CognitiveSession,
   suggestion: Suggestion,
   codec: RequestStateCodec<PendingDecisionState>,
   context: ServerContext,
@@ -159,7 +159,7 @@ export async function askLearner(
  * answer, content that fails the form's schema, or a modification without the value it modifies.
  */
 export async function resolveAnswer(
-  session: LearnSession,
+  session: CognitiveSession,
   state: PendingDecisionState,
   context: ServerContext,
 ): Promise<CallToolResult> {
@@ -237,7 +237,7 @@ function decisionFrom(content: DecisionContent, proposal: Proposal): Decision | 
 }
 
 /** The form's message, in the learner's language: what is proposed, by whom, and why. */
-function describeForLearner(session: LearnSession, suggestion: Suggestion): string {
+function describeForLearner(session: CognitiveSession, suggestion: Suggestion): string {
   // An end may be a node suggested alongside this one, named `cand:<id>`; it is shown by what it proposes.
   const label = (id: string): string => {
     if (id.startsWith(SUGGESTED_NODE_PREFIX)) {
