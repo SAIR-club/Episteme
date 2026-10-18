@@ -11,7 +11,12 @@ import {
   originValidationResponse,
 } from '@modelcontextprotocol/server'
 import { createDecisionCodec } from './confirm.js'
-import { assertSceneToolNames, createEpistemeMcpServer, type SceneTool } from './server.js'
+import {
+  assertSceneToolNames,
+  createEpistemeMcpServer,
+  type McpCaller,
+  type SceneTool,
+} from './server.js'
 
 /**
  * The MCP endpoint of an Episteme host, over Streamable HTTP.
@@ -24,10 +29,10 @@ import { assertSceneToolNames, createEpistemeMcpServer, type SceneTool } from '.
  * network boundary and not authorization. Which agent may recall what is a later decision (ADR 0008).
  */
 export interface McpEndpoint {
-  /** Serves one web-standard request. */
-  fetch(request: Request): Promise<Response>
+  /** Serves one web-standard request, for `caller` when the host established one. */
+  fetch(request: Request, caller?: McpCaller): Promise<Response>
   /** Serves one `node:http` request, for a host built on `node:http`. */
-  handle(request: IncomingMessage, response: ServerResponse): Promise<void>
+  handle(request: IncomingMessage, response: ServerResponse, caller?: McpCaller): Promise<void>
   /** Aborts in-flight exchanges. The session stays open; its owner closes it. */
   close(): Promise<void>
 }
@@ -35,26 +40,51 @@ export interface McpEndpoint {
 /** Bounded like the SDK's own default, so a hostile body cannot exhaust memory before the SDK sees it. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024
 
+export interface McpEndpointOptions {
+  readonly sceneTools?: readonly SceneTool[]
+  /** Whether an elicitation answer counts as the person's decision (ADR 0012, decision 4). Defaults to true. */
+  readonly elicitationDecisions?: boolean
+  /** Host names accepted besides the loopback ones, such as a shared deployment's public name. */
+  readonly allowedHostnames?: readonly string[]
+  /** Origins accepted besides the loopback ones. */
+  readonly allowedOrigins?: readonly string[]
+}
+
 export function createMcpEndpoint(
   session: CognitiveSession,
-  options: { readonly sceneTools?: readonly SceneTool[] } = {},
+  options: McpEndpointOptions = {},
 ): McpEndpoint {
   const sceneTools = options.sceneTools ?? []
   assertSceneToolNames(sceneTools)
+  const elicitationDecisions = options.elicitationDecisions ?? true
+  const hostnames = [...localhostAllowedHostnames(), ...(options.allowedHostnames ?? [])]
+  const origins = [...localhostAllowedOrigins(), ...(options.allowedOrigins ?? [])]
   // One codec for the endpoint's lifetime: a server is built per request, and the round that verifies a
   // learner's answer is a different request from the one that asked.
   const codec = createDecisionCodec()
-  const handler = createMcpHandler(() => createEpistemeMcpServer(session, codec, sceneTools))
+  // The SDK hands the factory the request it serves, so the caller the host established travels with it.
+  const callers = new WeakMap<Request, McpCaller>()
+  const handler = createMcpHandler(({ requestInfo }) => {
+    const caller = requestInfo === undefined ? undefined : callers.get(requestInfo)
+    return createEpistemeMcpServer(session, codec, sceneTools, {
+      ...(caller === undefined ? {} : { caller }),
+      elicitationDecisions,
+    })
+  })
 
-  const fetch = async (request: Request): Promise<Response> =>
-    hostHeaderValidationResponse(request, localhostAllowedHostnames()) ??
-    originValidationResponse(request, localhostAllowedOrigins()) ??
-    handler.fetch(request)
+  const fetch = async (request: Request, caller?: McpCaller): Promise<Response> => {
+    if (caller !== undefined) callers.set(request, caller)
+    return (
+      hostHeaderValidationResponse(request, hostnames) ??
+      originValidationResponse(request, origins) ??
+      handler.fetch(request)
+    )
+  }
 
   return {
     fetch,
-    handle: async (request, response) => {
-      const answer = await fetch(await toWebRequest(request))
+    handle: async (request, response, caller) => {
+      const answer = await fetch(await toWebRequest(request), caller)
       await writeWebResponse(answer, response)
     },
     close: () => handler.close(),
