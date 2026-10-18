@@ -156,7 +156,17 @@ export {
   isNodeVisible,
   visibleTo,
   type GraphReadView,
+  type VisibilityFacts,
 } from './visibility/index.js'
+export {
+  PublicationLog,
+  type Publication,
+  type PublicationDraft,
+  type PublicationId,
+  type PublicationPreview,
+  type PublicationsState,
+  type Withdrawal,
+} from './publication/index.js'
 export type { Projection, ProjectionFilter } from './projection/index.js'
 
 // ── Retrieval: getting previous understanding back ───────────────────────────

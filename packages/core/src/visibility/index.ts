@@ -1,4 +1,4 @@
-import type { CoreGraph, GraphStats } from '../graph/graph.js'
+import type { CognitiveStateView, CoreGraph, GraphStats } from '../graph/graph.js'
 import type { ActorId, EdgeId, NodeId } from '../ontology/ids.js'
 import type { GraphEdge, GraphNode, Neighbors, NodeQuery } from '../ontology/resources.js'
 
@@ -34,28 +34,40 @@ export type GraphReadView = Pick<
   | 'stats'
 >
 
+/** What the visibility rule needs to know beyond a node itself: state held, and what is published. */
+export type VisibilityFacts = Pick<
+  CognitiveStateView,
+  'hasState' | 'isNodePublished' | 'isEdgePublished'
+>
+
 /**
- * Whether `viewer` may see `node`: they authored it, or it is reference material, or they hold state on it.
+ * Whether `viewer` may see `node` (ADR 0014, decision 2): they authored it, or it is a member of a live
+ * publication, or it is reference material, or they hold state on it.
  *
  * The last clause keeps a person's own history readable: once they recorded something about a node, it stays
- * theirs to read even if whatever made it visible is later withdrawn. Publications (ADR 0014, S4) add one more
- * clause, here.
+ * theirs to read even after the publication that showed it to them is withdrawn.
  */
-export function isNodeVisible(
-  node: GraphNode,
-  viewer: ActorId,
-  hasState: (target: NodeId, actorId: ActorId) => boolean,
-): boolean {
-  return node.actorId === viewer || node.meta.tier === 'reference' || hasState(node.id, viewer)
+export function isNodeVisible(node: GraphNode, viewer: ActorId, facts: VisibilityFacts): boolean {
+  return (
+    node.actorId === viewer ||
+    facts.isNodePublished(node.id) ||
+    node.meta.tier === 'reference' ||
+    facts.hasState(node.id, viewer)
+  )
 }
 
-/** Whether `viewer` may see `edge`: it is their own, and both its ends are visible to them. */
+/** Whether `viewer` may see `edge`: it is their own or published, and both its ends are visible to them. */
 export function isEdgeVisible(
   edge: GraphEdge,
   viewer: ActorId,
   nodeVisible: (id: NodeId) => boolean,
+  facts: Pick<VisibilityFacts, 'isEdgePublished'>,
 ): boolean {
-  return edge.actorId === viewer && nodeVisible(edge.from) && nodeVisible(edge.to)
+  return (
+    (edge.actorId === viewer || facts.isEdgePublished(edge.id)) &&
+    nodeVisible(edge.from) &&
+    nodeVisible(edge.to)
+  )
 }
 
 /**
@@ -65,11 +77,10 @@ export function isEdgeVisible(
  */
 export function visibleTo(graph: GraphReadView, viewer: ActorId): GraphReadView {
   const nodeVisible = (node: GraphNode | undefined): node is GraphNode =>
-    node !== undefined &&
-    isNodeVisible(node, viewer, (target, actor) => graph.state.hasState(target, actor))
+    node !== undefined && isNodeVisible(node, viewer, graph.state)
   const visibleId = (id: NodeId): boolean => nodeVisible(graph.getNode(id))
   const edgeVisible = (edge: GraphEdge | undefined): edge is GraphEdge =>
-    edge !== undefined && isEdgeVisible(edge, viewer, visibleId)
+    edge !== undefined && isEdgeVisible(edge, viewer, visibleId, graph.state)
   const edges = (list: readonly GraphEdge[]): readonly GraphEdge[] => list.filter(edgeVisible)
 
   return {

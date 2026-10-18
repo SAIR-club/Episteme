@@ -35,11 +35,17 @@ export interface CognitiveStateView {
   ): DimensionIndex
   /** Whether any recorded state exists for this target and actor. */
   hasState(target: NodeId, actorId: ActorId): boolean
+  /** Whether a node is a member of a live publication (ADR 0014), so everyone may see it. */
+  isNodePublished(id: NodeId | string): boolean
+  /** Whether an edge is part of a live publication. */
+  isEdgePublished(id: string): boolean
 }
 
 export const emptyStateView: CognitiveStateView = {
   stateOf: () => new Map(),
   hasState: () => false,
+  isNodePublished: () => false,
+  isEdgePublished: () => false,
 }
 
 export interface GraphNodeDraft {
