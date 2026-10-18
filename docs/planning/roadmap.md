@@ -99,7 +99,9 @@ given host delivers is measured host by host, not assumed (ADR 0008, Consequence
   learner's understanding. See Phase 4.
 - **Encryption at rest.** See Phase 4.
 - **Authentication and authorization beyond the network boundary.** Any local process can reach the endpoint.
-  A client's name is provenance only, and nothing it sends authorizes anything.
+  A client's name is provenance only, and nothing it sends authorizes anything. Decided in
+  [ADR 0012](../decisions/0012-human-review-security.md) (credentials with a kind, local and shared modes) and
+  implemented by #38.
 - **Host lifecycle and launcher UX.** The host must be started by hand, and the graph cannot be open in two
   surfaces at once.
 - **Compatibility with specific MCP hosts.** No real host or model has been run against the endpoint, so

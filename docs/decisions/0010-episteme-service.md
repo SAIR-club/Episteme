@@ -1,6 +1,8 @@
 # 0010 — The Episteme service: one host that no surface owns
 
-Status: **accepted** (2026-10-08). Amends [ADR 0008](0008-agent-plugin-surface.md).
+Status: **accepted** (2026-10-08). Amends [ADR 0008](0008-agent-plugin-surface.md). Amended by
+[ADR 0012](0012-human-review-security.md): the first two _Constraints_ are met by credentials
+with a kind, and what stays unenforced narrows to agents that run as the person with a shell.
 
 ## Context
 
