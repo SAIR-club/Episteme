@@ -201,6 +201,7 @@ describe('what still gets through', () => {
         host: own(),
         origin: `http://${own()}`,
         'sec-fetch-site': 'same-origin',
+        authorization: `Bearer ${server.humanToken ?? ''}`,
         ...JSON_TYPE,
       },
       RECORD,
@@ -212,7 +213,12 @@ describe('what still gets through', () => {
     const recorded = await raw(
       'POST',
       '/api/v1/record',
-      { host: `localhost:${server.port}`, origin: `http://localhost:${server.port}`, ...JSON_TYPE },
+      {
+        host: `localhost:${server.port}`,
+        origin: `http://localhost:${server.port}`,
+        authorization: `Bearer ${server.humanToken ?? ''}`,
+        ...JSON_TYPE,
+      },
       RECORD,
     )
     expect(recorded.status).toBe(200)

@@ -142,7 +142,10 @@ describe('the Learn queue and the MCP form, deciding the same draft at once', ()
     const [viaLearn, viaMcp] = await Promise.all([
       fetch(`${server.url}/api/v1/suggestions/decide`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${server.humanToken ?? ''}`,
+        },
         body: JSON.stringify({ id: draft?.id, action: 'accept' }),
       }),
       agent.call(

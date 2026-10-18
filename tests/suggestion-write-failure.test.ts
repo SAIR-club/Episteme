@@ -94,7 +94,7 @@ describe('the drafts store when a write fails', () => {
     await store.begin(resolution)
 
     failDraftsWrite()
-    await expect(store.complete('dec_test')).rejects.toThrow('injected')
+    await expect(store.complete('dec_test', 0)).rejects.toThrow('injected')
     expect(store.get(kept.id)).toBeDefined()
     expect(store.resolutionOf(kept.id)?.operationId).toBe('dec_test')
 

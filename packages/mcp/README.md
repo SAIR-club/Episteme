@@ -125,8 +125,9 @@ The Episteme service serves this endpoint, its REST API and any Workspace behind
 
 The endpoint also repeats the SDK's Host and Origin checks before the SDK sees a request. Without these checks, a
 web page could reach the surface through DNS rebinding or a cross-site POST. That is a network boundary, not
-authorization: any local process can still connect, and `recall` is unscoped until the follow-up ADR on scoped
-recall is accepted.
+authorization. Who the caller is comes from the credential the service resolves before the endpoint runs
+(ADR 0012): an agent's token is recorded as `actor_agent_<label>`, and without one an agent is known by its
+client name. `recall` is unscoped until ADR 0014's per-person scoping lands.
 
 ## Dependencies
 

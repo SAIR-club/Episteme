@@ -289,11 +289,39 @@ export function assertSceneToolNames(tools: readonly SceneTool[]): void {
   }
 }
 
+/**
+ * Who is calling, as the service established it from a credential (ADR 0012). Absent for a local caller
+ * without a token, who is then known only by its self-declared client name.
+ */
+export interface McpCaller {
+  readonly actorId: string
+  readonly kind: 'human' | 'agent'
+  readonly credentialId: string
+  readonly label: string
+}
+
+/** What one request's server may do beyond the tools themselves. */
+export interface McpAccess {
+  readonly caller?: McpCaller
+  /**
+   * Whether an answer to an elicitation form counts as the person's decision. True in local mode, where the
+   * host is the person's own program; false in shared mode unless the service trusts its hosts (ADR 0012,
+   * decision 4).
+   */
+  readonly elicitationDecisions: boolean
+}
+
+/** The agent a request acts as: its credential's label when it has one, else its client name. */
+function actingAgent(access: McpAccess, context: ServerContext): string {
+  return agentActorFor(access.caller?.label ?? clientNameOf(context))
+}
+
 /** One MCP server over one session. Built per request by the HTTP endpoint; it holds no state of its own. */
 export function createEpistemeMcpServer(
   session: CognitiveSession,
   codec: RequestStateCodec<PendingDecisionState>,
   sceneTools: readonly SceneTool[] = [],
+  access: McpAccess = { elicitationDecisions: true },
 ): McpServer {
   // Every echoed `requestState` is verified before a handler runs. A forged or expired one never reaches it.
   const server = new McpServer(
@@ -329,19 +357,29 @@ export function createEpistemeMcpServer(
       // A retry carrying the learner's answer to a form this tool asked for. The signed state, not the
       // arguments, says which draft it is about.
       const answered = context.mcpReq.requestState<PendingDecisionState>()
-      if (answered !== undefined) return resolveAnswer(session, answered, context)
+      if (answered !== undefined) {
+        if (!access.elicitationDecisions) {
+          return refused(
+            'elicitation_not_trusted',
+            'this service does not take a form answer as the person’s decision; it stays in their review queue',
+          )
+        }
+        return resolveAnswer(session, answered, context, access.caller)
+      }
 
       const proposal = proposalFrom(input)
       if (typeof proposal === 'string') return refused('invalid_proposal', proposal)
 
       const outcome = await session.propose(proposal, {
-        proposedBy: agentActorFor(clientNameOf(context)),
+        proposedBy: actingAgent(access, context),
         rationale: input.rationale,
       })
       if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
 
       const { suggestion } = outcome
-      if (canAskLearner(server)) return askLearner(session, suggestion, codec, context)
+      if (access.elicitationDecisions && canAskLearner(server)) {
+        return askLearner(session, suggestion, codec, context)
+      }
       return result(
         `Kept as pending suggestion ${suggestion.id}. It changes nothing until the learner accepts it; ` +
           `do not tell them it has been recorded.`,
@@ -369,7 +407,7 @@ export function createEpistemeMcpServer(
       // Who asked is recorded for provenance. With candidates, the asking agent's model did the reading and
       // proposes what is kept; without them, Episteme's distiller does.
       const outcome = await session.distill(title === undefined ? { text } : { title, text }, {
-        requestedBy: agentActorFor(clientNameOf(context)),
+        requestedBy: actingAgent(access, context),
         ...(learner === undefined ? {} : { learner }),
         ...(candidates === undefined
           ? {}
@@ -440,7 +478,7 @@ export function createEpistemeMcpServer(
         try {
           const answer = await tool.handle(args, {
             view,
-            agent: agentActorFor(clientNameOf(context)),
+            agent: actingAgent(access, context),
           })
           return result(answer.text, answer.structured)
         } catch (error) {

@@ -93,7 +93,10 @@ describe('distill over MCP', () => {
 
     const decided = await fetch(`${server.url}/api/v1/suggestions/decide`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${server.humanToken ?? ''}`,
+      },
       body: JSON.stringify({ id: question?.id, action: 'accept' }),
     })
     expect(decided.status).toBe(200)

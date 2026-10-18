@@ -30,7 +30,10 @@ async function rest<T = Record<string, unknown>>(path: string, body?: unknown): 
       ? {}
       : {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${service.humanToken ?? ''}`,
+          },
           body: JSON.stringify(body),
         },
   )

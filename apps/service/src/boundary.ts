@@ -26,18 +26,24 @@ const LOCAL_HOSTNAMES: readonly string[] = ['127.0.0.1', 'localhost', '[::1]']
 export function boundaryRefusal(
   request: IncomingMessage,
   port: number,
+  /** A shared deployment's public origin, such as `https://episteme.example.edu` (ADR 0012). */
+  publicOrigin?: string,
 ): { readonly status: number; readonly error: string } | undefined {
-  const allowedHosts = LOCAL_HOSTNAMES.map((name) => `${name}:${port}`)
+  const loopbackHosts = LOCAL_HOSTNAMES.map((name) => `${name}:${port}`)
+  const publicUrl = publicOrigin === undefined ? undefined : new URL(publicOrigin)
+  const allowedHosts =
+    publicUrl === undefined ? loopbackHosts : [...loopbackHosts, publicUrl.host.toLowerCase()]
   const host = request.headers.host?.toLowerCase()
   if (host === undefined || !allowedHosts.includes(host)) {
-    return { status: 403, error: `host "${host ?? ''}" is not this local service` }
+    return { status: 403, error: `host "${host ?? ''}" is not this service` }
   }
 
+  const allowedOrigins = [
+    ...loopbackHosts.map((name) => `http://${name}`),
+    ...(publicUrl === undefined ? [] : [publicUrl.origin.toLowerCase()]),
+  ]
   const origin = request.headers.origin
-  if (
-    origin !== undefined &&
-    !allowedHosts.map((name) => `http://${name}`).includes(origin.toLowerCase())
-  ) {
+  if (origin !== undefined && !allowedOrigins.includes(origin.toLowerCase())) {
     return { status: 403, error: `requests from "${origin}" are not accepted` }
   }
 

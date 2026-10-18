@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
+import type { Caller, Operation } from './identity.js'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -14,11 +15,28 @@ import type { SceneProfile } from './profile.js'
  */
 export const API_PREFIX = '/api/v1'
 
+/**
+ * The routes only a person may use (ADR 0012, decision 3), so authorization can run before a route does.
+ * Everything else reads, proposes or distills.
+ */
+const DECISION_ROUTES: readonly string[] = [
+  `POST ${API_PREFIX}/suggestions/decide`,
+  `POST ${API_PREFIX}/record`,
+  `POST ${API_PREFIX}/nodes`,
+]
+
+/** What a request to the API asks to do. */
+export function operationOf(method: string, path: string): Operation {
+  return DECISION_ROUTES.includes(`${method} ${path}`) ? 'decide' : 'read'
+}
+
 export interface ApiContext {
   readonly session: CognitiveSession
   readonly profile: SceneProfile
   /** Whether this start seeded the profile's topic, or found it already there. */
   readonly seeded: boolean
+  /** Who the request is for, when its credential says (ADR 0012). Authorization has already run. */
+  readonly caller: Caller | undefined
 }
 
 /**
@@ -201,7 +219,7 @@ export async function handleApi(
   request: IncomingMessage,
   response: ServerResponse,
   path: string,
-  { session, profile, seeded }: ApiContext,
+  { session, profile, seeded, caller }: ApiContext,
 ): Promise<void> {
   try {
     await route()
@@ -243,6 +261,12 @@ export async function handleApi(
       return
     }
 
+    // Every decision, dismissals included, with its channel and credential: for finding one after the fact.
+    if (path === `${API_PREFIX}/reviews` && method === 'GET') {
+      sendJson(response, 200, { ...at(session), reviews: session.reviews() })
+      return
+    }
+
     if (path === `${API_PREFIX}/suggestions` && method === 'GET') {
       sendJson(response, 200, {
         ...at(session),
@@ -256,7 +280,20 @@ export async function handleApi(
     if (path === `${API_PREFIX}/suggestions/decide` && method === 'POST') {
       const body = await readJson(request)
       const id = asString(body['id'], 'id')
-      const result = await session.decide(id, decisionFrom(body), 'learn-review')
+      const userAgent = request.headers['user-agent']
+      const result = await session.decide(
+        id,
+        decisionFrom(body),
+        'learn-review',
+        caller === undefined
+          ? undefined
+          : {
+              actorId: caller.actorId,
+              credentialId: caller.credentialId,
+              label: caller.label,
+              ...(userAgent === undefined ? {} : { userAgent }),
+            },
+      )
       if (!result.ok) {
         sendRefusal(response, 422, result.refusal.code, result.refusal.message)
         return

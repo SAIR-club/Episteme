@@ -79,7 +79,10 @@ async function get<T>(path: string): Promise<T> {
 async function decide(id: string, action: 'accept' | 'dismiss'): Promise<Record<string, unknown>> {
   const response = await fetch(`${service.apiUrl}/suggestions/decide`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${service.humanToken ?? ''}`,
+    },
     body: JSON.stringify({ id, action }),
   })
   expect(response.status).toBe(200)
@@ -316,7 +319,39 @@ describe('understanding one agent proposed, recalled by another', () => {
     })
   })
 
-  it.todo(
-    'keeps an agent from deciding its own proposal over REST, as far as ADR 0012 decides (#17)',
-  )
+  it('refuses a REST decision without the person’s token, and changes nothing (ADR 0012)', async () => {
+    // What this does NOT show: an agent that runs as the person, with a shell, can read the person's token and
+    // decide with it. ADR 0012 says so plainly. What it does show is that proposing over MCP gives an agent no
+    // way to decide, over REST or anywhere else, without presenting the person's own credential.
+    const proposed = await agentA.call('propose', {
+      kind: 'claim',
+      label: 'Attention alone does not encode order',
+      rationale: 'the learner said so',
+    })
+    expect(proposed.isError).toBeUndefined()
+    const [draft] = (await get<{ suggestions: Pending[] }>('/suggestions')).suggestions
+    const before = await get<{ events: number; nodes: unknown[] }>('/state')
+
+    for (const headers of [
+      { 'content-type': 'application/json' },
+      { 'content-type': 'application/json', authorization: 'Bearer not-a-token' },
+    ]) {
+      const response = await fetch(`${service.apiUrl}/suggestions/decide`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ id: draft?.id, action: 'accept' }),
+      })
+      expect(response.status).toBe(401)
+      expect(((await response.json()) as { code: string }).code).toBe('unauthenticated')
+    }
+
+    expect(await get<{ events: number; nodes: unknown[] }>('/state')).toMatchObject({
+      events: before.events,
+      nodes: before.nodes,
+    })
+    expect((await get<{ suggestions: Pending[] }>('/suggestions')).suggestions).toHaveLength(1)
+
+    // The person's own decision still goes through the same route.
+    expect(await decide(draft?.id ?? '', 'accept')).toMatchObject({ result: { ok: true } })
+  })
 })

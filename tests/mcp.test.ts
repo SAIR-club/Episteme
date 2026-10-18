@@ -61,7 +61,10 @@ describe('recall', () => {
   it('returns what the human recorded, and whether it can be built on', async () => {
     await fetch(`${server.url}/api/v1/record`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${server.humanToken ?? ''}`,
+      },
       body: JSON.stringify({
         target: 'q_why_order',
         dimensions: { confidence: 'high', articulation: 'high' },

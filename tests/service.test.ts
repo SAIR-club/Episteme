@@ -26,7 +26,10 @@ async function get(path: string): Promise<{ status: number; body: Json }> {
 async function post(path: string, body: unknown): Promise<{ status: number; body: Json }> {
   const response = await fetch(`${service.url}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${service.humanToken ?? ''}`,
+    },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
   return { status: response.status, body: (await response.json().catch(() => ({}))) as Json }

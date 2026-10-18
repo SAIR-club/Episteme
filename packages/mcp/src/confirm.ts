@@ -19,6 +19,7 @@ import {
   type RecordableDimension,
   type Suggestion,
 } from '@episteme/application'
+import type { McpCaller } from './server.js'
 
 /**
  * Asking the learner directly, through the agent's host (ADR 0008).
@@ -162,6 +163,7 @@ export async function resolveAnswer(
   session: CognitiveSession,
   state: PendingDecisionState,
   context: ServerContext,
+  caller?: McpCaller,
 ): Promise<CallToolResult> {
   const suggestion = session
     .pendingSuggestions()
@@ -191,7 +193,14 @@ export async function resolveAnswer(
     )
   }
 
-  const result = await session.decide(suggestion.id, decision, 'mcp-elicitation')
+  const result = await session.decide(
+    suggestion.id,
+    decision,
+    'mcp-elicitation',
+    caller === undefined
+      ? undefined
+      : { actorId: caller.actorId, credentialId: caller.credentialId, label: caller.label },
+  )
   // Decided by another channel between the read above and this decision's turn in the queue.
   if (!result.ok && result.refusal.code === 'unknown_suggestion')
     return alreadyDecided(suggestion.id)
