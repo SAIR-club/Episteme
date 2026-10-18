@@ -183,6 +183,8 @@ export class EventLog implements CognitiveStateView {
 
   readonly #branches = new Map<BranchId, Branch>()
   readonly #events = new Map<EventId, StateEvent>()
+  /** Each event's position in the log, the order it was committed or restored in. Derived, never persisted. */
+  readonly #sequence = new Map<EventId, number>()
   readonly #branchEvents = new Map<BranchId, EventId[]>()
   /** `target|actor` → events, in commit order. The read path for projection. */
   readonly #bySubject = new Map<string, EventId[]>()
@@ -241,6 +243,7 @@ export class EventLog implements CognitiveStateView {
         dimensions: new Map(event.dimensions),
       })
       this.#events.set(restored.id, restored)
+      this.#sequence.set(restored.id, this.#sequence.size)
       pushTo(this.#bySubject, subjectKey(restored.target, restored.actorId), restored.id)
     }
 
@@ -398,10 +401,14 @@ export class EventLog implements CognitiveStateView {
       }
     }
 
-    // `toReversed` rather than `reverse`: the internal index must never be reordered by a
-    // read. Mutating it in place silently inverted every later query, including which events
-    // were still open ends.
-    const ascending = collected.toReversed()
+    // A subject's events are not one chain: a branch runs through every node its actor recorded, so the
+    // walk above stops where another node was recorded in between and resumes from the next open end.
+    // Reversing what was collected would then order the segments by which open end came first, and the
+    // fold would end on a stale value. Sorting by position in the log is chronological whatever the walk.
+    // `toSorted` rather than `sort`: the internal index must never be reordered by a read.
+    const ascending = collected.toSorted(
+      (left, right) => (this.#sequence.get(left.id) ?? 0) - (this.#sequence.get(right.id) ?? 0),
+    )
     return options.order === 'descending' ? ascending.toReversed() : ascending
   }
 
@@ -633,6 +640,7 @@ export class EventLog implements CognitiveStateView {
     Object.freeze(event)
 
     this.#events.set(event.id, event)
+    this.#sequence.set(event.id, this.#sequence.size)
     this.#branchEvents.get(branch.id)?.push(event.id)
     pushTo(this.#bySubject, subjectKey(event.target, event.actorId), event.id)
     this.#revision += 1

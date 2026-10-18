@@ -150,4 +150,35 @@ describe('state reduction', () => {
       }),
     ).toThrow(/at least one dimension/i)
   })
+
+  it('takes the latest value when changes to another node came in between', () => {
+    // A branch's events chain through every node, so this node's history is split where another node was
+    // recorded. The fold must still run oldest first across those segments.
+    const context = createFixture()
+    const claimId = seedClaim(context)
+    const otherId = seedClaim(context, 'claim-2')
+    const confidence = asId<DimensionId>(DIMENSION.confidence)
+    const commit = (target: NodeId, value: string) =>
+      context.log.commit({
+        target,
+        actorId: context.humanId,
+        dimensions: dimensions([DIMENSION.confidence, level(value)]),
+      })
+
+    const first = commit(claimId, 'low')
+    commit(otherId, 'medium')
+    const second = commit(claimId, 'high')
+    expect(context.log.stateOf(claimId, context.humanId).get(confidence)).toEqual({
+      level: 'high',
+    })
+
+    commit(otherId, 'low')
+    const third = commit(claimId, 'medium')
+    expect(context.log.stateOf(claimId, context.humanId).get(confidence)).toEqual({
+      level: 'medium',
+    })
+    expect(
+      context.log.history({ target: claimId, actorId: context.humanId }).map((event) => event.id),
+    ).toEqual([first.id, second.id, third.id])
+  })
 })
