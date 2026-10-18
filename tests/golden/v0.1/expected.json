@@ -1,0 +1,402 @@
+{
+  "nodes": ["c_attention", "c_position", "q_order", "k_invariant"],
+  "understanding": {
+    "c_attention": [
+      {
+        "id": "transfer",
+        "level": "near"
+      }
+    ],
+    "c_position": [],
+    "q_order": [
+      {
+        "id": "articulation",
+        "level": "low"
+      },
+      {
+        "id": "confidence",
+        "level": "high"
+      }
+    ],
+    "k_invariant": [
+      {
+        "id": "confidence",
+        "level": "medium"
+      },
+      {
+        "id": "conflict",
+        "level": "suspected"
+      },
+      {
+        "id": "evidence",
+        "level": "weak"
+      }
+    ]
+  },
+  "events": 5,
+  "pending": [
+    {
+      "id": "sug_005154f3-e46a-478a-9be9-f31a4106f333",
+      "proposal": {
+        "kind": "state",
+        "target": "k_invariant",
+        "dimension": "articulation",
+        "level": "medium"
+      },
+      "proposedBy": "actor_agent_golden"
+    },
+    {
+      "id": "sug_3313fe48-304d-47cf-8135-a03ca2de8f6f",
+      "proposal": {
+        "kind": "node",
+        "nodeType": "question",
+        "label": "为什么需要位置编码？",
+        "properties": {
+          "text": "为什么需要位置编码？"
+        }
+      },
+      "proposedBy": "actor_agent_rule-based-distiller"
+    },
+    {
+      "id": "sug_65432aa2-e876-47db-8af7-88fb0b43997d",
+      "proposal": {
+        "kind": "node",
+        "nodeType": "claim",
+        "label": "因为自注意力本身不区分词的顺序。",
+        "properties": {
+          "text": "因为自注意力本身不区分词的顺序。"
+        }
+      },
+      "proposedBy": "actor_agent_rule-based-distiller"
+    },
+    {
+      "id": "sug_7e925bda-8410-470b-87aa-38b4a4024184",
+      "proposal": {
+        "kind": "link",
+        "from": "cand:sug_65432aa2-e876-47db-8af7-88fb0b43997d",
+        "to": "cand:sug_3313fe48-304d-47cf-8135-a03ca2de8f6f",
+        "relation": "answers"
+      },
+      "proposedBy": "actor_agent_rule-based-distiller"
+    }
+  ],
+  "recall": {
+    "question": "why does attention need to know the order",
+    "retriever": "hybrid",
+    "summary": "Why does a transformer need to be told the order? [articulation=low, confidence=high]; Attention alone is permutation invariant [confidence=medium, conflict=suspected, evidence=weak] (unresolved: suspected); Self-attention [transfer=near]",
+    "known": [
+      {
+        "nodeId": "q_order",
+        "label": "Why does a transformer need to be told the order?",
+        "settled": true,
+        "openConflicts": [],
+        "dimensions": [
+          {
+            "id": "articulation",
+            "level": "low"
+          },
+          {
+            "id": "confidence",
+            "level": "high"
+          }
+        ]
+      },
+      {
+        "nodeId": "k_invariant",
+        "label": "Attention alone is permutation invariant",
+        "settled": true,
+        "openConflicts": ["suspected"],
+        "dimensions": [
+          {
+            "id": "confidence",
+            "level": "medium"
+          },
+          {
+            "id": "conflict",
+            "level": "suspected"
+          },
+          {
+            "id": "evidence",
+            "level": "weak"
+          }
+        ]
+      },
+      {
+        "nodeId": "c_attention",
+        "label": "Self-attention",
+        "settled": false,
+        "openConflicts": [],
+        "dimensions": [
+          {
+            "id": "transfer",
+            "level": "near"
+          }
+        ]
+      }
+    ],
+    "ranked": [
+      {
+        "nodeId": "q_order",
+        "label": "Why does a transformer need to be told the order?",
+        "type": "question",
+        "score": 0.6721832697960923,
+        "origin": "match",
+        "matchedTerms": ["need", "order"],
+        "reasons": [
+          {
+            "signal": "semantic",
+            "value": 0.7391491482878366,
+            "weight": 0.5,
+            "contribution": 0.3695745741439183,
+            "share": 0.5498122175162575,
+            "explanation": "close in meaning to your question (74% similarity)",
+            "explanationZh": "和你的问题在含义上相近（相似度 74%）",
+            "labelZh": "语义"
+          },
+          {
+            "signal": "graph",
+            "value": 1,
+            "weight": 0.15,
+            "contribution": 0.15,
+            "share": 0.22315342666219987,
+            "explanation": "is directly connected to what you asked about",
+            "explanationZh": "和你检索到的内容直接相连",
+            "labelZh": "图谱"
+          },
+          {
+            "signal": "lexical",
+            "value": 0.5,
+            "weight": 0.2,
+            "contribution": 0.1,
+            "share": 0.14876895110813326,
+            "explanation": "shares the words \"need\", \"order\"",
+            "explanationZh": "和你的问题共有这些词：「need」、「order」",
+            "labelZh": "词面"
+          },
+          {
+            "signal": "recency",
+            "value": 0.6521739130434783,
+            "weight": 0.05,
+            "contribution": 0.03260869565217391,
+            "share": 0.04851161449178258,
+            "explanation": "recently added or changed",
+            "explanationZh": "最近新增或改动过",
+            "labelZh": "新旧"
+          },
+          {
+            "signal": "cognitive",
+            "value": 0.2,
+            "weight": 0.1,
+            "contribution": 0.020000000000000004,
+            "share": 0.029753790221626657,
+            "explanation": "your own recorded understanding makes it worth resurfacing",
+            "explanationZh": "你自己记录过的理解让它值得再次出现",
+            "labelZh": "你的理解"
+          }
+        ]
+      },
+      {
+        "nodeId": "k_invariant",
+        "label": "Attention alone is permutation invariant",
+        "type": "claim",
+        "score": 0.38633501014942223,
+        "origin": "match",
+        "matchedTerms": ["attention"],
+        "reasons": [
+          {
+            "signal": "graph",
+            "value": 1,
+            "weight": 0.15,
+            "contribution": 0.15,
+            "share": 0.38826406113695133,
+            "explanation": "is directly connected to what you asked about",
+            "explanationZh": "和你检索到的内容直接相连",
+            "labelZh": "图谱"
+          },
+          {
+            "signal": "semantic",
+            "value": 0.23267002029884437,
+            "weight": 0.5,
+            "contribution": 0.11633501014942219,
+            "share": 0.3011246899534874,
+            "explanation": "close in meaning to your question (23% similarity)",
+            "explanationZh": "和你的问题在含义上相近（相似度 23%）",
+            "labelZh": "语义"
+          },
+          {
+            "signal": "lexical",
+            "value": 0.25,
+            "weight": 0.2,
+            "contribution": 0.05,
+            "share": 0.12942135371231714,
+            "explanation": "shares the words \"attention\"",
+            "explanationZh": "和你的问题共有这些词：「attention」",
+            "labelZh": "词面"
+          },
+          {
+            "signal": "recency",
+            "value": 1,
+            "weight": 0.05,
+            "contribution": 0.05,
+            "share": 0.12942135371231714,
+            "explanation": "recently added or changed",
+            "explanationZh": "最近新增或改动过",
+            "labelZh": "新旧"
+          },
+          {
+            "signal": "cognitive",
+            "value": 0.2,
+            "weight": 0.1,
+            "contribution": 0.020000000000000004,
+            "share": 0.05176854148492686,
+            "explanation": "your own recorded understanding makes it worth resurfacing",
+            "explanationZh": "你自己记录过的理解让它值得再次出现",
+            "labelZh": "你的理解"
+          }
+        ]
+      },
+      {
+        "nodeId": "c_attention",
+        "label": "Self-attention",
+        "type": "concept",
+        "score": 0.3728941574312876,
+        "origin": "match",
+        "matchedTerms": ["attention"],
+        "reasons": [
+          {
+            "signal": "semantic",
+            "value": 0.3057883148625753,
+            "weight": 0.5,
+            "contribution": 0.15289415743128765,
+            "share": 0.4100202547674969,
+            "explanation": "close in meaning to your question (31% similarity)",
+            "explanationZh": "和你的问题在含义上相近（相似度 31%）",
+            "labelZh": "语义"
+          },
+          {
+            "signal": "graph",
+            "value": 1,
+            "weight": 0.15,
+            "contribution": 0.15,
+            "share": 0.40225891720397944,
+            "explanation": "is directly connected to what you asked about",
+            "explanationZh": "和你检索到的内容直接相连",
+            "labelZh": "图谱"
+          },
+          {
+            "signal": "lexical",
+            "value": 0.25,
+            "weight": 0.2,
+            "contribution": 0.05,
+            "share": 0.13408630573465982,
+            "explanation": "shares the words \"attention\"",
+            "explanationZh": "和你的问题共有这些词：「attention」",
+            "labelZh": "词面"
+          },
+          {
+            "signal": "cognitive",
+            "value": 0.2,
+            "weight": 0.1,
+            "contribution": 0.020000000000000004,
+            "share": 0.05363452229386394,
+            "explanation": "your own recorded understanding makes it worth resurfacing",
+            "explanationZh": "你自己记录过的理解让它值得再次出现",
+            "labelZh": "你的理解"
+          },
+          {
+            "signal": "recency",
+            "value": 0,
+            "weight": 0.05,
+            "contribution": 0,
+            "share": 0,
+            "explanation": "recently added or changed",
+            "explanationZh": "最近新增或改动过",
+            "labelZh": "新旧"
+          }
+        ]
+      },
+      {
+        "nodeId": "c_position",
+        "label": "Positional encoding",
+        "type": "concept",
+        "score": 0.20741919903897169,
+        "origin": "match",
+        "matchedTerms": [],
+        "reasons": [
+          {
+            "signal": "semantic",
+            "value": 0.2344036154692477,
+            "weight": 0.5,
+            "contribution": 0.11720180773462385,
+            "share": 0.5650480200369637,
+            "explanation": "close in meaning to your question (23% similarity)",
+            "explanationZh": "和你的问题在含义上相近（相似度 23%）",
+            "labelZh": "语义"
+          },
+          {
+            "signal": "graph",
+            "value": 0.5,
+            "weight": 0.15,
+            "contribution": 0.075,
+            "share": 0.36158658575240354,
+            "explanation": "is connected to what you asked about",
+            "explanationZh": "和你问的东西在图谱上相连",
+            "labelZh": "图谱"
+          },
+          {
+            "signal": "recency",
+            "value": 0.30434782608695654,
+            "weight": 0.05,
+            "contribution": 0.015217391304347828,
+            "share": 0.07336539421063262,
+            "explanation": "recently added or changed",
+            "explanationZh": "最近新增或改动过",
+            "labelZh": "新旧"
+          },
+          {
+            "signal": "lexical",
+            "value": 0,
+            "weight": 0.2,
+            "contribution": 0,
+            "share": 0,
+            "explanation": "no words in common with your question",
+            "explanationZh": "和你的问题没有共同词",
+            "labelZh": "词面"
+          },
+          {
+            "signal": "cognitive",
+            "value": 0,
+            "weight": 0.1,
+            "contribution": 0,
+            "share": 0,
+            "explanation": "you have not recorded anything about it",
+            "explanationZh": "你还没有为它记录过任何理解",
+            "labelZh": "你的理解"
+          }
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "signal": "semantic",
+        "weight": 0.5
+      },
+      {
+        "signal": "lexical",
+        "weight": 0.2
+      },
+      {
+        "signal": "graph",
+        "weight": 0.15
+      },
+      {
+        "signal": "cognitive",
+        "weight": 0.1
+      },
+      {
+        "signal": "recency",
+        "weight": 0.05
+      }
+    ]
+  }
+}
