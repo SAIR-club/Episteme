@@ -272,9 +272,11 @@ opt-in.
 - [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
 - [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
 - [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
-- [Roadmap](docs/roadmap/README.md)
+- [Vision](docs/planning/vision.md) · [Roadmap](docs/planning/roadmap.md) ·
+  [Decision log](docs/planning/decision-log.md) · [Open questions](docs/planning/open-questions.md) ·
+  [Discussions](docs/discussions/index.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md) ·
-  [Development status](docs/development-status.md)
+  [Current plan](docs/planning/current-plan.md)
 - [Phase 1 report](PHASE1_REPORT.md)
 - [Phase 2 report](PHASE2_REPORT.md)
 
@@ -308,7 +310,7 @@ mock as the deterministic test double the loop's proofs depend on ([ADR 0008](do
 
 Development is paused after v0.1.0. When it resumes, the first step is not a new feature: it is one end-to-end
 learning session with a real Claude Code host and a real learner, and a second session that shows whether what
-they confirmed the first time is recalled and used. See [docs/development-status.md](docs/development-status.md).
+they confirmed the first time is recalled and used. See [docs/planning/current-plan.md](docs/planning/current-plan.md).
 
 ## Technical principles
 
