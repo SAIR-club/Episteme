@@ -242,6 +242,12 @@ export async function handleApi(
       return
     }
 
+    // The registered vocabulary, so a Workspace offers only levels the graph accepts (ADR 0013).
+    if (path === `${API_PREFIX}/vocabulary` && method === 'GET') {
+      sendJson(response, 200, { ...at(session), dimensions: session.vocabulary() })
+      return
+    }
+
     if (path === `${API_PREFIX}/suggestions` && method === 'GET') {
       sendJson(response, 200, {
         ...at(session),
