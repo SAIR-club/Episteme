@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isRefusal, type Decision, type CognitiveSession } from '@episteme/application'
+import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -376,6 +376,25 @@ export async function handleApi(
         events: session.eventCount,
       })
       return
+    }
+
+    // A route the scene added. It sees the session only through the scene view.
+    const scenePrefix = `${API_PREFIX}/scene/${profile.name}`
+    if (path.startsWith(`${scenePrefix}/`)) {
+      const subpath = path.slice(scenePrefix.length)
+      const sceneRoute = profile.routes?.find(
+        (candidate) => candidate.method === method && candidate.path === subpath,
+      )
+      if (sceneRoute !== undefined) {
+        const body = method === 'POST' ? await readJson(request) : {}
+        const query = new URL(request.url ?? '/', 'http://localhost').searchParams
+        const answer = await refusing(response, async () =>
+          sceneRoute.handle({ view: sceneViewOf(session), body, query }),
+        )
+        if (answer === undefined) return
+        sendJson(response, 200, { ...at(session), ...answer })
+        return
+      }
     }
 
     sendRefusal(response, 404, 'no_route', `no route for ${method} ${path}`)

@@ -8,6 +8,8 @@ import {
 } from '@modelcontextprotocol/server'
 import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } from './confirm.js'
 import {
+  isRefusal,
+  sceneViewOf,
   MAX_HOST_ITEMS,
   MAX_MATERIAL,
   type DistillOutcome,
@@ -15,6 +17,7 @@ import {
   type CognitiveSession,
   type Proposal,
   type RecordableDimension,
+  type SceneView,
   type RecallResult,
   type ProgressSummary,
 } from '@episteme/application'
@@ -234,10 +237,63 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
   additionalProperties: false,
 })
 
+/** The tools every Episteme MCP server offers. A scene's tools may not reuse these names. */
+export const BUILT_IN_TOOLS: readonly string[] = ['recall', 'propose', 'distill', 'reflect']
+
+/** What a scene's tool receives: a view of the session that cannot decide or write, and who is calling. */
+export interface SceneToolContext {
+  readonly view: SceneView
+  /** The calling agent's actor id, from its self-declared client name. Provenance, not authentication. */
+  readonly agent: string
+}
+
+/** A scene's answer: text for the agent and the same data as structured content. */
+export interface SceneToolAnswer {
+  readonly text: string
+  readonly structured: Readonly<Record<string, unknown>>
+}
+
+/**
+ * A tool a scene adds beside the built-in ones (ADR 0013, scene extensions).
+ *
+ * It sees the session only through `SceneView`, so it can read, propose and distill, and nothing it does
+ * becomes the person's without their decision. A refusal it throws (`isRefusal`) is answered as one.
+ */
+export interface SceneTool {
+  readonly name: string
+  readonly title: string
+  readonly description: string
+  /** A JSON Schema for the arguments, of type `object`. */
+  readonly inputSchema: Readonly<Record<string, unknown>>
+  /** Declared to the host as a hint; it grants nothing. */
+  readonly readOnly: boolean
+  readonly handle: (
+    args: Readonly<Record<string, unknown>>,
+    context: SceneToolContext,
+  ) => SceneToolAnswer | Promise<SceneToolAnswer>
+}
+
+/**
+ * Throws unless every scene tool has a name of its own.
+ *
+ * Checked when the endpoint is built, so a clash stops the service at start rather than shadowing `propose`
+ * with something that behaves differently.
+ */
+export function assertSceneToolNames(tools: readonly SceneTool[]): void {
+  const seen = new Set(BUILT_IN_TOOLS)
+  for (const tool of tools) {
+    if (seen.has(tool.name)) {
+      throw new Error(`scene tool "${tool.name}" reuses the name of another tool`)
+    }
+    seen.add(tool.name)
+  }
+}
+
 /** One MCP server over one session. Built per request by the HTTP endpoint; it holds no state of its own. */
 export function createEpistemeMcpServer(
   session: CognitiveSession,
   codec: RequestStateCodec<PendingDecisionState>,
+  sceneTools: readonly SceneTool[] = [],
 ): McpServer {
   // Every echoed `requestState` is verified before a handler runs. A forged or expired one never reaches it.
   const server = new McpServer(
@@ -369,6 +425,31 @@ export function createEpistemeMcpServer(
       })
     },
   )
+
+  const view = sceneViewOf(session)
+  for (const tool of sceneTools) {
+    server.registerTool(
+      tool.name,
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: fromJsonSchema<Record<string, unknown>>(tool.inputSchema),
+        annotations: { readOnlyHint: tool.readOnly, openWorldHint: false },
+      },
+      async (args, context) => {
+        try {
+          const answer = await tool.handle(args, {
+            view,
+            agent: agentActorFor(clientNameOf(context)),
+          })
+          return result(answer.text, answer.structured)
+        } catch (error) {
+          if (!isRefusal(error)) throw error
+          return refused(error.code, error.message)
+        }
+      },
+    )
+  }
 
   return server
 }

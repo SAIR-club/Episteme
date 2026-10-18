@@ -5,7 +5,7 @@ import { CognitiveSession } from '@episteme/application'
 import { createMcpEndpoint } from '@episteme/mcp'
 import { API_PREFIX, handleApi, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
-import { learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
+import { assertSceneRoutes, learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
 export interface ServiceOptions {
@@ -47,6 +47,8 @@ const MCP_PATH = '/mcp'
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
   const profile = options.profile ?? learnProfile()
+  // Checked before the graph is opened, so a profile that cannot be served never takes the graph's lock.
+  assertSceneRoutes(profile.routes ?? [])
   const session = await CognitiveSession.open({ filePath: graph, scene: profile.scene })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
@@ -98,7 +100,7 @@ async function serve(
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
-  const mcp = createMcpEndpoint(session)
+  const mcp = createMcpEndpoint(session, { sceneTools: profile.mcpTools ?? [] })
   const workspace = options.workspace
 
   // Known once the socket is bound. No request can arrive before then.

@@ -5,4 +5,12 @@
  * edges or state events.
  */
 export { createMcpEndpoint, type McpEndpoint } from './endpoint.js'
-export { agentActorFor, createEpistemeMcpServer } from './server.js'
+export {
+  agentActorFor,
+  assertSceneToolNames,
+  BUILT_IN_TOOLS,
+  createEpistemeMcpServer,
+  type SceneTool,
+  type SceneToolAnswer,
+  type SceneToolContext,
+} from './server.js'

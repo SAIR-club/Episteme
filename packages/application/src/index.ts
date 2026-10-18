@@ -1,5 +1,6 @@
 export * from './session.js'
 export * from './scene.js'
+export * from './scene-view.js'
 export * from './learn-scene.js'
 export * from './suggestions.js'
 export * from './sources.js'

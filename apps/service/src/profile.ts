@@ -1,4 +1,5 @@
-import { learnScene, type SessionScene } from '@episteme/application'
+import { learnScene, type SceneView, type SessionScene } from '@episteme/application'
+import type { SceneTool } from '@episteme/mcp'
 
 /**
  * What the service is composed with for one scene (ADR 0010, decision 8).
@@ -71,6 +72,47 @@ export interface SceneProfile {
   readonly seed: SeedTopic
   /** The packs, distillation policy and recordable dimensions the session is opened with (ADR 0013). */
   readonly scene: SessionScene
+  /** Tools the scene adds to the MCP surface, beside `recall`, `propose`, `distill` and `reflect`. */
+  readonly mcpTools?: readonly SceneTool[]
+  /** Routes the scene adds to the REST API, served under `/api/v1/scene/<name>`. */
+  readonly routes?: readonly SceneRoute[]
+}
+
+/** What a scene's route receives: a view of the session that cannot decide or write, and the request. */
+export interface SceneRouteContext {
+  readonly view: SceneView
+  /** The JSON body of a `POST`, or an empty object. */
+  readonly body: Readonly<Record<string, unknown>>
+  readonly query: URLSearchParams
+}
+
+/**
+ * A REST route a scene adds (ADR 0013, scene extensions).
+ *
+ * Served behind the same boundary as every other route, under `/api/v1/scene/<profile name><path>`. It sees the
+ * session only through `SceneView`: deciding and recording stay on the API's own routes, the one human-decision
+ * path. A refusal it throws (`isRefusal`) is answered with 422, like every other refusal.
+ */
+export interface SceneRoute {
+  readonly method: 'GET' | 'POST'
+  /** Starts with `/`, for example `/projects`. */
+  readonly path: string
+  readonly handle: (
+    context: SceneRouteContext,
+  ) => Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>
+}
+
+/** Throws unless every route has a path that starts with `/` and no two share a method and path. */
+export function assertSceneRoutes(routes: readonly SceneRoute[]): void {
+  const seen = new Set<string>()
+  for (const route of routes) {
+    if (!route.path.startsWith('/')) {
+      throw new Error(`scene route "${route.path}" must start with "/"`)
+    }
+    const key = `${route.method} ${route.path}`
+    if (seen.has(key)) throw new Error(`scene route ${key} is declared twice`)
+    seen.add(key)
+  }
 }
 
 /**
