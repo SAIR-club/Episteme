@@ -285,9 +285,10 @@ opt-in.
 - **No real host yet.** Host-assisted distillation works with scripted MCP clients in tests. No real Claude
   Code session and no real learner have used it, and compatibility with any particular agent host is not
   verified.
-- **Review is not authenticated.** Any local process can call the REST review API, including an agent with
-  shell access, and could accept its own proposal. Run the service only on your own machine, with agents you
-  trust. Tracked in [#17](https://github.com/SAIR-club/Episteme/issues/17).
+- **Deciding needs the person's token, but a same-user agent can read it.** An agent's token cannot decide,
+  and a decision without the person's token is refused. An agent that runs as you, with a shell, can still use
+  your token: run such agents with a host policy that forbids calling the decision routes
+  ([ADR 0012](docs/decisions/0012-human-review-security.md)).
 - **The Workspace does not show a suggestion's basis or speaker** yet. The data is in the API
   ([#26](https://github.com/SAIR-club/Episteme/issues/26)).
 - **Retrieval uses a deterministic embedding adapter.** A question phrased very differently from what was
