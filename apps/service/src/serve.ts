@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { GraphLockedError } from '@episteme/application'
+import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
 import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
+
+const DEFAULT_USERS = join(homedir(), '.episteme', 'users.json')
 
 async function loadTopicFile(filePath: string): Promise<SeedTopic> {
   const { readFile } = await import('node:fs/promises')
@@ -30,10 +34,19 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `    -t, --topic <路径>      首次启动时载入你自己的主题文件，而不是内置的示例主题\n` +
       `        --blank             从空图谱开始，什么都不载入\n` +
       `    -w, --workspace <目录>  在 / 托管一个已构建的 Workspace\n` +
+      `        --mode shared       共享部署：多人、走网络，放在 HTTPS 反向代理后面（ADR 0012）\n` +
+      `        --users <路径>      用户文件（共享模式必需；默认 ${DEFAULT_USERS}）\n` +
+      `        --public-origin <地址>  共享部署对外的地址，例如 https://episteme.example.edu\n` +
+      `        --host <地址>       监听地址（默认 127.0.0.1）\n` +
+      `        --trust-elicitation 共享模式下仍把 agent 弹出的表单回答当作本人的决定\n` +
       `    -h, --help              显示这份说明\n` +
+      `\n  管理用户和令牌（作用于 --users 指定的文件）：\n` +
+      `    pnpm serve users add <名字>\n` +
+      `    pnpm serve tokens add <actorId> --kind human|agent --label <用途，例如 claude-code>\n` +
+      `    pnpm serve tokens revoke <令牌 id>\n` +
       `\n  环境变量：EPISTEME_FILE 与 --graph 等效，PORT 与 --port 等效；命令行参数优先。\n` +
-      `\n  只监听本机回环地址。这里没有身份验证：任何本机进程都能连上它，也能尝试确认建议。\n` +
-      `  不要把它暴露到网络上。\n\n`,
+      `\n  本地模式只监听本机回环地址。确认建议、记录理解需要你本人的令牌：托管的 Workspace 会自动带上，\n` +
+      `  其他客户端用启动时打印的令牌。它能防止误操作，但挡不住以你的身份运行、能用 shell 的 agent。\n\n`,
   )
   process.exit(0)
 }
@@ -68,6 +81,47 @@ function lockedMessage(error: GraphLockedError): string {
   )
 }
 
+const usersPath = optionValue(argv, '--users') ?? process.env.EPISTEME_USERS ?? DEFAULT_USERS
+
+// Administration of people and tokens: one command, then exit. Nothing here starts the service.
+if (argv[0] === 'users' || argv[0] === 'tokens') {
+  await administer(argv)
+  process.exit(0)
+}
+
+/** `users add`, `tokens add` and `tokens revoke`, on the user file. A token is printed once and never again. */
+async function administer(args: readonly string[]): Promise<void> {
+  const [area, action, subject] = args
+  if (area === 'users' && action === 'add' && subject !== undefined) {
+    const actorId = await addPerson(usersPath, subject)
+    process.stdout.write(`已添加：${subject}\n  actorId：${actorId}\n  用户文件：${usersPath}\n`)
+    return
+  }
+  if (area === 'tokens' && action === 'add' && subject !== undefined) {
+    const kind = optionValue(args, '--kind')
+    const label = optionValue(args, '--label')
+    if ((kind !== 'human' && kind !== 'agent') || label === undefined) {
+      throw new Error('用法：tokens add <actorId> --kind human|agent --label <用途>')
+    }
+    const token = await addToken(usersPath, subject, kind satisfies CredentialKind, label)
+    process.stdout.write(
+      `令牌（只显示这一次，请妥善保存）：\n  ${token}\n` +
+        (kind === 'agent'
+          ? `  这是 agent 令牌：能读取、提议、蒸馏，不能替本人做决定。\n`
+          : `  这是本人的令牌：能确认建议、记录理解。不要交给 agent。\n`),
+    )
+    return
+  }
+  if (area === 'tokens' && action === 'revoke' && subject !== undefined) {
+    await revokeToken(usersPath, subject)
+    process.stdout.write(`已撤销令牌 ${subject}。运行中的服务从下一个请求起拒绝它。\n`)
+    return
+  }
+  throw new Error(
+    '用法：users add <名字> | tokens add <actorId> --kind … --label … | tokens revoke <id>',
+  )
+}
+
 const graph =
   optionValue(argv, '--graph', '-g', '--file', '-f') ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
 const portText = optionValue(argv, '--port', '-p') ?? process.env.PORT ?? '4321'
@@ -75,6 +129,9 @@ const port = Number.parseInt(portText, 10)
 const topicPath = optionValue(argv, '--topic', '-t')
 const workspacePath = optionValue(argv, '--workspace', '-w')
 const blank = argv.includes('--blank')
+const shared = optionValue(argv, '--mode') === 'shared'
+const publicOrigin = optionValue(argv, '--public-origin')
+const host = optionValue(argv, '--host')
 
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
   process.stderr.write(`端口 "${portText}" 不是有效端口。\n`)
@@ -103,6 +160,15 @@ try {
     port,
     profile: defaultProfile(topic),
     ...(workspacePath === undefined ? {} : { workspace: resolve(workspacePath) }),
+    ...(host === undefined ? {} : { host }),
+    ...(shared
+      ? {
+          mode: 'shared' as const,
+          users: usersPath,
+          ...(publicOrigin === undefined ? {} : { publicOrigin }),
+          trustElicitation: argv.includes('--trust-elicitation'),
+        }
+      : {}),
   })
 } catch (error) {
   // Only the one failure a person can act on is translated. Anything else is a bug and keeps its stack.
@@ -118,8 +184,15 @@ process.stdout.write(
     `  REST API： ${service.apiUrl}\n` +
     `  图谱：     ${service.graph}\n` +
     (topic === undefined ? '' : `  主题：     ${topic.title}\n`) +
+    (service.humanToken === undefined
+      ? `  模式：     共享（用户文件 ${usersPath}）\n`
+      : `  你的令牌： ${service.humanToken}\n` +
+        `             （本次运行有效。托管的 Workspace 会自动带上；其他客户端用 Authorization: Bearer 传入。\n` +
+        `              它能替你确认建议，不要交给 agent。）\n`) +
     `\n  你记录的一切都会写入磁盘，关掉进程也不会丢。\n` +
-    `  只监听本机回环地址。这里没有身份验证：任何本机进程都能连上它，也能尝试确认建议。\n` +
+    (service.humanToken === undefined
+      ? ''
+      : `  只监听本机回环地址。它能防止误操作，但挡不住以你的身份运行、能用 shell 的 agent。\n`) +
     `\n  按 Ctrl+C 停止。\n\n`,
 )
 
