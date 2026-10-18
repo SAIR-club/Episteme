@@ -1,6 +1,6 @@
 # 0012 — Who is calling: people, agents and the decisions only people make
 
-Status: **proposed** (2026-10-17). Answers #17 and extends it to a shared, networked service (#35). Amends
+Status: **accepted** (2026-10-17). Answers #17 and extends it to a shared, networked service (#35). Amends
 [ADR 0008](0008-agent-plugin-surface.md) (_Trust boundaries_) and [ADR 0010](0010-episteme-service.md)
 (_Constraints_). [ADR 0014](0014-publication-and-reuse.md) (step S1) and ADR 0016 (delegated confirmation)
 depend on it.
