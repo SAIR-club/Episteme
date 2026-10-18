@@ -164,6 +164,9 @@ describe('local mode', () => {
 })
 
 describe('shared mode', () => {
+  // Reference material, which every person can see; the seeded questions are the graph's own person's.
+  const SHARED_STATE = { ...STATE, target: 'c_self_attention' }
+
   let users: string
   let actorId: string
   let human: string
@@ -206,7 +209,7 @@ describe('shared mode', () => {
     const host = mcpWire(() => service.mcpUrl, { name: 'Claude Code', version: '1' })
     const proposed = await host.call(
       'propose',
-      { ...STATE, rationale: 'r' },
+      { ...SHARED_STATE, rationale: 'r' },
       {},
       { headers: { authorization: `Bearer ${agent}` } },
     )
@@ -228,7 +231,7 @@ describe('shared mode', () => {
     const host = mcpWire(() => service.mcpUrl, { name: 'Claude Code', version: '1' })
     await host.call(
       'propose',
-      { ...STATE, rationale: 'r' },
+      { ...SHARED_STATE, rationale: 'r' },
       {},
       { headers: { authorization: `Bearer ${agent}` } },
     )
@@ -273,7 +276,7 @@ describe('shared mode', () => {
     })
     const proposed = await asking.call(
       'propose',
-      { ...STATE, rationale: 'r' },
+      { ...SHARED_STATE, rationale: 'r' },
       {},
       { headers: { authorization: `Bearer ${agent}` } },
     )

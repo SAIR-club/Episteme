@@ -66,7 +66,9 @@ export function createMcpEndpoint(
   const callers = new WeakMap<Request, McpCaller>()
   const handler = createMcpHandler(({ requestInfo }) => {
     const caller = requestInfo === undefined ? undefined : callers.get(requestInfo)
-    return createEpistemeMcpServer(session, codec, sceneTools, {
+    // An agent acts for the person its credential belongs to, so it reads and proposes in their session.
+    const own = caller === undefined ? session : session.forActor(caller.actorId)
+    return createEpistemeMcpServer(own, codec, sceneTools, {
       ...(caller === undefined ? {} : { caller }),
       elicitationDecisions,
     })

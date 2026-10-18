@@ -579,7 +579,7 @@ describe('the drafts file', () => {
     )
     const store = await SuggestionStore.open(path)
     expect(store.get('sug_old')?.proposal).toEqual({ kind: 'claim', label: 'x' })
-    expect(store.landing('actor_agent_old', 'anything')).toBeUndefined()
+    expect(store.landing('actor_human', 'actor_agent_old', 'anything')).toBeUndefined()
   })
 })
 
@@ -602,6 +602,8 @@ describe('the sources file', () => {
     const store = await SourceStore.open(path)
     expect(store.get('src_old')).toMatchObject({ reader: 'episteme', text: '学生：为什么？' })
     expect(store.get('src_old')?.digest).toMatch(/^[0-9a-f]{64}$/u)
-    expect(store.reusable('学生：为什么？', 'episteme', undefined)?.id).toBe('src_old')
+    expect(store.reusable('actor_human', '学生：为什么？', 'episteme', undefined)?.id).toBe(
+      'src_old',
+    )
   })
 })

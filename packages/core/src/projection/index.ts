@@ -1,4 +1,4 @@
-import type { CoreGraph } from '../graph/graph.js'
+import type { GraphReadView } from '../visibility/index.js'
 import type { ActorId, DimensionId, NodeId, NodeTypeId } from '../ontology/ids.js'
 import type { EpochMillis } from '../ontology/primitives.js'
 import type { GraphEdge, GraphNode, SubGraph } from '../ontology/resources.js'
@@ -60,7 +60,7 @@ const UNLIMITED = Number.POSITIVE_INFINITY
  * Edges are kept only when both endpoints survive, because a dangling edge would imply
  * knowledge that the view cannot show.
  */
-export function project(graph: CoreGraph, filter: ProjectionFilter = {}): Projection {
+export function project(graph: GraphReadView, filter: ProjectionFilter = {}): Projection {
   const candidates = selectSeeds(graph, filter)
   const depth = filter.depth ?? 1
   const reached = expand(graph, candidates, depth)
@@ -110,7 +110,7 @@ export function project(graph: CoreGraph, filter: ProjectionFilter = {}): Projec
  * means. `nodeTypes`, `state` and `timeRange` are applied as gates afterwards instead, so
  * that depth can still pull in the neighbours a view needs to make sense.
  */
-export function selectSeeds(graph: CoreGraph, filter: ProjectionFilter): readonly NodeId[] {
+export function selectSeeds(graph: GraphReadView, filter: ProjectionFilter): readonly NodeId[] {
   const scene = filter.scene ?? []
   const tagCriteria = Object.entries(filter.tags ?? {})
   const unrestricted =
@@ -141,7 +141,7 @@ export function selectSeeds(graph: CoreGraph, filter: ProjectionFilter): readonl
  * Traversal is undirected: an edge is a relation, and which end you arrived from is a
  * view concern. The visited set makes the walk linear in the size of the component.
  */
-function expand(graph: CoreGraph, seeds: readonly NodeId[], depth: number): readonly NodeId[] {
+function expand(graph: GraphReadView, seeds: readonly NodeId[], depth: number): readonly NodeId[] {
   const visited = new Set<NodeId>(seeds)
   const order: NodeId[] = [...seeds]
   if (depth <= 0) return order
@@ -202,7 +202,7 @@ function matchesTimeRange(createdAt: EpochMillis, filter: ProjectionFilter): boo
  * rather than any historical one. Reading through the graph keeps this honest: current
  * state is whatever `reduce` produces, never a cached flag.
  */
-function matchesState(graph: CoreGraph, node: GraphNode, filter: ProjectionFilter): boolean {
+function matchesState(graph: GraphReadView, node: GraphNode, filter: ProjectionFilter): boolean {
   const criteria = Object.entries(filter.state ?? {})
   if (criteria.length === 0) return true
   if (filter.actor === undefined) return true
@@ -218,7 +218,7 @@ function matchesState(graph: CoreGraph, node: GraphNode, filter: ProjectionFilte
 }
 
 /** The state dimensions a view would display, in registry order. */
-export function dimensionsOf(graph: CoreGraph, node: GraphNode, actor: ActorId): DimensionId[] {
+export function dimensionsOf(graph: GraphReadView, node: GraphNode, actor: ActorId): DimensionId[] {
   return [...graph.state.stateOf(node.id, actor).keys()]
 }
 

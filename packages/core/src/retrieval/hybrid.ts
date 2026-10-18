@@ -1,5 +1,5 @@
 import type { ActorId, BranchId, NodeId, NodeTypeId } from '../ontology/ids.js'
-import type { CoreGraph } from '../graph/graph.js'
+import type { GraphReadView } from '../visibility/index.js'
 import type { GraphNode } from '../ontology/resources.js'
 import { queryNodes } from '../ontology/resources.js'
 import type { EventLog } from '../events/index.js'
@@ -115,9 +115,9 @@ export class LexicalGraphRetriever implements Retriever {
   readonly description =
     'Matches the words in the question against labels, tags and ids, then walks the graph outward.'
   readonly signals: readonly RankSignal[] = ['lexical', 'graph']
-  readonly #graph: CoreGraph
+  readonly #graph: GraphReadView
 
-  constructor(graph: CoreGraph) {
+  constructor(graph: GraphReadView) {
     this.#graph = graph
   }
 
@@ -139,7 +139,7 @@ export class LexicalGraphRetriever implements Retriever {
 
 /** Shared candidate gathering for the retrievers. */
 function gatherCandidates(
-  graph: CoreGraph,
+  graph: GraphReadView,
   query: RetrieveQuery,
   options: { readonly prefilterLexically: boolean },
 ): {
@@ -212,11 +212,11 @@ export class EmbeddingRetriever implements ExplainingRetriever {
   readonly description =
     'Cosine similarity between the question and each candidate, via an adapter.'
   readonly signals: readonly RankSignal[] = ['semantic']
-  readonly #graph: CoreGraph
+  readonly #graph: GraphReadView
   readonly #adapter: EmbeddingAdapter
   readonly #cache: EmbeddingCache
 
-  constructor(graph: CoreGraph, adapter: EmbeddingAdapter, cache: EmbeddingCache) {
+  constructor(graph: GraphReadView, adapter: EmbeddingAdapter, cache: EmbeddingCache) {
     this.#graph = graph
     this.#adapter = adapter
     this.#cache = cache
@@ -248,14 +248,14 @@ export class HybridRetriever implements ExplainingRetriever {
   readonly description =
     'Combines semantic similarity, lexical overlap, graph proximity, recorded state and recency.'
   readonly signals: readonly RankSignal[] = ['semantic', 'lexical', 'graph', 'cognitive', 'recency']
-  readonly #graph: CoreGraph
+  readonly #graph: GraphReadView
   readonly #log: EventLog
   readonly #adapter: EmbeddingAdapter
   readonly #cache: EmbeddingCache
   readonly #weights: HybridWeights
 
   constructor(
-    graph: CoreGraph,
+    graph: GraphReadView,
     log: EventLog,
     adapter: EmbeddingAdapter,
     cache: EmbeddingCache,
@@ -313,7 +313,7 @@ function textOfNode(node: GraphNode): string {
 }
 
 function hopDistances(
-  graph: CoreGraph,
+  graph: GraphReadView,
   seeds: ReadonlySet<NodeId>,
   maxDepth: number,
 ): ReadonlyMap<NodeId, number> {
@@ -366,7 +366,7 @@ function strongestSimilarity(
 }
 
 async function scoreSemantically(
-  graph: CoreGraph,
+  graph: GraphReadView,
   adapter: EmbeddingAdapter,
   cache: EmbeddingCache,
   query: RetrieveQuery,
