@@ -72,8 +72,21 @@ export function newSuggestionIds(count: number): readonly string[] {
 /** How a proposal names a node suggested alongside it. */
 export const SUGGESTED_NODE_PREFIX = 'cand:'
 
+/**
+ * Whose a draft, a review or a source is: the person it was proposed for (ADR 0014, step S3). Records written
+ * before a graph had more than one person carry none and belong to its own person.
+ */
+export const DEFAULT_OWNER = 'actor_human'
+
+/** The person a record belongs to. */
+export function ownerOf(record: { readonly owner?: string }): string {
+  return record.owner ?? DEFAULT_OWNER
+}
+
 export interface Suggestion {
   readonly id: string
+  /** The person it is proposed for; see `ownerOf`. */
+  readonly owner?: string
   readonly proposal: Proposal
   /** Why the agent proposes it. Required: a person cannot judge a suggestion that does not say why. */
   readonly rationale: string
@@ -122,6 +135,8 @@ export interface Resolution {
   readonly channel: string
   /** Who decided, kept so the review record written when the decision lands can name them. */
   readonly reviewer?: Reviewer
+  /** The person whose draft it decides; see `ownerOf`. */
+  readonly owner?: string
 }
 
 /**
@@ -143,6 +158,8 @@ export interface Reviewer {
  * the draft, so a draft is gone exactly when its review is kept.
  */
 export interface Review {
+  /** The person whose draft it decided; see `ownerOf`. */
+  readonly owner?: string
   readonly suggestionId: string
   readonly outcome: 'accepted' | 'modified' | 'dismissed'
   readonly channel: string
@@ -162,6 +179,8 @@ export interface Review {
  * from the queue is known to have been in it.
  */
 export interface SubmissionLanding {
+  /** The person the submission was made for; see `ownerOf`. */
+  readonly owner?: string
   /** The submitting agent and its `submissionId`: the submission's scope. */
   readonly by: string
   readonly submissionId: string
@@ -225,7 +244,7 @@ export class SuggestionStore {
       } else if (record.kind === 'review') store.#reviews.push(record.review)
       else
         store.#landings.set(
-          landingKey(record.landing.by, record.landing.submissionId),
+          landingKey(ownerOf(record.landing), record.landing.by, record.landing.submissionId),
           record.landing,
         )
     }
@@ -282,15 +301,16 @@ export class SuggestionStore {
       await this.#change((pending, _, landings) => {
         for (const suggestion of kept) pending.set(suggestion.id, suggestion)
         if (landing !== undefined)
-          landings.set(landingKey(landing.by, landing.submissionId), landing)
+          landings.set(landingKey(ownerOf(landing), landing.by, landing.submissionId), landing)
       })
     }
     return kept
   }
 
-  /** Whether the drafts of a keyed submission were kept, and which they were. */
-  landing(by: string, submissionId: string): SubmissionLanding | undefined {
-    return this.#landings.get(landingKey(by, submissionId))
+  /** Whether the drafts of a person's keyed submission were kept, and which they were. */
+  landing(owner: string, by: string, submissionId: string): SubmissionLanding | undefined {
+    const landing = this.#landings.get(landingKey(owner, by, submissionId))
+    return landing
   }
 
   /** Drops a draft and writes the change, leaving no record. Returns whether it was pending. */
@@ -338,6 +358,7 @@ export class SuggestionStore {
       pending.delete(resolution.suggestionId)
       resolutions.delete(operationId)
       reviews.push({
+        ...(resolution.owner === undefined ? {} : { owner: resolution.owner }),
         suggestionId: resolution.suggestionId,
         outcome: resolution.outcome,
         channel: resolution.channel,
@@ -433,8 +454,8 @@ export class SuggestionStore {
   }
 }
 
-function landingKey(by: string, submissionId: string): string {
-  return JSON.stringify([by, submissionId])
+function landingKey(owner: string, by: string, submissionId: string): string {
+  return JSON.stringify([owner, by, submissionId])
 }
 
 function replace<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void {

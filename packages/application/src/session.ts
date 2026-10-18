@@ -25,6 +25,8 @@ import {
 import {
   HybridRetriever,
   retrieveWith,
+  visibleTo,
+  type GraphReadView,
   toAgentContext,
   type RankedEntry,
   type RelevantContext,
@@ -37,6 +39,7 @@ import {
   SuggestionStore,
   type Proposal,
   type Resolution,
+  ownerOf,
   type Review,
   type Reviewer,
   type Suggestion,
@@ -282,7 +285,33 @@ export interface SessionOptions {
  * history. Rebuilding the retriever per call would reintroduce the possibility of a display that does not
  * match the answer it accompanies.
  */
+/** What every person's session over one graph shares: one mutation queue, one revision, one lifetime. */
+interface SharedState {
+  /** The tail of the mutation queue. See `#exclusive`. */
+  mutations: Promise<unknown>
+  /** See `revision`. Advanced only by `#exclusive`. */
+  revision: number
+  closed: boolean
+  /** See `epoch`. */
+  readonly epoch: string
+  readonly recovered: RecoveredDecision[]
+  /** The session of each person met so far, so every request for them reads through the same one. */
+  readonly people: Map<string, CognitiveSession>
+}
+
+/** What a session is built from. Every person's session over one graph is built from the same parts. */
+interface SessionParts {
+  readonly scene: SessionScene
+  readonly episteme: Episteme
+  readonly suggestions: SuggestionStore
+  readonly sources: SourceStore
+  readonly store: Store | undefined
+  /** The retriever for one person's view of the graph, sharing one embedding cache with the others. */
+  readonly retrieverFor: (view: GraphReadView) => Retriever
+}
+
 export class CognitiveSession {
+  readonly #parts: SessionParts
   readonly #episteme: Episteme
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: defaultResponder })
@@ -290,29 +319,39 @@ export class CognitiveSession {
   readonly #suggestions: SuggestionStore
   readonly #sources: SourceStore
   readonly #scene: SessionScene
-  /** The tail of the mutation queue. See `#exclusive`. */
-  #mutations: Promise<unknown> = Promise.resolve()
-  /** See `revision`. Advanced only by `#exclusive`. */
-  #revision = 0
-  /** See `epoch`. */
-  readonly #epoch = randomUUID()
-  #closed = false
-  readonly #recovered: RecoveredDecision[] = []
+  /** The person this session is for: whose state it reads and writes, and whose view of the graph it has. */
+  readonly #actor: ActorId
+  /** The graph as `#actor` may see it (ADR 0014). Every read of nodes and edges goes through it. */
+  readonly #seen: GraphReadView
+  readonly #shared: SharedState
 
-  private constructor(
-    scene: SessionScene,
-    episteme: Episteme,
-    retriever: Retriever,
-    suggestions: SuggestionStore,
-    sources: SourceStore,
-    store?: Store,
-  ) {
-    this.#scene = scene
-    this.#episteme = episteme
-    this.#retriever = retriever
-    this.#suggestions = suggestions
-    this.#sources = sources
-    this.#store = store
+  private constructor(parts: SessionParts, actor: ActorId, shared: SharedState) {
+    this.#parts = parts
+    this.#scene = parts.scene
+    this.#episteme = parts.episteme
+    this.#suggestions = parts.suggestions
+    this.#sources = parts.sources
+    this.#store = parts.store
+    this.#actor = actor
+    this.#seen = visibleTo(parts.episteme.graph, actor)
+    this.#retriever = parts.retrieverFor(this.#seen)
+    this.#shared = shared
+  }
+
+  /**
+   * The session of `actorId` over the same graph (ADR 0014, step S3): one graph and one owner, a view per person.
+   *
+   * Everything it reads is what that person may see, and everything it writes is theirs. It shares this
+   * session's mutation queue, revision and lifetime, so closing any of them closes the graph for all.
+   */
+  forActor(actorId: string, displayName = 'Person'): CognitiveSession {
+    const known = this.#shared.people.get(actorId)
+    if (known !== undefined) return known
+    const id = asId<ActorId>(actorId)
+    this.#episteme.registerActor(humanActor(id, displayName))
+    const session = new CognitiveSession(this.#parts, id, this.#shared)
+    this.#shared.people.set(actorId, session)
+    return session
   }
 
   /**
@@ -327,22 +366,30 @@ export class CognitiveSession {
     const scene = options.scene ?? learnScene
     const packs = options.packs ?? scene.packs
 
+    // One embedding cache for every person's retriever: what a text means does not depend on who asks.
+    const cache = new InMemoryEmbeddingCache()
+    const retrieverFor =
+      (episteme: Episteme) =>
+      (view: GraphReadView): Retriever =>
+        new HybridRetriever(
+          view,
+          episteme.log,
+          adapter,
+          cache,
+          ...(options.weights === undefined ? [] : [options.weights]),
+        )
+
     if (options.filePath === undefined) {
       const { compose } = await import('@episteme/sdk')
       const episteme = compose({ actors, actorId: HUMAN, packs })
-      return new CognitiveSession(
+      return CognitiveSession.#owner({
         scene,
         episteme,
-        new HybridRetriever(
-          episteme.graph,
-          episteme.log,
-          adapter,
-          new InMemoryEmbeddingCache(),
-          ...(options.weights === undefined ? [] : [options.weights]),
-        ),
-        await SuggestionStore.open(),
-        await SourceStore.open(),
-      )
+        suggestions: await SuggestionStore.open(),
+        sources: await SourceStore.open(),
+        store: undefined,
+        retrieverFor: retrieverFor(episteme),
+      })
     }
 
     const storage = await openLocalStorage(options.filePath)
@@ -360,20 +407,14 @@ export class CognitiveSession {
       await storage.close()
       throw error
     }
-    const session = new CognitiveSession(
+    const session = CognitiveSession.#owner({
       scene,
       episteme,
-      new HybridRetriever(
-        episteme.graph,
-        episteme.log,
-        adapter,
-        new InMemoryEmbeddingCache(),
-        ...(options.weights === undefined ? [] : [options.weights]),
-      ),
       suggestions,
       sources,
-      storage,
-    )
+      store: storage,
+      retrieverFor: retrieverFor(episteme),
+    })
     try {
       // Before anyone can use it: a decision a crash left half-done is finished or undone first.
       await session.#recover()
@@ -394,8 +435,23 @@ export class CognitiveSession {
     return this.#scene.recordableDimensions
   }
 
+  /** The session of the graph's own person, from which every other person's session is made. */
+  static #owner(parts: SessionParts): CognitiveSession {
+    const shared: SharedState = {
+      mutations: Promise.resolve(),
+      revision: 0,
+      closed: false,
+      epoch: randomUUID(),
+      recovered: [],
+      people: new Map(),
+    }
+    const session = new CognitiveSession(parts, HUMAN, shared)
+    shared.people.set(HUMAN, session)
+    return session
+  }
+
   get actorId(): ActorId {
-    return HUMAN
+    return this.#actor
   }
 
   get graph(): Episteme['graph'] {
@@ -445,7 +501,7 @@ export class CognitiveSession {
    * together with `epoch`.
    */
   get revision(): number {
-    return this.#revision
+    return this.#shared.revision
   }
 
   /**
@@ -453,7 +509,7 @@ export class CognitiveSession {
    * new epoch, so a revision remembered from before cannot be mistaken for the same number counted again.
    */
   get epoch(): string {
-    return this.#epoch
+    return this.#shared.epoch
   }
 
   /**
@@ -484,8 +540,8 @@ export class CognitiveSession {
   }
 
   #retrieve(question: string): Promise<RelevantContext> {
-    return retrieveWith(this.#retriever, this.#episteme.graph, this.#episteme.log, question, {
-      actorId: HUMAN,
+    return retrieveWith(this.#retriever, this.#seen, this.#episteme.log, question, {
+      actorId: this.#actor,
       depth: 1,
       limit: 8,
     })
@@ -550,7 +606,7 @@ export class CognitiveSession {
     return this.#exclusive(async () => {
       const event = this.#episteme.log.commit({
         target: asId<NodeId>(target),
-        actorId: HUMAN,
+        actorId: this.#actor,
         dimensions: new Map(
           entries.map(([dimension, level]): [DimensionId, StateValue] => [
             asId<DimensionId>(dimension),
@@ -679,6 +735,7 @@ export class CognitiveSession {
       properties: { text: label, ...input.properties },
       tags: defaultTags(input.topic ?? 'general'),
       tier: input.tier,
+      actorId: this.#actor,
       ...(input.source === undefined ? {} : { source: input.source }),
     })
 
@@ -712,6 +769,7 @@ export class CognitiveSession {
       type,
       from: asId<NodeId>(from),
       to: asId<NodeId>(to),
+      actorId: this.#actor,
       ...(source === undefined ? {} : { source }),
     })
     return { edgeId: edge.id }
@@ -738,14 +796,14 @@ export class CognitiveSession {
 
   /** Every node the learner can see, for an overview of their own graph. */
   listNodes(): readonly NodeView[] {
-    return this.#episteme.graph.listNodes().map((node) => this.#view(node))
+    return this.#seen.listNodes().map((node) => this.#view(node))
   }
 
   /** What the human understands about one node, for a detail panel. */
   understandingOf(
     target: NodeId | string,
   ): readonly { readonly id: string; readonly level: string }[] {
-    const state = this.#episteme.log.stateOf(asId<NodeId>(target), HUMAN)
+    const state = this.#episteme.log.stateOf(asId<NodeId>(target), this.#actor)
     return [...state]
       .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
       .sort((left, right) => (left.id < right.id ? -1 : 1))
@@ -757,8 +815,8 @@ export class CognitiveSession {
    */
   historyOf(target: NodeId | string): readonly SerializedStateEvent[] | undefined {
     const id = asId<NodeId>(target)
-    if (this.#episteme.graph.getNode(id) === undefined) return undefined
-    return this.#episteme.log.history({ target: id, actorId: HUMAN }).map(toSerializedEvent)
+    if (this.#seen.getNode(id) === undefined) return undefined
+    return this.#episteme.log.history({ target: id, actorId: this.#actor }).map(toSerializedEvent)
   }
 
   /** The open ends of this learner's lines of inquiry, so a surface can show where they left off. */
@@ -767,10 +825,10 @@ export class CognitiveSession {
     readonly target: string
     readonly label: string
   }[] {
-    return this.#episteme.log.tips(HUMAN).map((event) => ({
+    return this.#episteme.log.tips(this.#actor).map((event) => ({
       eventId: event.id,
       target: event.target,
-      label: this.#episteme.graph.getNode(event.target)?.label ?? event.target,
+      label: this.#seen.getNode(event.target)?.label ?? event.target,
     }))
   }
 
@@ -789,7 +847,7 @@ export class CognitiveSession {
     const items: ProgressItem[] = []
 
     for (const node of this.listNodes()) {
-      const state = this.#episteme.log.stateOf(asId<NodeId>(node.nodeId), HUMAN)
+      const state = this.#episteme.log.stateOf(asId<NodeId>(node.nodeId), this.#actor)
       if (state.size === 0) continue // Untouched reference material is not progress.
 
       const dimensions = [...state]
@@ -858,17 +916,17 @@ export class CognitiveSession {
    * A failed mutation rejects for its caller only. The queue carries on with the next one.
    */
   #exclusive<T>(work: () => Promise<T> | T): Promise<T> {
-    const run = this.#mutations.then(async () => {
-      if (this.#closed)
+    const run = this.#shared.mutations.then(async () => {
+      if (this.#shared.closed)
         throw new Error('this session is closed; open a new one to change the graph')
-      this.#revision += 1
+      this.#shared.revision += 1
       try {
         return await work()
       } finally {
-        this.#revision += 1
+        this.#shared.revision += 1
       }
     })
-    this.#mutations = run.then(
+    this.#shared.mutations = run.then(
       () => undefined,
       () => undefined,
     )
@@ -897,6 +955,7 @@ export class CognitiveSession {
       if (refusal !== undefined) return { ok: false, refusal }
 
       const suggestion = await this.#suggestions.add({
+        owner: this.#actor,
         proposal: normalized(proposal),
         rationale: from.rationale.trim(),
         proposedBy: from.proposedBy,
@@ -908,12 +967,23 @@ export class CognitiveSession {
 
   /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
   reviews(): readonly Review[] {
-    return this.#suggestions.reviews()
+    return this.#suggestions.reviews().filter((review) => ownerOf(review) === this.#actor)
+  }
+
+  /** The drafts proposed for this person. Another person's drafts are not theirs to see or decide. */
+  #ownSuggestions(): readonly Suggestion[] {
+    return this.#suggestions.list().filter((suggestion) => ownerOf(suggestion) === this.#actor)
+  }
+
+  /** A pending draft of this person's, or `undefined` for one that is not pending or not theirs. */
+  #ownSuggestion(id: string): Suggestion | undefined {
+    const suggestion = this.#suggestions.get(id)
+    return suggestion !== undefined && ownerOf(suggestion) === this.#actor ? suggestion : undefined
   }
 
   /** Every draft still waiting for the learner, oldest first. */
   pendingSuggestions(): readonly Suggestion[] {
-    return this.#suggestions.list()
+    return this.#ownSuggestions()
   }
 
   /**
@@ -959,7 +1029,7 @@ export class CognitiveSession {
     const unsettled = this.#suggestions.resolutionOf(suggestionId)
     if (unsettled !== undefined) await this.#settle(unsettled)
 
-    const suggestion = this.#suggestions.get(suggestionId)
+    const suggestion = this.#ownSuggestion(suggestionId)
     if (suggestion === undefined) {
       return {
         ok: false,
@@ -973,6 +1043,7 @@ export class CognitiveSession {
     // One write of one file, the draft gone and its review kept together: it happened or it did not.
     if (decision.action === 'dismiss') {
       await this.#suggestions.dismiss({
+        owner: this.#actor,
         suggestionId: suggestion.id,
         outcome: 'dismissed',
         channel,
@@ -1011,6 +1082,7 @@ export class CognitiveSession {
       proposal,
       planned: this.#plan(proposal, operationId),
       channel,
+      owner: this.#actor,
       ...(reviewer === undefined ? {} : { reviewer }),
     }
     await this.#suggestions.begin(resolution)
@@ -1072,7 +1144,7 @@ export class CognitiveSession {
     switch (proposal.kind) {
       case 'state':
         return this.#episteme.log
-          .history({ target: asId<NodeId>(proposal.target), actorId: HUMAN })
+          .history({ target: asId<NodeId>(proposal.target), actorId: this.#actor })
           .some((event) =>
             [...event.dimensions.values()].some(
               (value) => value.sourceOf === resolution.suggestionId,
@@ -1109,13 +1181,13 @@ export class CognitiveSession {
 
   /** Decisions found unsettled when this session opened, and how each was settled. */
   get recovered(): readonly RecoveredDecision[] {
-    return this.#recovered
+    return this.#shared.recovered
   }
 
   /** Settles every decision a previous session left unfinished. Runs once, before the session is handed out. */
   async #recover(): Promise<void> {
     for (const resolution of this.#suggestions.resolutions()) {
-      this.#recovered.push(await this.#settle(resolution))
+      this.#shared.recovered.push(await this.#settle(resolution))
     }
   }
 
@@ -1136,13 +1208,13 @@ export class CognitiveSession {
           ? {
               level: proposal.level,
               authority: 'confirmed',
-              confirmedBy: HUMAN,
+              confirmedBy: this.#actor,
               sourceOf: suggestion.id,
             }
           : { level: proposal.level, sourceOf: suggestion.id }
         const event = this.#episteme.log.commit({
           target: asId<NodeId>(proposal.target),
-          actorId: HUMAN,
+          actorId: this.#actor,
           dimensions: new Map([[asId<DimensionId>(proposal.dimension), value]]),
           reason: suggestion.rationale,
           source,
@@ -1192,6 +1264,7 @@ export class CognitiveSession {
           type: EDGE.refersTo,
           from: asId<NodeId>(node.nodeId),
           to: asId<NodeId>(target),
+          actorId: this.#actor,
           source,
         }))
         for (const edge of edges) {
@@ -1213,7 +1286,7 @@ export class CognitiveSession {
     // A node of the batch being checked: it becomes a suggestion in the same write.
     if (id === BATCH_PLACEHOLDER) return undefined
     if (this.#acceptedNodeOf(id) !== undefined) return undefined
-    const pending = this.#suggestions.get(id)
+    const pending = this.#ownSuggestion(id)
     if (
       pending !== undefined &&
       (pending.proposal.kind === 'node' || pending.proposal.kind === 'claim')
@@ -1242,7 +1315,7 @@ export class CognitiveSession {
       const id = end.slice(SUGGESTED_NODE_PREFIX.length)
       const accepted = this.#acceptedNodeOf(id)
       if (accepted !== undefined) return accepted
-      if (this.#suggestions.get(id) !== undefined) {
+      if (this.#ownSuggestion(id) !== undefined) {
         return {
           code: 'depends_on_pending',
           message: `it depends on suggestion "${id}", which has not been accepted yet; decide that one first`,
@@ -1287,7 +1360,7 @@ export class CognitiveSession {
 
   /** Material this session has distilled, oldest first. */
   sources(): readonly Source[] {
-    return this.#sources.list()
+    return this.#sources.list().filter((source) => ownerOf(source) === this.#actor)
   }
 
   /**
@@ -1383,11 +1456,14 @@ export class CognitiveSession {
               }),
             }
       if (keyed !== undefined) {
-        let earlier = this.#sources.submission(keyed.by, keyed.id)
+        let earlier = this.#sources.submission(this.#actor, keyed.by, keyed.id)
         // Recorded on its source, but its drafts never landed: the write of the drafts failed or the process
         // died first. Nothing of it reached the queue, so it is not answered as made: the record of the attempt
         // is dropped and this request is read again. The source stays, and is reused for the same words.
-        if (earlier !== undefined && this.#suggestions.landing(keyed.by, keyed.id) === undefined) {
+        if (
+          earlier !== undefined &&
+          this.#suggestions.landing(this.#actor, keyed.by, keyed.id) === undefined
+        ) {
           await this.#sources.put({
             ...earlier.source,
             submissions: (earlier.source.submissions ?? []).filter(
@@ -1410,7 +1486,7 @@ export class CognitiveSession {
         }
       }
 
-      if (this.#suggestions.list().length >= MAX_PENDING) {
+      if (this.#ownSuggestions().length >= MAX_PENDING) {
         return {
           ok: false,
           refusal: {
@@ -1422,7 +1498,7 @@ export class CognitiveSession {
 
       const policy = options.policy ?? this.#scene.distillationPolicy
       const reader: SourceReader = host === undefined ? 'episteme' : 'host'
-      const reused = this.#sources.reusable(text, reader, host?.hostSession)
+      const reused = this.#sources.reusable(this.#actor, text, reader, host?.hostSession)
       const sourceId = reused?.id ?? `src_${randomUUID()}`
       const reading =
         host === undefined
@@ -1432,15 +1508,15 @@ export class CognitiveSession {
               text,
               items: host.candidates,
               policy,
-              actorId: HUMAN,
+              actorId: this.#actor,
             })
       const agent = reading?.reader ?? options.agent ?? new RuleBasedDistiller({ policy })
       const result = await distill({
         material: { sourceId, text },
         agent,
         policy,
-        actorId: HUMAN,
-        known: this.#episteme.graph
+        actorId: this.#actor,
+        known: this.#seen
           .listNodes()
           .map((node) => ({ id: node.id, label: node.label, type: node.type })),
         ...(options.learner === undefined ? {} : { learner: options.learner }),
@@ -1531,7 +1607,7 @@ export class CognitiveSession {
       // The same checks `propose` applies, with references to this batch's own nodes standing in for nodes. A
       // candidate that repeats a pending suggestion, the same proposal from the same words, is not queued
       // twice; what refers to it refers to the pending one instead.
-      const pending = this.#suggestions.list()
+      const pending = this.#ownSuggestions()
       const kept: typeof accepted = []
       const keptIndex = new Map<number, number>()
       const pendingAs = new Map<number, string>()
@@ -1603,6 +1679,7 @@ export class CognitiveSession {
       if (reused === undefined) {
         await this.#sources.put({
           id: sourceId,
+          owner: this.#actor,
           title: canonicalText(material.title?.trim() || firstLine(text)),
           text,
           kind: result.episodes[0]?.kind ?? 'prose',
@@ -1633,6 +1710,7 @@ export class CognitiveSession {
               const at = keptIndex.get(reference)
               return at === undefined ? pendingAs.get(reference) : chosen[at]
             }),
+            owner: this.#actor,
             rationale: item.rationale,
             proposedBy,
             proposedAt: now,
@@ -1643,7 +1721,13 @@ export class CognitiveSession {
         ids,
         keyed === undefined
           ? undefined
-          : { by: keyed.by, submissionId: keyed.id, sourceId, suggestionIds: ids },
+          : {
+              owner: this.#actor,
+              by: keyed.by,
+              submissionId: keyed.id,
+              sourceId,
+              suggestionIds: ids,
+            },
       )
       return {
         ok: true,
@@ -1674,7 +1758,7 @@ export class CognitiveSession {
       sourceId: source.id,
       episodes: source.episodes.length,
       suggestions: kept.flatMap(({ suggestionId }) => {
-        const still = this.#suggestions.get(suggestionId)
+        const still = this.#ownSuggestion(suggestionId)
         return still === undefined ? [] : [still]
       }),
       refused: submission.receipt.refused.map(({ ref, code }) => ({
@@ -1702,7 +1786,7 @@ export class CognitiveSession {
    * record of a dismissal, so `not_pending` does not claim one.
    */
   #currentStatusOf(suggestionId: string): SubmissionStatus {
-    if (this.#suggestions.get(suggestionId) !== undefined) return { status: 'pending' }
+    if (this.#ownSuggestion(suggestionId) !== undefined) return { status: 'pending' }
     const decided = (source: string | undefined): 'accepted' | 'modified' =>
       /, modified via /u.test(source ?? '') ? 'modified' : 'accepted'
     const graph = this.#episteme.graph
@@ -1718,7 +1802,7 @@ export class CognitiveSession {
       }
     }
     for (const node of graph.listNodes()) {
-      for (const event of this.#episteme.log.history({ target: node.id, actorId: HUMAN })) {
+      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
         if ([...event.dimensions.values()].some((value) => value.sourceOf === suggestionId)) {
           return { status: decided(event.source), committed: { kind: 'event', id: event.id } }
         }
@@ -1735,7 +1819,7 @@ export class CognitiveSession {
     if (from.rationale.trim() === '') {
       return { code: 'missing_rationale', message: 'a suggestion must say why it is proposed' }
     }
-    if (from.proposedBy.trim() === '' || from.proposedBy === HUMAN) {
+    if (from.proposedBy.trim() === '' || from.proposedBy === this.#actor) {
       return {
         code: 'not_an_agent',
         message: 'only an agent proposes; the human records their own understanding directly',
@@ -1756,7 +1840,7 @@ export class CognitiveSession {
     const missing = (id: string): MutationRefusal | undefined =>
       isSuggestedNode(id)
         ? this.#suggestedNodeRefusal(id)
-        : this.#episteme.graph.getNode(asId<NodeId>(id)) === undefined
+        : this.#seen.getNode(asId<NodeId>(id)) === undefined
           ? { code: 'unknown_node', message: `node "${id}" does not exist` }
           : undefined
 
@@ -1853,7 +1937,7 @@ export class CognitiveSession {
     return this.#exclusive(async () => {
       await this.#persist()
       await this.#store?.close()
-      this.#closed = true
+      this.#shared.closed = true
     })
   }
 

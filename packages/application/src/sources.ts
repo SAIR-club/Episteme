@@ -1,3 +1,4 @@
+import { ownerOf } from './suggestions.js'
 import { createHash } from 'node:crypto'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import type { EpochMillis } from '@episteme/core'
@@ -40,6 +41,8 @@ export interface SourceSubmission {
 
 export interface Source {
   readonly id: string
+  /** The person it was distilled for; see `ownerOf`. Material is private to them. */
+  readonly owner?: string
   readonly title: string
   /** Canonical (`canonicalText`) for anything stored since ADR 0011; every span points into it. */
   readonly text: string
@@ -161,10 +164,12 @@ export class SourceStore {
    * only once its drafts' landing record exists in the drafts file; until then it is a record of an attempt.
    */
   submission(
+    owner: string,
     by: string,
     id: string,
   ): { readonly source: Source; readonly submission: SourceSubmission } | undefined {
     for (const source of this.#sources.values()) {
+      if (ownerOf(source) !== owner) continue
       const submission = source.submissions?.find((entry) => entry.by === by && entry.id === id)
       if (submission !== undefined) return { source, submission }
     }
@@ -173,6 +178,7 @@ export class SourceStore {
 
   /** A source holding exactly this text, read by the same reader in the same host conversation, if any. */
   reusable(
+    owner: string,
     text: string,
     reader: SourceReader,
     hostSession: string | undefined,
@@ -180,6 +186,7 @@ export class SourceStore {
     const digest = textDigest(text)
     return [...this.#sources.values()].find(
       (source) =>
+        ownerOf(source) === owner &&
         source.digest === digest &&
         source.text === text &&
         source.reader === reader &&
