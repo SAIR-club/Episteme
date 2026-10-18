@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { access, copyFile } from 'node:fs/promises'
 import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
@@ -27,6 +28,10 @@ import {
   retrieveWith,
   visibleTo,
   type GraphReadView,
+  type Publication,
+  type PublicationDraft,
+  type PublicationPreview,
+  type Withdrawal,
   toAgentContext,
   type RankedEntry,
   type RelevantContext,
@@ -264,6 +269,15 @@ export interface ProgressSummary {
   readonly summary: string
 }
 
+/** What a person asks to publish: a node of theirs, and optionally more of theirs it reaches. */
+export interface PublicationRequest {
+  readonly root: string
+  readonly include?: readonly string[]
+  /** Their earlier live publication this one replaces. */
+  readonly supersedes?: string
+  readonly note?: string
+}
+
 export interface SessionOptions {
   /** Where the graph lives. Without one, the session is in memory and loses everything on exit. */
   readonly filePath?: string
@@ -274,6 +288,11 @@ export interface SessionOptions {
    * Without one, the deprecated built-in Learn scene, for one release.
    */
   readonly scene?: SessionScene
+  /**
+   * Whether people may publish (ADR 0014). Off by default: a graph that holds a publication cannot be opened by
+   * a build from before publications, so turning it on is a deliberate choice.
+   */
+  readonly sharing?: boolean
   /** Replaces the scene's packs, for a caller that composes the graph with packs of its own. */
   readonly packs?: readonly DomainPack[]
 }
@@ -306,6 +325,9 @@ interface SessionParts {
   readonly suggestions: SuggestionStore
   readonly sources: SourceStore
   readonly store: Store | undefined
+  /** The graph file, when there is one, so it can be copied aside before its first publication. */
+  readonly filePath: string | undefined
+  readonly sharing: boolean
   /** The retriever for one person's view of the graph, sharing one embedding cache with the others. */
   readonly retrieverFor: (view: GraphReadView) => Retriever
 }
@@ -388,6 +410,8 @@ export class CognitiveSession {
         suggestions: await SuggestionStore.open(),
         sources: await SourceStore.open(),
         store: undefined,
+        filePath: undefined,
+        sharing: options.sharing === true,
         retrieverFor: retrieverFor(episteme),
       })
     }
@@ -413,6 +437,8 @@ export class CognitiveSession {
       suggestions,
       sources,
       store: storage,
+      filePath: options.filePath,
+      sharing: options.sharing === true,
       retrieverFor: retrieverFor(episteme),
     })
     try {
@@ -963,6 +989,89 @@ export class CognitiveSession {
       })
       return { ok: true, suggestion }
     })
+  }
+
+  /**
+   * What publishing `request` would make public, or why it cannot be published (ADR 0014). Changes nothing.
+   *
+   * The same validation as `publish`, so what a person confirms is what is written. Everything not listed stays
+   * private: their state, their other nodes, their drafts and sources.
+   */
+  previewPublication(request: PublicationRequest): PublicationPreview {
+    const refusal = this.#sharingRefusal()
+    if (refusal !== undefined) return { ok: false, refusal }
+    return this.#episteme.log.previewPublication(this.#publicationDraft(request))
+  }
+
+  /**
+   * Publishes part of this person's understanding: the root and what it reaches through their own relations.
+   *
+   * Only ever a person's own act: the session's person is the author, and Core refuses an agent. Before the
+   * graph's first publication, the graph file is copied aside, because no earlier build can open it after.
+   */
+  publish(request: PublicationRequest): Promise<PublicationPreview> {
+    return this.#exclusive(async () => {
+      const refusal = this.#sharingRefusal()
+      if (refusal !== undefined) return { ok: false, refusal }
+      const draft = this.#publicationDraft(request)
+      const preview = this.#episteme.log.previewPublication(draft)
+      if (!preview.ok) return preview
+      await this.#backUpBeforeFirstPublication()
+      const published = this.#episteme.log.publish(draft)
+      if (published.ok) await this.#persist()
+      return published
+    })
+  }
+
+  /** Withdraws one of this person's live publications. What others adopted from it stays in their history. */
+  withdrawPublication(
+    id: string,
+    reason?: string,
+  ): Promise<
+    | { readonly ok: true; readonly withdrawal: Withdrawal }
+    | { readonly ok: false; readonly refusal: MutationRefusal }
+  > {
+    return this.#exclusive(async () => {
+      const result = this.#episteme.log.withdrawPublication(id, this.#actor, reason)
+      if (result.ok) await this.#persist()
+      return result
+    })
+  }
+
+  /** Every live publication, anyone's, oldest first. What browsing reads. */
+  publications(): readonly Publication[] {
+    return this.#episteme.log.publications.live()
+  }
+
+  #publicationDraft(request: PublicationRequest): PublicationDraft {
+    return {
+      id: `pub_${randomUUID()}`,
+      actorId: this.#actor,
+      root: request.root,
+      ...(request.include === undefined ? {} : { include: request.include }),
+      ...(request.supersedes === undefined ? {} : { supersedes: request.supersedes }),
+      ...(request.note === undefined ? {} : { note: request.note }),
+    }
+  }
+
+  #sharingRefusal(): MutationRefusal | undefined {
+    if (this.#parts.sharing) return undefined
+    return {
+      code: 'sharing_disabled',
+      message: 'this graph does not allow publishing; start the service with sharing enabled',
+    }
+  }
+
+  /** Copies the graph file aside once, before the first publication is written into it. */
+  async #backUpBeforeFirstPublication(): Promise<void> {
+    const file = this.#parts.filePath
+    if (file === undefined || this.#episteme.log.publications.all().length > 0) return
+    const backup = `${file}.before-sharing`
+    const exists = await access(backup).then(
+      () => true,
+      () => false,
+    )
+    if (!exists) await copyFile(file, backup)
   }
 
   /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */

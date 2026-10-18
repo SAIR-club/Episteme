@@ -2,6 +2,8 @@ import { rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EpistemeError, asId, fromSerializedEvent, toSerializedEvent } from '@episteme/core'
 import type {
+  Publication,
+  Withdrawal,
   Branch,
   BranchId,
   EventId,
@@ -30,6 +32,12 @@ export type PersistedRecord =
   | { readonly schemaVersion: number; readonly kind: 'branch'; readonly branch: Branch }
   | { readonly schemaVersion: number; readonly kind: 'event'; readonly event: SerializedStateEvent }
   | { readonly schemaVersion: number; readonly kind: 'revocation'; readonly revocation: Revocation }
+  | {
+      readonly schemaVersion: number
+      readonly kind: 'publication'
+      readonly publication: Publication
+    }
+  | { readonly schemaVersion: number; readonly kind: 'withdrawal'; readonly withdrawal: Withdrawal }
 
 export type PersistedRecordKind = PersistedRecord['kind']
 
@@ -92,7 +100,9 @@ function isKnownKind(value: unknown): value is PersistedRecordKind {
     value === 'edge' ||
     value === 'branch' ||
     value === 'event' ||
-    value === 'revocation'
+    value === 'revocation' ||
+    value === 'publication' ||
+    value === 'withdrawal'
   )
 }
 
@@ -195,6 +205,9 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
   readonly #eventOrder: string[] = []
   readonly #branchEvents = new Map<string, string[]>()
   readonly #revocations = new Map<string, Revocation>()
+  /** Publications and withdrawals, in the order they were made (ADR 0014). */
+  readonly #publications = new Map<string, Publication>()
+  readonly #withdrawals = new Map<string, Withdrawal>()
   readonly #filePath: string
   #loaded = false
   #ownsLock = false
@@ -349,6 +362,24 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
         }),
       )
     }
+    for (const publication of this.#publications.values()) {
+      lines.push(
+        serializeRecord({
+          schemaVersion: SERIALIZATION_SCHEMA_VERSION,
+          kind: 'publication',
+          publication,
+        }),
+      )
+    }
+    for (const withdrawal of this.#withdrawals.values()) {
+      lines.push(
+        serializeRecord({
+          schemaVersion: SERIALIZATION_SCHEMA_VERSION,
+          kind: 'withdrawal',
+          withdrawal,
+        }),
+      )
+    }
 
     // A temporary file plus a rename: a crash mid-write leaves the previous complete history
     // intact rather than a half-written one.
@@ -458,6 +489,12 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
     for (const revocation of state.revocations) {
       this.#revocations.set(revocation.eventId, revocation)
     }
+    for (const publication of state.publications ?? []) {
+      this.#publications.set(publication.id, publication)
+    }
+    for (const withdrawal of state.withdrawals ?? []) {
+      this.#withdrawals.set(withdrawal.publicationId, withdrawal)
+    }
   }
 
   #eventState(): EventLogState {
@@ -471,6 +508,8 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
         eventIds: eventIds.map((id) => asId<EventId>(id)),
       })),
       revocations: [...this.#revocations.values()],
+      publications: [...this.#publications.values()],
+      withdrawals: [...this.#withdrawals.values()],
     }
   }
 
@@ -499,6 +538,12 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
       }
       case 'revocation':
         this.#revocations.set(record.revocation.eventId, record.revocation)
+        return
+      case 'publication':
+        this.#publications.set(record.publication.id, record.publication)
+        return
+      case 'withdrawal':
+        this.#withdrawals.set(record.withdrawal.publicationId, record.withdrawal)
         return
     }
   }

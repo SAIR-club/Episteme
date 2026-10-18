@@ -77,8 +77,14 @@ describe('the visibility rule, in Core', () => {
   it('keeps a node visible to someone who holds state on it', () => {
     const context = graphOfTwo()
     const node = context.graph.getNode('a_private')!
-    expect(isNodeVisible(node, B, () => false)).toBe(false)
-    expect(isNodeVisible(node, B, (target, actor) => target === node.id && actor === B)).toBe(true)
+    const facts = { isNodePublished: () => false, isEdgePublished: () => false }
+    expect(isNodeVisible(node, B, { ...facts, hasState: () => false })).toBe(false)
+    expect(
+      isNodeVisible(node, B, {
+        ...facts,
+        hasState: (target, actor) => target === node.id && actor === B,
+      }),
+    ).toBe(true)
   })
 
   it('refuses a person’s state on a node they cannot see, and allows it on reference material', () => {

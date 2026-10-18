@@ -59,8 +59,9 @@ interface Publication {
 ```
 
 - **Immutable and append-only.** Nodes are immutable already, so a publication pins exactly what was
-  published. Withdrawing one is a `revocation` of the publication, the same record ADR 0006 uses for
-  everything else. Nothing is deleted.
+  published. Withdrawing one writes a `withdrawal` record naming it, its author and when. Nothing is deleted.
+  (Proposed as a `revocation`; implemented as a record of its own because a revocation is keyed by an event id,
+  and a publication is not an event.)
 - **Why not a node.** A publication is a fact about access and authorship, not a unit of understanding. As a
   node it would appear in every node query, every retrieval and every agent's recall unless each of those
   paths learned to skip it, which would put one invariant in many places.

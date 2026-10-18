@@ -2,6 +2,14 @@ import { EpistemeError, isEpistemeError } from '../errors.js'
 import type { GuardGraphView, GraphMutation } from '../guards/index.js'
 import type { Registries } from '../graph/registries.js'
 import { isNodeVisible } from '../visibility/index.js'
+import {
+  PublicationLog,
+  type Publication,
+  type PublicationDraft,
+  type PublicationPreview,
+  type Withdrawal,
+} from '../publication/index.js'
+import type { MutationRefusal } from '../graph/graph.js'
 import { validateMutation } from '../guards/index.js'
 import type { CognitiveStateView } from '../graph/graph.js'
 import { asId } from '../ontology/ids.js'
@@ -146,6 +154,9 @@ export interface EventLogState {
     readonly eventIds: readonly EventId[]
   }[]
   readonly revocations: readonly Revocation[]
+  /** Publications and their withdrawals (ADR 0014). Absent in a history written before them. */
+  readonly publications?: readonly Publication[]
+  readonly withdrawals?: readonly Withdrawal[]
 }
 
 /**
@@ -193,6 +204,8 @@ export class EventLog implements CognitiveStateView {
   readonly #revocations = new Map<EventId, Revocation>()
   /** Derived state; never authoritative. */
   readonly #cache = new Map<string, DimensionIndex>()
+  /** What people have made public, kept with the history and persisted with it (ADR 0014). */
+  #publications = new PublicationLog()
   /**
    * Bumped on every append and every retraction.
    *
@@ -256,6 +269,11 @@ export class EventLog implements CognitiveStateView {
       this.#revocations.set(revocation.eventId, Object.freeze({ ...revocation }))
     }
 
+    this.#publications = new PublicationLog({
+      publications: state.publications ?? [],
+      withdrawals: state.withdrawals ?? [],
+    })
+
     // Ids must continue past what was restored, never restart, or a reloaded process would
     // reuse an id and two different moments would share one identity.
     this.#ids.resume?.({
@@ -281,7 +299,55 @@ export class EventLog implements CognitiveStateView {
         eventIds: [...eventIds],
       })),
       revocations: [...this.#revocations.values()],
+      ...this.#publications.state(),
     }
+  }
+
+  /** What people have made public. Read-only here; `publish` and `withdrawPublication` change it. */
+  get publications(): Pick<
+    PublicationLog,
+    'get' | 'isLive' | 'withdrawalOf' | 'live' | 'all' | 'isNodePublished' | 'isEdgePublished'
+  > {
+    return this.#publications
+  }
+
+  isNodePublished(id: NodeId | string): boolean {
+    return this.#publications.isNodePublished(id)
+  }
+
+  isEdgePublished(id: string): boolean {
+    return this.#publications.isEdgePublished(id)
+  }
+
+  /** What `draft` would publish, through the same validation as `publish`. Changes nothing. */
+  previewPublication(draft: PublicationDraft): PublicationPreview {
+    return this.#publications.preview(this.#graph, draft, this.#clock.now())
+  }
+
+  /** Records a publication, or returns why it cannot be one (ADR 0014, decision 3). */
+  publish(draft: PublicationDraft): PublicationPreview {
+    const result = this.#publications.publish(this.#graph, draft, this.#clock.now())
+    if (result.ok) {
+      this.#revision += 1
+      this.#cache.clear()
+    }
+    return result
+  }
+
+  /** Withdraws a live publication of `actorId`'s. Browsing and adopting stop; nothing is erased. */
+  withdrawPublication(
+    id: string,
+    actorId: ActorId,
+    reason?: string,
+  ):
+    | { readonly ok: true; readonly withdrawal: Withdrawal }
+    | { readonly ok: false; readonly refusal: MutationRefusal } {
+    const result = this.#publications.withdraw(id, actorId, this.#clock.now(), reason)
+    if (result.ok) {
+      this.#revision += 1
+      this.#cache.clear()
+    }
+    return result
   }
 
   /** Writes the current history through the store, if one was configured. */
@@ -630,7 +696,7 @@ export class EventLog implements CognitiveStateView {
     if (
       target !== undefined &&
       this.#graph.getActor(request.actorId)?.kind === 'human' &&
-      !isNodeVisible(target, request.actorId, (node, actor) => this.hasState(node, actor))
+      !isNodeVisible(target, request.actorId, this)
     ) {
       throw new EpistemeError(
         'guard_rejected',

@@ -33,6 +33,8 @@ export interface ServiceOptions {
   readonly publicOrigin?: string
   /** In shared mode, take an elicitation answer as the person's decision anyway (ADR 0012, decision 4). */
   readonly trustElicitation?: boolean
+  /** Allow people to publish (ADR 0014). Off by default; the graph is copied aside before its first one. */
+  readonly sharing?: boolean
 }
 
 export interface EpistemeService {
@@ -73,7 +75,11 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
   // graph's lock.
   assertSceneRoutes(profile.routes ?? [])
   const people = await peopleFor(options)
-  const session = await CognitiveSession.open({ filePath: graph, scene: profile.scene })
+  const session = await CognitiveSession.open({
+    filePath: graph,
+    scene: profile.scene,
+    sharing: options.sharing === true,
+  })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
