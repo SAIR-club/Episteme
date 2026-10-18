@@ -1,3 +1,6 @@
+import { learnScene, type SceneView, type SessionScene } from '@episteme/application'
+import type { SceneTool } from '@episteme/mcp'
+
 /**
  * What the service is composed with for one scene (ADR 0010, decision 8).
  */
@@ -67,14 +70,65 @@ export interface SceneProfile {
   readonly name: string
   /** Seeded on first start, before the service accepts a request. Seeding is idempotent. */
   readonly seed: SeedTopic
+  /** The packs, distillation policy and recordable dimensions the session is opened with (ADR 0013). */
+  readonly scene: SessionScene
+  /** Tools the scene adds to the MCP surface, beside `recall`, `propose`, `distill` and `reflect`. */
+  readonly mcpTools?: readonly SceneTool[]
+  /** Routes the scene adds to the REST API, served under `/api/v1/scene/<name>`. */
+  readonly routes?: readonly SceneRoute[]
 }
 
-/** Default scene profile with blank starting topic. */
+/** What a scene's route receives: a view of the session that cannot decide or write, and the request. */
+export interface SceneRouteContext {
+  readonly view: SceneView
+  /** The JSON body of a `POST`, or an empty object. */
+  readonly body: Readonly<Record<string, unknown>>
+  readonly query: URLSearchParams
+}
+
+/**
+ * A REST route a scene adds (ADR 0013, scene extensions).
+ *
+ * Served behind the same boundary as every other route, under `/api/v1/scene/<profile name><path>`. It sees the
+ * session only through `SceneView`: deciding and recording stay on the API's own routes, the one human-decision
+ * path. A refusal it throws (`isRefusal`) is answered with 422, like every other refusal.
+ */
+export interface SceneRoute {
+  readonly method: 'GET' | 'POST'
+  /** Starts with `/`, for example `/projects`. */
+  readonly path: string
+  readonly handle: (
+    context: SceneRouteContext,
+  ) => Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>
+}
+
+/** Throws unless every route has a path that starts with `/` and no two share a method and path. */
+export function assertSceneRoutes(routes: readonly SceneRoute[]): void {
+  const seen = new Set<string>()
+  for (const route of routes) {
+    if (!route.path.startsWith('/')) {
+      throw new Error(`scene route "${route.path}" must start with "/"`)
+    }
+    const key = `${route.method} ${route.path}`
+    if (seen.has(key)) throw new Error(`scene route ${key} is declared twice`)
+    seen.add(key)
+  }
+}
+
+/**
+ * A profile on the built-in Learn scene with a blank starting topic, for the development CLI.
+ *
+ * @deprecated Its scene is the deprecated built-in Learn scene. A scene's own launcher supplies its profile.
+ */
 export function defaultProfile(seed: SeedTopic = BLANK_TOPIC): SceneProfile {
-  return { name: 'default', seed }
+  return { name: 'default', seed, scene: learnScene }
 }
 
-/** The Learn scene, starting from `topic`, or from the transformer demonstration topic. */
+/**
+ * The Learn scene, starting from `topic`, or from the transformer demonstration topic.
+ *
+ * @deprecated MindLink supplies the Learn profile (ADR 0013); this one is removed in step M6.
+ */
 export function learnProfile(topic: SeedTopic = TRANSFORMERS): SceneProfile {
-  return { name: 'learn', seed: topic }
+  return { name: 'learn', seed: topic, scene: learnScene }
 }

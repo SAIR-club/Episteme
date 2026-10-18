@@ -8,13 +8,16 @@ import {
 } from '@modelcontextprotocol/server'
 import { askLearner, canAskLearner, resolveAnswer, type PendingDecisionState } from './confirm.js'
 import {
+  isRefusal,
+  sceneViewOf,
   MAX_HOST_ITEMS,
   MAX_MATERIAL,
-  RECORDABLE_DIMENSIONS,
   type DistillOutcome,
   type HostItem,
-  type LearnSession,
+  type CognitiveSession,
   type Proposal,
+  type RecordableDimension,
+  type SceneView,
   type RecallResult,
   type ProgressSummary,
 } from '@episteme/application'
@@ -77,46 +80,49 @@ interface ProposeInput {
   level?: string
 }
 
-const PROPOSE_INPUT = fromJsonSchema<ProposeInput>({
-  type: 'object',
-  properties: {
-    kind: {
-      type: 'string',
-      enum: ['claim', 'link', 'state'],
-      description:
-        'claim: a new claim (label, optional about). link: connect two existing nodes (from, to, relation). state: a change on one dimension of an existing node (target, dimension, level).',
+/** The `propose` input, with the dimensions and levels this session's scene lets a person record. */
+function proposeInput(dimensions: readonly RecordableDimension[]) {
+  return fromJsonSchema<ProposeInput>({
+    type: 'object',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['claim', 'link', 'state'],
+        description:
+          'claim: a new claim (label, optional about). link: connect two existing nodes (from, to, relation). state: a change on one dimension of an existing node (target, dimension, level).',
+      },
+      rationale: {
+        type: 'string',
+        minLength: 1,
+        description: 'Why you propose this, so the learner can judge it.',
+      },
+      label: { type: 'string', description: 'claim: the claim, as the learner would state it.' },
+      about: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'claim: ids of the concepts or questions the claim is about.',
+      },
+      from: { type: 'string', description: 'link: the id of the node the edge starts from.' },
+      to: { type: 'string', description: 'link: the id of the node the edge points to.' },
+      relation: {
+        type: 'string',
+        description: 'link: a registered edge type, for example refers_to, supports, contradicts.',
+      },
+      target: { type: 'string', description: 'state: the id of the node the change is about.' },
+      dimension: {
+        type: 'string',
+        enum: dimensions.map((dimension) => dimension.id),
+        description: 'state: which dimension of the learner’s understanding.',
+      },
+      level: {
+        type: 'string',
+        description: `state: the proposed level. ${dimensions.map((dimension) => `${dimension.id}: ${dimension.levels.join(' | ')}`).join('; ')}.`,
+      },
     },
-    rationale: {
-      type: 'string',
-      minLength: 1,
-      description: 'Why you propose this, so the learner can judge it.',
-    },
-    label: { type: 'string', description: 'claim: the claim, as the learner would state it.' },
-    about: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'claim: ids of the concepts or questions the claim is about.',
-    },
-    from: { type: 'string', description: 'link: the id of the node the edge starts from.' },
-    to: { type: 'string', description: 'link: the id of the node the edge points to.' },
-    relation: {
-      type: 'string',
-      description: 'link: a registered edge type, for example refers_to, supports, contradicts.',
-    },
-    target: { type: 'string', description: 'state: the id of the node the change is about.' },
-    dimension: {
-      type: 'string',
-      enum: RECORDABLE_DIMENSIONS.map((dimension) => dimension.id),
-      description: 'state: which dimension of the learner’s understanding.',
-    },
-    level: {
-      type: 'string',
-      description: `state: the proposed level. ${RECORDABLE_DIMENSIONS.map((dimension) => `${dimension.id}: ${dimension.levels.join(' | ')}`).join('; ')}.`,
-    },
-  },
-  required: ['kind', 'rationale'],
-  additionalProperties: false,
-})
+    required: ['kind', 'rationale'],
+    additionalProperties: false,
+  })
+}
 
 interface DistillInput {
   title?: string
@@ -231,10 +237,63 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
   additionalProperties: false,
 })
 
+/** The tools every Episteme MCP server offers. A scene's tools may not reuse these names. */
+export const BUILT_IN_TOOLS: readonly string[] = ['recall', 'propose', 'distill', 'reflect']
+
+/** What a scene's tool receives: a view of the session that cannot decide or write, and who is calling. */
+export interface SceneToolContext {
+  readonly view: SceneView
+  /** The calling agent's actor id, from its self-declared client name. Provenance, not authentication. */
+  readonly agent: string
+}
+
+/** A scene's answer: text for the agent and the same data as structured content. */
+export interface SceneToolAnswer {
+  readonly text: string
+  readonly structured: Readonly<Record<string, unknown>>
+}
+
+/**
+ * A tool a scene adds beside the built-in ones (ADR 0013, scene extensions).
+ *
+ * It sees the session only through `SceneView`, so it can read, propose and distill, and nothing it does
+ * becomes the person's without their decision. A refusal it throws (`isRefusal`) is answered as one.
+ */
+export interface SceneTool {
+  readonly name: string
+  readonly title: string
+  readonly description: string
+  /** A JSON Schema for the arguments, of type `object`. */
+  readonly inputSchema: Readonly<Record<string, unknown>>
+  /** Declared to the host as a hint; it grants nothing. */
+  readonly readOnly: boolean
+  readonly handle: (
+    args: Readonly<Record<string, unknown>>,
+    context: SceneToolContext,
+  ) => SceneToolAnswer | Promise<SceneToolAnswer>
+}
+
+/**
+ * Throws unless every scene tool has a name of its own.
+ *
+ * Checked when the endpoint is built, so a clash stops the service at start rather than shadowing `propose`
+ * with something that behaves differently.
+ */
+export function assertSceneToolNames(tools: readonly SceneTool[]): void {
+  const seen = new Set(BUILT_IN_TOOLS)
+  for (const tool of tools) {
+    if (seen.has(tool.name)) {
+      throw new Error(`scene tool "${tool.name}" reuses the name of another tool`)
+    }
+    seen.add(tool.name)
+  }
+}
+
 /** One MCP server over one session. Built per request by the HTTP endpoint; it holds no state of its own. */
 export function createEpistemeMcpServer(
-  session: LearnSession,
+  session: CognitiveSession,
   codec: RequestStateCodec<PendingDecisionState>,
+  sceneTools: readonly SceneTool[] = [],
 ): McpServer {
   // Every echoed `requestState` is verified before a handler runs. A forged or expired one never reaches it.
   const server = new McpServer(
@@ -263,7 +322,7 @@ export function createEpistemeMcpServer(
       title: 'Propose a change to the learner’s understanding',
       description:
         'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the learner decides on it themselves; you cannot decide for them. If your host can show the learner a form, they are asked right away; otherwise it waits in their review queue. A proposal that could never be accepted is refused with the reason.',
-      inputSchema: PROPOSE_INPUT,
+      inputSchema: proposeInput(session.recordableDimensions),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async (input, context) => {
@@ -366,6 +425,31 @@ export function createEpistemeMcpServer(
       })
     },
   )
+
+  const view = sceneViewOf(session)
+  for (const tool of sceneTools) {
+    server.registerTool(
+      tool.name,
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: fromJsonSchema<Record<string, unknown>>(tool.inputSchema),
+        annotations: { readOnlyHint: tool.readOnly, openWorldHint: false },
+      },
+      async (args, context) => {
+        try {
+          const answer = await tool.handle(args, {
+            view,
+            agent: agentActorFor(clientNameOf(context)),
+          })
+          return result(answer.text, answer.structured)
+        } catch (error) {
+          if (!isRefusal(error)) throw error
+          return refused(error.code, error.message)
+        }
+      },
+    )
+  }
 
   return server
 }

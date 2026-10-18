@@ -7,11 +7,9 @@ import {
   systemClock,
   toSerializedEvent,
   type SerializedStateEvent,
-  defineDomainPack,
   type DomainPack,
   type ActorId,
   type DimensionId,
-  type StateDimensionDefinition,
   type EdgeId,
   type EdgeTypeId,
   type MutationRefusal,
@@ -62,6 +60,8 @@ import {
 } from '@episteme/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
+import { learnScene } from './learn-scene.js'
+import type { RecordableDimension, SessionScene } from './scene.js'
 
 const DIMENSION = {
   confidence: asId<DimensionId>('confidence'),
@@ -82,180 +82,6 @@ const EDGE = {
 
 function defaultTags(topic = 'general'): readonly Tag[] {
   return [topicTag(topic), tag('scene', 'cognitive')]
-}
-
-/**
- * The axes of understanding this session's pack registers.
- *
- * `evidence` and `transfer` carry levels from two earlier vocabularies. Graphs written by v0.1.0 may hold
- * `weak`, `derived`, `none`, `near` and `far`, and history is append-only, so those stay registered and marked
- * legacy: old events stay valid, and no surface offers them for new input (ADR 0013).
- */
-const DEFAULT_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
-  {
-    id: asId<DimensionId>('confidence'),
-    label: 'Confidence',
-    kind: 'ordinal',
-    ordered: true,
-    levels: ['low', 'medium', 'high'],
-  },
-  {
-    id: asId<DimensionId>('articulation'),
-    label: 'Articulation',
-    kind: 'ordinal',
-    ordered: true,
-    levels: ['low', 'medium', 'high'],
-  },
-  {
-    id: asId<DimensionId>('evidence'),
-    label: 'Evidence',
-    kind: 'ordinal',
-    ordered: true,
-    levels: ['none', 'weak', 'reproduced', 'derived', 'anecdotal', 'proven'],
-    legacyLevels: ['weak', 'derived'],
-  },
-  {
-    id: asId<DimensionId>('conflict'),
-    label: 'Conflict',
-    kind: 'ordinal',
-    ordered: false,
-    levels: ['none', 'suspected', 'open', 'resolved'],
-  },
-  {
-    id: asId<DimensionId>('exposure'),
-    label: 'Exposure',
-    kind: 'ordinal',
-    ordered: true,
-    levels: ['none', 'seen', 'studied', 'worked'],
-  },
-  {
-    id: asId<DimensionId>('transfer'),
-    label: 'Transfer',
-    kind: 'ordinal',
-    ordered: true,
-    levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
-    legacyLevels: ['none', 'near', 'far'],
-  },
-  {
-    id: asId<DimensionId>('source'),
-    label: 'Source',
-    kind: 'categorical',
-    levels: ['self', 'agent', 'paper', 'discussion', 'course'],
-  },
-]
-
-export const defaultSessionPack: DomainPack = defineDomainPack('default-session-pack', {
-  tagNamespaces: [
-    { namespace: 'scene', label: 'Scene' },
-    { namespace: 'topic', label: 'Topic' },
-    { namespace: 'state', label: 'State' },
-    { namespace: 'actor', label: 'Actor' },
-    { namespace: 'system', label: 'System' },
-  ],
-  nodeTypes: [
-    { id: asId<NodeTypeId>('concept'), label: 'Concept' },
-    { id: asId<NodeTypeId>('claim'), label: 'Claim' },
-    { id: asId<NodeTypeId>('question'), label: 'Question' },
-    { id: asId<NodeTypeId>('evidence'), label: 'Evidence' },
-    { id: asId<NodeTypeId>('thought'), label: 'Thought' },
-    { id: asId<NodeTypeId>('synthesis'), label: 'Synthesis' },
-  ],
-  edgeTypes: [
-    {
-      id: asId<EdgeTypeId>('refers_to'),
-      label: 'refers to',
-      category: 'epistemic',
-      to: [asId<NodeTypeId>('concept'), asId<NodeTypeId>('question')],
-    },
-    {
-      id: asId<EdgeTypeId>('answers'),
-      label: 'answers',
-      category: 'epistemic',
-      from: [
-        asId<NodeTypeId>('claim'),
-        asId<NodeTypeId>('evidence'),
-        asId<NodeTypeId>('thought'),
-        asId<NodeTypeId>('synthesis'),
-      ],
-      to: [asId<NodeTypeId>('question')],
-    },
-    {
-      id: asId<EdgeTypeId>('supports'),
-      label: 'supports',
-      category: 'epistemic',
-      from: [
-        asId<NodeTypeId>('evidence'),
-        asId<NodeTypeId>('thought'),
-        asId<NodeTypeId>('synthesis'),
-        asId<NodeTypeId>('claim'),
-      ],
-      to: [asId<NodeTypeId>('claim')],
-    },
-    {
-      id: asId<EdgeTypeId>('contradicts'),
-      label: 'contradicts',
-      category: 'epistemic',
-      from: [
-        asId<NodeTypeId>('evidence'),
-        asId<NodeTypeId>('thought'),
-        asId<NodeTypeId>('synthesis'),
-        asId<NodeTypeId>('claim'),
-      ],
-      to: [asId<NodeTypeId>('claim')],
-    },
-    {
-      id: asId<EdgeTypeId>('prerequisite'),
-      label: 'prerequisite',
-      category: 'epistemic',
-      from: [asId<NodeTypeId>('concept')],
-      to: [asId<NodeTypeId>('concept')],
-    },
-    { id: asId<EdgeTypeId>('contains'), label: 'contains', category: 'structural' },
-    { id: asId<EdgeTypeId>('derived_from'), label: 'derived from', category: 'provenance' },
-    { id: asId<EdgeTypeId>('organized_from'), label: 'organized from', category: 'provenance' },
-    {
-      id: asId<EdgeTypeId>('synthesizes'),
-      label: 'synthesizes',
-      category: 'epistemic',
-      from: [asId<NodeTypeId>('synthesis')],
-    },
-    { id: asId<EdgeTypeId>('authored_by'), label: 'authored by', category: 'provenance' },
-    { id: asId<EdgeTypeId>('tagged_with'), label: 'tagged with', category: 'structural' },
-    { id: asId<EdgeTypeId>('evolves_to'), label: 'evolves to', category: 'structural' },
-    { id: asId<EdgeTypeId>('forks_from'), label: 'forks from', category: 'structural' },
-    { id: asId<EdgeTypeId>('same_as'), label: 'same as', category: 'identity' },
-    { id: asId<EdgeTypeId>('exemplifies'), label: 'exemplifies', category: 'epistemic' },
-  ],
-  stateDimensions: DEFAULT_STATE_DIMENSIONS,
-})
-
-export const defaultDistillationPolicy: DistillationPolicy = {
-  id: 'default',
-  nodeTypes: {
-    concept: 'concept',
-    claim: 'claim',
-    question: 'question',
-    evidence: 'evidence',
-    thought: 'thought',
-  },
-  edgeTypes: {
-    about: 'refers_to',
-    answers: 'answers',
-    supports: 'supports',
-    contradicts: 'contradicts',
-    revises: 'evolves_to',
-  },
-  stateDimensions: {
-    confidence: ['low', 'medium', 'high'],
-    articulation: ['low', 'medium', 'high'],
-    conflict: ['suspected', 'open'],
-  },
-  limits: {
-    perEpisode: 12,
-    perRun: 60,
-  },
-  propertiesFor: (role, label) =>
-    role === 'evidence' ? { text: label, kind: 'example' } : { text: label },
 }
 
 function defaultResponder(
@@ -297,117 +123,6 @@ function defaultResponder(
 
 const HUMAN = asId<ActorId>('actor_human')
 const SCAFFOLD = asId<ActorId>('actor_scaffold')
-
-/** A dimension the learner can record, with the levels the domain pack allows. */
-export interface RecordableDimension {
-  readonly id: DimensionId
-  readonly label: string
-  /** The same label in Simplified Chinese, shown first to the learner. */
-  readonly labelZh: string
-  readonly levels: readonly string[]
-  /** Levels with their Chinese names, in the same order as `levels`. */
-  readonly levelLabelsZh: readonly { readonly level: string; readonly label: string }[]
-  readonly description: string
-  readonly descriptionZh: string
-}
-
-/** What this surface adds to a registered dimension: its Chinese names and its prose. */
-interface DimensionPresentation {
-  readonly id: DimensionId
-  readonly labelZh: string
-  /** The Chinese name of every current level, keyed by level token. */
-  readonly levelLabelsZh: Readonly<Record<string, string>>
-  readonly description: string
-  readonly descriptionZh: string
-}
-
-/** The levels of a registered dimension that may be offered for new input: all of them but the legacy ones. */
-function currentLevels(definition: StateDimensionDefinition): readonly string[] {
-  const legacy = definition.legacyLevels ?? []
-  return (definition.levels ?? []).filter((level) => !legacy.includes(level))
-}
-
-/**
- * Joins a presentation to the dimension the pack registers.
- *
- * The levels come from the definition, never from here: Core refuses any level the pack did not register, so a
- * list kept on this side could only drift into offering the learner buttons that fail. A current level without
- * a Chinese name, or a name for a level that is not current, throws at load rather than rendering a raw token or
- * a dead button.
- */
-function recordable(presentation: DimensionPresentation): RecordableDimension {
-  const registered = DEFAULT_STATE_DIMENSIONS.find((candidate) => candidate.id === presentation.id)
-  if (registered?.levels === undefined) {
-    throw new Error(
-      `dimension ${presentation.id} is not registered with levels by the session pack`,
-    )
-  }
-  const levels = currentLevels(registered)
-  const named = Object.keys(presentation.levelLabelsZh)
-  const missing = levels.filter((level) => !named.includes(level))
-  const extra = named.filter((level) => !levels.includes(level))
-  if (missing.length > 0 || extra.length > 0) {
-    throw new Error(
-      `Chinese level names for ${presentation.id} do not match its current levels ` +
-        `(missing: ${missing.join(', ') || '-'}; not current: ${extra.join(', ') || '-'})`,
-    )
-  }
-  return {
-    id: presentation.id,
-    label: registered.label,
-    labelZh: presentation.labelZh,
-    levels,
-    levelLabelsZh: levels.map((level) => ({ level, label: presentation.levelLabelsZh[level]! })),
-    description: presentation.description,
-    descriptionZh: presentation.descriptionZh,
-  }
-}
-
-const LOW_MEDIUM_HIGH_ZH = { low: '低', medium: '中', high: '高' }
-
-/**
- * The dimensions a learner may set from this surface, in the order they are offered.
- *
- * Deliberately a subset of the registered axes. The others are recorded by other means or are not yet
- * settable by hand, and offering a control for a dimension whose meaning is unclear would invite the
- * learner to record something they cannot interpret later.
- *
- * Chinese and English are both carried here rather than translated in a view, so the two cannot drift:
- * `AGENTS.md` requires Simplified Chinese for user-facing prose and English for code, and a dimension whose
- * Chinese name disagrees with its English one would be a correctness problem, not a cosmetic one.
- */
-export const RECORDABLE_DIMENSIONS: readonly RecordableDimension[] = [
-  {
-    id: DIMENSION.confidence,
-    labelZh: '确信程度',
-    levelLabelsZh: LOW_MEDIUM_HIGH_ZH,
-    description: 'How much you would rely on this.',
-    descriptionZh: '你愿意多大程度上依赖它。',
-  },
-  {
-    id: DIMENSION.articulation,
-    labelZh: '表达程度',
-    levelLabelsZh: LOW_MEDIUM_HIGH_ZH,
-    description: 'How well you could explain it to someone else.',
-    descriptionZh: '你能多好地把它讲给别人听。',
-  },
-  {
-    id: DIMENSION.evidence,
-    labelZh: '证据',
-    levelLabelsZh: { none: '无', reproduced: '已复现', anecdotal: '零散的', proven: '已证明' },
-    description: 'What backs it up.',
-    descriptionZh: '它背后有什么支撑。',
-  },
-  {
-    id: DIMENSION.conflict,
-    labelZh: '冲突',
-    // `suspected` is recordable so a distilled suggestion of it can be decided like any other (ADR 0011). Who
-    // decides does not change: only the learner, through the one decision path.
-    levelLabelsZh: { none: '无', suspected: '疑似', open: '未解决', resolved: '已解决' },
-    description: 'Whether you hold something that contradicts it.',
-    descriptionZh: '你是否同时持有与它矛盾的东西。',
-  },
-].map(recordable)
 
 /**
  * Why a level may not be recorded on a recordable dimension, or `undefined` when it may.
@@ -489,7 +204,7 @@ export interface VocabularyDimension {
   readonly id: string
   readonly label: string
   readonly kind: string
-  /** Whether a person can record it from a surface; see `RECORDABLE_DIMENSIONS`. */
+  /** Whether a person can record it by hand in the session's scene; see `recordableDimensions`. */
   readonly recordable: boolean
   /** Every registered level in registration order. A legacy level is shown, never offered for new input. */
   readonly levels: readonly { readonly id: string; readonly legacy: boolean }[]
@@ -549,23 +264,30 @@ export interface SessionOptions {
   readonly filePath?: string
   readonly adapter?: EmbeddingAdapter
   readonly weights?: ConstructorParameters<typeof HybridRetriever>[4]
+  /**
+   * The scene the session serves: its packs, distillation policy and recordable dimensions (ADR 0013).
+   * Without one, the deprecated built-in Learn scene, for one release.
+   */
+  readonly scene?: SessionScene
+  /** Replaces the scene's packs, for a caller that composes the graph with packs of its own. */
   readonly packs?: readonly DomainPack[]
 }
 
 /**
- * A live Learn session.
+ * A live session over one graph, for one scene.
  *
  * Holds one composed instance and one retriever, so every call reads the same graph and the same event
  * history. Rebuilding the retriever per call would reintroduce the possibility of a display that does not
  * match the answer it accompanies.
  */
-export class LearnSession {
+export class CognitiveSession {
   readonly #episteme: Episteme
   readonly #retriever: Retriever
   readonly #agent = new MockCognitiveAgent({ responder: defaultResponder })
   readonly #store: Store | undefined
   readonly #suggestions: SuggestionStore
   readonly #sources: SourceStore
+  readonly #scene: SessionScene
   /** The tail of the mutation queue. See `#exclusive`. */
   #mutations: Promise<unknown> = Promise.resolve()
   /** See `revision`. Advanced only by `#exclusive`. */
@@ -576,12 +298,14 @@ export class LearnSession {
   readonly #recovered: RecoveredDecision[] = []
 
   private constructor(
+    scene: SessionScene,
     episteme: Episteme,
     retriever: Retriever,
     suggestions: SuggestionStore,
     sources: SourceStore,
     store?: Store,
   ) {
+    this.#scene = scene
     this.#episteme = episteme
     this.#retriever = retriever
     this.#suggestions = suggestions
@@ -595,15 +319,17 @@ export class LearnSession {
    * The ordering — load, then compose — is the rule `@episteme/sdk` exists to hold, so this does not
    * repeat it.
    */
-  static async open(options: SessionOptions = {}): Promise<LearnSession> {
+  static async open(options: SessionOptions = {}): Promise<CognitiveSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
-    const packs = options.packs ?? [defaultSessionPack]
+    const scene = options.scene ?? learnScene
+    const packs = options.packs ?? scene.packs
 
     if (options.filePath === undefined) {
       const { compose } = await import('@episteme/sdk')
       const episteme = compose({ actors, actorId: HUMAN, packs })
-      return new LearnSession(
+      return new CognitiveSession(
+        scene,
         episteme,
         new HybridRetriever(
           episteme.graph,
@@ -632,7 +358,8 @@ export class LearnSession {
       await storage.close()
       throw error
     }
-    const session = new LearnSession(
+    const session = new CognitiveSession(
+      scene,
       episteme,
       new HybridRetriever(
         episteme.graph,
@@ -653,6 +380,16 @@ export class LearnSession {
       throw error
     }
     return session
+  }
+
+  /** The scene this session serves. */
+  get scene(): SessionScene {
+    return this.#scene
+  }
+
+  /** The dimensions a person may record by hand in this session's scene, in the order they are offered. */
+  get recordableDimensions(): readonly RecordableDimension[] {
+    return this.#scene.recordableDimensions
   }
 
   get actorId(): ActorId {
@@ -797,11 +534,11 @@ export class LearnSession {
     }
 
     for (const [dimension, level] of entries) {
-      const known = RECORDABLE_DIMENSIONS.find((candidate) => candidate.id === dimension)
+      const known = this.#scene.recordableDimensions.find((candidate) => candidate.id === dimension)
       if (known === undefined) {
         throw new SessionRefusal(
           'not_recordable',
-          `"${dimension}" is not recordable from this surface. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
+          `"${dimension}" is not recordable from this surface. Available: ${this.#scene.recordableDimensions.map((d) => d.id).join(', ')}`,
         )
       }
       const refusal = levelRefusal(known, level)
@@ -986,7 +723,9 @@ export class LearnSession {
         id: definition.id,
         label: definition.label,
         kind: definition.kind,
-        recordable: RECORDABLE_DIMENSIONS.some((dimension) => dimension.id === definition.id),
+        recordable: this.#scene.recordableDimensions.some(
+          (dimension) => dimension.id === definition.id,
+        ),
         levels: (definition.levels ?? []).map((level) => ({
           id: level,
           legacy: legacy.includes(level),
@@ -1664,7 +1403,7 @@ export class LearnSession {
         }
       }
 
-      const policy = options.policy ?? defaultDistillationPolicy
+      const policy = options.policy ?? this.#scene.distillationPolicy
       const reader: SourceReader = host === undefined ? 'episteme' : 'host'
       const reused = this.#sources.reusable(text, reader, host?.hostSession)
       const sourceId = reused?.id ?? `src_${randomUUID()}`
@@ -2071,13 +1810,13 @@ export class LearnSession {
       case 'state': {
         const refusal = missing(proposal.target)
         if (refusal !== undefined) return refusal
-        const dimension = RECORDABLE_DIMENSIONS.find(
+        const dimension = this.#scene.recordableDimensions.find(
           (candidate) => candidate.id === proposal.dimension,
         )
         if (dimension === undefined) {
           return {
             code: 'unregistered_dimension',
-            message: `"${proposal.dimension}" is not a dimension the learner records. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
+            message: `"${proposal.dimension}" is not a dimension the learner records. Available: ${this.#scene.recordableDimensions.map((d) => d.id).join(', ')}`,
           }
         }
         return levelRefusal(dimension, proposal.level)
@@ -2539,4 +2278,7 @@ function progressLine(touched: number, settled: number): string {
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }
 
-export { LearnSession as CognitiveSession }
+/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3); the alias is removed one release later. */
+export const LearnSession = CognitiveSession
+/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3). */
+export type LearnSession = CognitiveSession

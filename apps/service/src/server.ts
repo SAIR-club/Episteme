@@ -1,11 +1,11 @@
 import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession } from '@episteme/application'
+import { CognitiveSession } from '@episteme/application'
 import { createMcpEndpoint } from '@episteme/mcp'
 import { API_PREFIX, handleApi, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
-import { learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
+import { assertSceneRoutes, learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
 export interface ServiceOptions {
@@ -13,7 +13,7 @@ export interface ServiceOptions {
   readonly graph?: string
   readonly port?: number
   readonly host?: string
-  /** The scene the service is composed with. Defaults to Learn. */
+  /** The scene the service is composed with. Defaults to the deprecated built-in Learn profile. */
   readonly profile?: SceneProfile
   /** A directory holding a prebuilt Workspace to serve at `/`. Without one, `/` says how to connect. */
   readonly workspace?: string
@@ -46,11 +46,14 @@ const MCP_PATH = '/mcp'
  */
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
-  const session = await LearnSession.open({ filePath: graph })
+  const profile = options.profile ?? learnProfile()
+  // Checked before the graph is opened, so a profile that cannot be served never takes the graph's lock.
+  assertSceneRoutes(profile.routes ?? [])
+  const session = await CognitiveSession.open({ filePath: graph, scene: profile.scene })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
-    return await serve(session, graph, options)
+    return await serve(session, graph, profile, options)
   } catch (error) {
     await session.close()
     throw error
@@ -58,7 +61,7 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
 }
 
 async function seedTopicIfPresent(
-  session: LearnSession,
+  session: CognitiveSession,
   topic?: SeedTopic,
 ): Promise<{ seeded: boolean }> {
   if (topic === undefined || topic.nodes.length === 0) return { seeded: false }
@@ -89,15 +92,15 @@ async function seedTopicIfPresent(
 }
 
 async function serve(
-  session: LearnSession,
+  session: CognitiveSession,
   graph: string,
+  profile: SceneProfile,
   options: ServiceOptions,
 ): Promise<EpistemeService> {
-  const profile = options.profile ?? learnProfile()
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
-  const mcp = createMcpEndpoint(session)
+  const mcp = createMcpEndpoint(session, { sceneTools: profile.mcpTools ?? [] })
   const workspace = options.workspace
 
   // Known once the socket is bound. No request can arrive before then.
