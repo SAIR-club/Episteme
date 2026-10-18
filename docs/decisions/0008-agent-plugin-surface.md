@@ -4,6 +4,8 @@ Status: **accepted** (2026-10-05). Amended the same day: the confirmation flow f
 model of MCP 2026-07-28, and both channels share one decision use case. Amended again: the trust each
 confirmation channel can and cannot offer is stated precisely (see _Trust boundaries_). Amended by
 [ADR 0010](0010-episteme-service.md): the host is the Episteme service, no longer part of the Learn surface.
+Amended by [ADR 0012](0012-human-review-security.md), once accepted: an elicitation answer is a decision channel
+in local mode only, and every decision needs a person's credential.
 
 ## Context
 

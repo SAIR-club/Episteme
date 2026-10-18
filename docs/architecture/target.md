@@ -68,9 +68,11 @@ from turning into a different product.
 1. **Agents propose, people confirm.** Nothing an agent sends can confirm a candidate or name who confirmed
    it. The agent-facing interface has no confirm operation. Confirmation comes from the Workspace, or from a
    form shown by a host trusted to show it to the person ([ADR 0008](../decisions/0008-agent-plugin-surface.md),
-   _Trust boundaries_). Which protocol a request uses is not authorization: until the service enforces
-   identity and per-operation permissions, any local process that reaches it can attempt a decision, and that
-   is documented as a limitation rather than presented as a guarantee.
+   _Trust boundaries_). Which protocol a request uses is not authorization: a decision needs a person's
+   credential, and an agent's credential cannot replace it ([ADR 0012](../decisions/0012-human-review-security.md)).
+   That stops accidents and makes a bypass deliberate and visible. It does not stop an agent that runs as the
+   person, with a shell, from using their credential, and that is documented as a limitation rather than
+   presented as a guarantee.
 2. **Conversations and material are Episteme data, not understanding.** Conversation turns, their
    parent-child relationships, branches and source references belong to Episteme's data model, held
    authoritatively by the service in the artifact store, append-only and referenced by provenance. A
