@@ -129,6 +129,19 @@ export class EdgeTypeRegistry {
   }
 }
 
+/** A legacy level must be a level: otherwise it would mark as read-only a token no event can carry. */
+function assertLegacyLevelsRegistered(definition: StateDimensionDefinition): void {
+  const unknown = (definition.legacyLevels ?? []).filter(
+    (level) => !(definition.levels ?? []).includes(level),
+  )
+  if (unknown.length > 0) {
+    throw new EpistemeError(
+      'invalid_definition',
+      `state dimension "${definition.id}" marks ${unknown.join(', ')} as legacy, which are not among its levels`,
+    )
+  }
+}
+
 /**
  * Registered axes of understanding.
  *
@@ -139,10 +152,12 @@ export class StateDimensionRegistry {
   readonly #registry = new Registry<StateDimensionDefinition>('state dimension')
 
   register(definition: StateDimensionDefinition): StateDimensionDefinition {
+    assertLegacyLevelsRegistered(definition)
     return this.#registry.register(definition)
   }
 
   registerIfAbsent(definition: StateDimensionDefinition): StateDimensionDefinition {
+    if (!this.#registry.has(definition.id)) assertLegacyLevelsRegistered(definition)
     return this.#registry.registerIfAbsent(definition)
   }
 

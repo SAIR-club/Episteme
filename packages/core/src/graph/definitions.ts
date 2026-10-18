@@ -51,6 +51,11 @@ export interface StateDimensionDefinition {
   readonly kind: DimensionKind
   /** Legal `level` tokens, for `ordinal` and `categorical` dimensions. */
   readonly levels?: readonly string[]
+  /**
+   * Levels kept only so that events already written with them stay valid and reduce as before. Each is one of
+   * `levels`. A surface reads and shows them, but never offers them for new input.
+   */
+  readonly legacyLevels?: readonly string[]
   /** Only set when the levels are ordered; enables direction-aware comparison. */
   readonly ordered?: boolean
   /** Every event touching this dimension must carry a `level` from `levels`. */
