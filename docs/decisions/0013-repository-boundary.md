@@ -1,6 +1,6 @@
 # 0013 — Two repositories, one owner per capability
 
-Status: **proposed** (2026-10-15). Keeps the repository split of PR #5 and ends the duplication it left
+Status: **accepted** (2026-10-17; proposed 2026-10-15). Keeps the repository split of PR #5 and ends the duplication it left
 behind. Depends on [ADR 0012](https://github.com/SAIR-club/Episteme/issues/17) for anything that needs an
 authenticated actor.
 

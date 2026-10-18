@@ -1,8 +1,10 @@
 # 0014 — Publication and reuse: the smallest shared loop
 
-Status: **proposed** (2026-10-12). Depends on [ADR 0012](https://github.com/SAIR-club/Episteme/issues/17)
+Status: **accepted** (2026-10-17; proposed 2026-10-12). Depends on [ADR 0012](https://github.com/SAIR-club/Episteme/issues/17)
 (an authenticated actor on every request) and on the repository boundary of
-[ADR 0013](0013-repository-boundary.md).
+[ADR 0013](0013-repository-boundary.md). Extended by ADR 0015 (a publication may carry the summaries of
+conversation threads, never their raw text; #33) and ADR 0016 (each published member shows whether the person
+confirmed it or it was confirmed under delegation; #34).
 
 ## Context
 
