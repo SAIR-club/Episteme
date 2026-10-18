@@ -11,5 +11,14 @@ export type {
 } from './profile.js'
 export type { SceneTool, SceneToolAnswer, SceneToolContext } from '@episteme/mcp'
 export { boundaryRefusal } from './boundary.js'
+export {
+  accessRefusal,
+  addPerson,
+  addToken,
+  revokeToken,
+  type Caller,
+  type CredentialKind,
+  type DeploymentMode,
+} from './identity.js'
 export { API_PREFIX, readSettled } from './api.js'
 export { workspaceFile } from './workspace.js'

@@ -43,7 +43,10 @@ async function get<T>(path: string): Promise<T> {
 async function post(path: string, body: unknown): Promise<Response> {
   return fetch(`${service.apiUrl}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${service.humanToken ?? ''}`,
+    },
     body: JSON.stringify(body),
   })
 }

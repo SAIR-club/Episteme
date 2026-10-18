@@ -152,7 +152,10 @@ async function api(
       ? {}
       : {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${service.humanToken ?? ''}`,
+          },
           body: JSON.stringify(body),
         },
   )

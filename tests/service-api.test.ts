@@ -21,7 +21,10 @@ async function get(path: string): Promise<{ status: number; body: Json }> {
 async function post(path: string, body: unknown): Promise<{ status: number; body: Json }> {
   const response = await fetch(`${server.url}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${server.humanToken ?? ''}`,
+    },
     body: JSON.stringify(body),
   })
   const payload = (await response.json().catch(() => ({}))) as Json
@@ -186,7 +189,10 @@ describe('the recall endpoint', () => {
   it('rejects a non-object body', async () => {
     const response = await fetch(`${server.url}/api/v1/recall`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${server.humanToken ?? ''}`,
+      },
       body: JSON.stringify([1, 2, 3]),
     })
     expect(response.status).toBe(400)

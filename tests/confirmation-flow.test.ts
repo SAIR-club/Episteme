@@ -52,7 +52,10 @@ async function learn<T>(path: string, body?: unknown): Promise<{ status: number;
       ? {}
       : {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${server.humanToken ?? ''}`,
+          },
           body: JSON.stringify(body),
         },
   )

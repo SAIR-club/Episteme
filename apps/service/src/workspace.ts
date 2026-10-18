@@ -46,6 +46,8 @@ export async function serveWorkspace(
   root: string,
   path: string,
   response: ServerResponse,
+  /** Sent with an HTML page only, such as the cookie that carries a local person's session. */
+  pageHeaders: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const file = workspaceFile(root, path)
   const type = file === undefined ? undefined : TYPES[extname(file).toLowerCase()]
@@ -71,6 +73,7 @@ export async function serveWorkspace(
     'content-type': type,
     'cache-control': 'no-store',
     'content-length': body.length,
+    ...(type.startsWith('text/html') ? pageHeaders : {}),
   })
   response.end(body)
 }

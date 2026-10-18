@@ -3,8 +3,16 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession } from '@episteme/application'
 import { createMcpEndpoint } from '@episteme/mcp'
-import { API_PREFIX, handleApi, sendJson } from './api.js'
+import { API_PREFIX, handleApi, operationOf, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
+import {
+  accessRefusal,
+  BrowserSessions,
+  credentialOf,
+  Directory,
+  type Caller,
+  type DeploymentMode,
+} from './identity.js'
 import { assertSceneRoutes, learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
@@ -17,6 +25,14 @@ export interface ServiceOptions {
   readonly profile?: SceneProfile
   /** A directory holding a prebuilt Workspace to serve at `/`. Without one, `/` says how to connect. */
   readonly workspace?: string
+  /** `local` (the default) serves one person on loopback; `shared` serves the people in `users` (ADR 0012). */
+  readonly mode?: DeploymentMode
+  /** The user file. Required in shared mode. */
+  readonly users?: string
+  /** The origin people reach a shared deployment at, through its HTTPS proxy. Required in shared mode. */
+  readonly publicOrigin?: string
+  /** In shared mode, take an elicitation answer as the person's decision anyway (ADR 0012, decision 4). */
+  readonly trustElicitation?: boolean
 }
 
 export interface EpistemeService {
@@ -31,6 +47,12 @@ export interface EpistemeService {
   readonly port: number
   /** Where the graph it owns lives. */
   readonly graph: string
+  readonly mode: DeploymentMode
+  /**
+   * In local mode, the person's token for this run, for a client that is not the served Workspace. It decides
+   * in the person's name, so it is printed for them and never logged.
+   */
+  readonly humanToken: string | undefined
   close(): Promise<void>
 }
 
@@ -47,13 +69,15 @@ const MCP_PATH = '/mcp'
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
   const profile = options.profile ?? learnProfile()
-  // Checked before the graph is opened, so a profile that cannot be served never takes the graph's lock.
+  // Checked before the graph is opened, so a profile or deployment that cannot be served never takes the
+  // graph's lock.
   assertSceneRoutes(profile.routes ?? [])
+  const people = await peopleFor(options)
   const session = await CognitiveSession.open({ filePath: graph, scene: profile.scene })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
-    return await serve(session, graph, profile, options)
+    return await serve(session, graph, profile, options, people)
   } catch (error) {
     await session.close()
     throw error
@@ -91,16 +115,44 @@ async function seedTopicIfPresent(
   return { seeded: count > 0 }
 }
 
+/** The user file of a shared deployment, or nothing in local mode. A shared deployment missing either setting stops here. */
+async function peopleFor(options: ServiceOptions): Promise<Directory | undefined> {
+  if ((options.mode ?? 'local') === 'local') return undefined
+  if (options.users === undefined) {
+    throw new Error('a shared service needs a user file (--users): who may use it')
+  }
+  if (options.publicOrigin === undefined) {
+    throw new Error(
+      'a shared service needs its public origin (--public-origin): where people reach it',
+    )
+  }
+  return Directory.open(options.users)
+}
+
 async function serve(
   session: CognitiveSession,
   graph: string,
   profile: SceneProfile,
   options: ServiceOptions,
+  people: Directory | undefined,
 ): Promise<EpistemeService> {
+  const mode: DeploymentMode = people === undefined ? 'local' : 'shared'
+  // Local mode is shared mode with one person, the session's own, whose token is minted for this run.
+  const local = people === undefined ? Directory.single(session.actorId, 'you') : undefined
+  const directory = people ?? local!.directory
+  const localPerson = local === undefined ? undefined : directory.resolve(local.token)
+  const browsers = new BrowserSessions()
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
-  const mcp = createMcpEndpoint(session, { sceneTools: profile.mcpTools ?? [] })
+  const publicHost =
+    options.publicOrigin === undefined ? undefined : new URL(options.publicOrigin).hostname
+  const mcp = createMcpEndpoint(session, {
+    sceneTools: profile.mcpTools ?? [],
+    elicitationDecisions: mode === 'local' || options.trustElicitation === true,
+    ...(publicHost === undefined ? {} : { allowedHostnames: [publicHost] }),
+    ...(options.publicOrigin === undefined ? {} : { allowedOrigins: [options.publicOrigin] }),
+  })
   const workspace = options.workspace
 
   // Known once the socket is bound. No request can arrive before then.
@@ -109,22 +161,42 @@ async function serve(
 
   const server: Server = createServer((request, response) => {
     // One boundary for everything served: the Workspace, the API and the MCP endpoint alike.
-    const refusal = boundaryRefusal(request, boundPort)
+    const refusal = boundaryRefusal(request, boundPort, options.publicOrigin)
     if (refusal !== undefined) {
       sendJson(response, refusal.status, { error: refusal.error, code: 'outside_boundary' })
       return
     }
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
+    const method = request.method ?? 'GET'
+
+    // Who the request is for, from its credential and nothing else (ADR 0012). A Bearer token that does not
+    // resolve is refused; a stale cookie, such as one from the previous run, counts as no credential.
+    const credential = credentialOf(request.headers)
+    let caller: Caller | undefined
+    if (credential !== undefined && 'token' in credential) {
+      caller = directory.resolve(credential.token)
+      if (caller === undefined) {
+        sendJson(response, 401, { error: 'this token is not valid', code: 'unauthenticated' })
+        return
+      }
+    } else if (credential !== undefined) {
+      caller = browsers.resolve(credential.session)
+    }
+
     const handled =
-      path === MCP_PATH
-        ? mcp.handle(request, response)
-        : path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)
-          ? handleApi(request, response, path, { session, profile, seeded })
-          : workspace !== undefined
-            ? request.method === 'GET' || request.method === 'HEAD'
-              ? serveWorkspace(workspace, path, response)
-              : Promise.resolve(sendJson(response, 405, { error: 'read only', code: 'no_route' }))
-            : Promise.resolve(notice(response, path))
+      path === `${API_PREFIX}/session` && method === 'POST'
+        ? signIn(request, response)
+        : path === MCP_PATH
+          ? authorized(response, caller, 'read', () => mcp.handle(request, response, caller))
+          : path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)
+            ? authorized(response, caller, operationOf(method, path), () =>
+                handleApi(request, response, path, { session, profile, seeded, caller }),
+              )
+            : workspace !== undefined
+              ? method === 'GET' || method === 'HEAD'
+                ? serveWorkspace(workspace, path, response, pageHeaders())
+                : Promise.resolve(sendJson(response, 405, { error: 'read only', code: 'no_route' }))
+              : Promise.resolve(notice(response, path))
     handled.catch((error: unknown) => {
       // Bad input is answered inside each handler, so a rejection here is a bug rather than a refusal.
       // Reported as 500 with the message, never swallowed: a service that fails quietly is worse than one
@@ -134,6 +206,70 @@ async function serve(
       else response.end()
     })
   })
+
+  /** Runs `serve` only when the caller may perform `operation`; otherwise answers why not. */
+  function authorized(
+    response: Parameters<typeof sendJson>[0],
+    caller: Caller | undefined,
+    operation: ReturnType<typeof operationOf>,
+    serve: () => Promise<void>,
+  ): Promise<void> {
+    const refused = accessRefusal(mode, caller, operation)
+    if (refused === undefined) return serve()
+    sendJson(response, refused.status, { error: refused.message, code: refused.code })
+    return Promise.resolve()
+  }
+
+  /** In local mode, the served page carries the person's session, so they never handle a token themselves. */
+  function pageHeaders(): Readonly<Record<string, string>> {
+    return localPerson === undefined ? {} : { 'set-cookie': browsers.open(localPerson) }
+  }
+
+  /** Exchanges a person's own token for a session cookie (ADR 0012, decision 2). */
+  async function signIn(
+    request: Parameters<typeof mcp.handle>[0],
+    response: Parameters<typeof sendJson>[0],
+  ): Promise<void> {
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const chunk of request) {
+      size += (chunk as Buffer).length
+      if (size > 10_000) {
+        sendJson(response, 400, { error: 'request body too large', code: 'invalid_request' })
+        return
+      }
+      chunks.push(chunk as Buffer)
+    }
+    let token: unknown
+    try {
+      token = (JSON.parse(Buffer.concat(chunks).toString('utf8')) as { token?: unknown } | null)
+        ?.token
+    } catch {
+      sendJson(response, 400, {
+        error: 'the body must be JSON: { "token": … }',
+        code: 'invalid_request',
+      })
+      return
+    }
+    const person = typeof token === 'string' ? directory.resolve(token) : undefined
+    if (person === undefined) {
+      sendJson(response, 401, { error: 'this token is not valid', code: 'unauthenticated' })
+      return
+    }
+    if (person.kind !== 'human') {
+      sendJson(response, 403, {
+        error: 'only the person’s own token opens a Workspace session',
+        code: 'human_required',
+      })
+      return
+    }
+    response.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'set-cookie': browsers.open(person),
+    })
+    response.end(JSON.stringify({ actorId: person.actorId, label: person.label }))
+  }
 
   function notice(response: Parameters<typeof sendJson>[0], path: string): void {
     if (path !== '/') {
@@ -168,6 +304,8 @@ async function serve(
     workspaceUrl: workspace === undefined ? undefined : `${origin}/`,
     port: boundPort,
     graph,
+    mode,
+    humanToken: local?.token,
     // In-flight agent exchanges first, since an open stream would hold the socket open; then the socket, so no
     // request arrives at a session that is closing; then the session, which writes what is pending and gives
     // up the graph.
