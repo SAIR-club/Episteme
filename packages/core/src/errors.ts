@@ -12,6 +12,7 @@ export type CoreErrorCode =
   | 'unregistered_dimension'
   | 'unregistered_tag_namespace'
   | 'duplicate_registration'
+  | 'invalid_definition'
   | 'missing_property'
   | 'invalid_dimension_value'
   | 'invalid_edge_endpoint'

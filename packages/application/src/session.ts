@@ -11,6 +11,7 @@ import {
   type DomainPack,
   type ActorId,
   type DimensionId,
+  type StateDimensionDefinition,
   type EdgeId,
   type EdgeTypeId,
   type MutationRefusal,
@@ -82,6 +83,66 @@ const EDGE = {
 function defaultTags(topic = 'general'): readonly Tag[] {
   return [topicTag(topic), tag('scene', 'cognitive')]
 }
+
+/**
+ * The axes of understanding this session's pack registers.
+ *
+ * `evidence` and `transfer` carry levels from two earlier vocabularies. Graphs written by v0.1.0 may hold
+ * `weak`, `derived`, `none`, `near` and `far`, and history is append-only, so those stay registered and marked
+ * legacy: old events stay valid, and no surface offers them for new input (ADR 0013).
+ */
+const DEFAULT_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
+  {
+    id: asId<DimensionId>('confidence'),
+    label: 'Confidence',
+    kind: 'ordinal',
+    ordered: true,
+    levels: ['low', 'medium', 'high'],
+  },
+  {
+    id: asId<DimensionId>('articulation'),
+    label: 'Articulation',
+    kind: 'ordinal',
+    ordered: true,
+    levels: ['low', 'medium', 'high'],
+  },
+  {
+    id: asId<DimensionId>('evidence'),
+    label: 'Evidence',
+    kind: 'ordinal',
+    ordered: true,
+    levels: ['none', 'weak', 'reproduced', 'derived', 'anecdotal', 'proven'],
+    legacyLevels: ['weak', 'derived'],
+  },
+  {
+    id: asId<DimensionId>('conflict'),
+    label: 'Conflict',
+    kind: 'ordinal',
+    ordered: false,
+    levels: ['none', 'suspected', 'open', 'resolved'],
+  },
+  {
+    id: asId<DimensionId>('exposure'),
+    label: 'Exposure',
+    kind: 'ordinal',
+    ordered: true,
+    levels: ['none', 'seen', 'studied', 'worked'],
+  },
+  {
+    id: asId<DimensionId>('transfer'),
+    label: 'Transfer',
+    kind: 'ordinal',
+    ordered: true,
+    levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
+    legacyLevels: ['none', 'near', 'far'],
+  },
+  {
+    id: asId<DimensionId>('source'),
+    label: 'Source',
+    kind: 'categorical',
+    levels: ['self', 'agent', 'paper', 'discussion', 'course'],
+  },
+]
 
 export const defaultSessionPack: DomainPack = defineDomainPack('default-session-pack', {
   tagNamespaces: [
@@ -165,56 +226,7 @@ export const defaultSessionPack: DomainPack = defineDomainPack('default-session-
     { id: asId<EdgeTypeId>('same_as'), label: 'same as', category: 'identity' },
     { id: asId<EdgeTypeId>('exemplifies'), label: 'exemplifies', category: 'epistemic' },
   ],
-  stateDimensions: [
-    {
-      id: asId<DimensionId>('confidence'),
-      label: 'Confidence',
-      kind: 'ordinal',
-      ordered: true,
-      levels: ['low', 'medium', 'high'],
-    },
-    {
-      id: asId<DimensionId>('articulation'),
-      label: 'Articulation',
-      kind: 'ordinal',
-      ordered: true,
-      levels: ['low', 'medium', 'high'],
-    },
-    {
-      id: asId<DimensionId>('evidence'),
-      label: 'Evidence',
-      kind: 'ordinal',
-      ordered: true,
-      levels: ['none', 'weak', 'reproduced', 'derived', 'anecdotal', 'proven'],
-    },
-    {
-      id: asId<DimensionId>('conflict'),
-      label: 'Conflict',
-      kind: 'ordinal',
-      ordered: false,
-      levels: ['none', 'suspected', 'open', 'resolved'],
-    },
-    {
-      id: asId<DimensionId>('exposure'),
-      label: 'Exposure',
-      kind: 'ordinal',
-      ordered: true,
-      levels: ['none', 'seen', 'studied', 'worked'],
-    },
-    {
-      id: asId<DimensionId>('transfer'),
-      label: 'Transfer',
-      kind: 'ordinal',
-      ordered: true,
-      levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
-    },
-    {
-      id: asId<DimensionId>('source'),
-      label: 'Source',
-      kind: 'categorical',
-      levels: ['self', 'agent', 'paper', 'discussion', 'course'],
-    },
-  ],
+  stateDimensions: DEFAULT_STATE_DIMENSIONS,
 })
 
 export const defaultDistillationPolicy: DistillationPolicy = {
@@ -299,6 +311,60 @@ export interface RecordableDimension {
   readonly descriptionZh: string
 }
 
+/** What this surface adds to a registered dimension: its Chinese names and its prose. */
+interface DimensionPresentation {
+  readonly id: DimensionId
+  readonly labelZh: string
+  /** The Chinese name of every current level, keyed by level token. */
+  readonly levelLabelsZh: Readonly<Record<string, string>>
+  readonly description: string
+  readonly descriptionZh: string
+}
+
+/** The levels of a registered dimension that may be offered for new input: all of them but the legacy ones. */
+function currentLevels(definition: StateDimensionDefinition): readonly string[] {
+  const legacy = definition.legacyLevels ?? []
+  return (definition.levels ?? []).filter((level) => !legacy.includes(level))
+}
+
+/**
+ * Joins a presentation to the dimension the pack registers.
+ *
+ * The levels come from the definition, never from here: Core refuses any level the pack did not register, so a
+ * list kept on this side could only drift into offering the learner buttons that fail. A current level without
+ * a Chinese name, or a name for a level that is not current, throws at load rather than rendering a raw token or
+ * a dead button.
+ */
+function recordable(presentation: DimensionPresentation): RecordableDimension {
+  const registered = DEFAULT_STATE_DIMENSIONS.find((candidate) => candidate.id === presentation.id)
+  if (registered?.levels === undefined) {
+    throw new Error(
+      `dimension ${presentation.id} is not registered with levels by the session pack`,
+    )
+  }
+  const levels = currentLevels(registered)
+  const named = Object.keys(presentation.levelLabelsZh)
+  const missing = levels.filter((level) => !named.includes(level))
+  const extra = named.filter((level) => !levels.includes(level))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `Chinese level names for ${presentation.id} do not match its current levels ` +
+        `(missing: ${missing.join(', ') || '-'}; not current: ${extra.join(', ') || '-'})`,
+    )
+  }
+  return {
+    id: presentation.id,
+    label: registered.label,
+    labelZh: presentation.labelZh,
+    levels,
+    levelLabelsZh: levels.map((level) => ({ level, label: presentation.levelLabelsZh[level]! })),
+    description: presentation.description,
+    descriptionZh: presentation.descriptionZh,
+  }
+}
+
+const LOW_MEDIUM_HIGH_ZH = { low: '低', medium: '中', high: '高' }
+
 /**
  * The dimensions a learner may set from this surface, in the order they are offered.
  *
@@ -313,61 +379,52 @@ export interface RecordableDimension {
 export const RECORDABLE_DIMENSIONS: readonly RecordableDimension[] = [
   {
     id: DIMENSION.confidence,
-    label: 'Confidence',
     labelZh: '确信程度',
-    levels: ['low', 'medium', 'high'],
-    levelLabelsZh: [
-      { level: 'low', label: '低' },
-      { level: 'medium', label: '中' },
-      { level: 'high', label: '高' },
-    ],
+    levelLabelsZh: LOW_MEDIUM_HIGH_ZH,
     description: 'How much you would rely on this.',
     descriptionZh: '你愿意多大程度上依赖它。',
   },
   {
     id: DIMENSION.articulation,
-    label: 'Articulation',
     labelZh: '表达程度',
-    levels: ['low', 'medium', 'high'],
-    levelLabelsZh: [
-      { level: 'low', label: '低' },
-      { level: 'medium', label: '中' },
-      { level: 'high', label: '高' },
-    ],
+    levelLabelsZh: LOW_MEDIUM_HIGH_ZH,
     description: 'How well you could explain it to someone else.',
     descriptionZh: '你能多好地把它讲给别人听。',
   },
   {
     id: DIMENSION.evidence,
-    label: 'Evidence',
     labelZh: '证据',
-    levels: ['none', 'weak', 'reproduced', 'derived'],
-    levelLabelsZh: [
-      { level: 'none', label: '无' },
-      { level: 'weak', label: '薄弱' },
-      { level: 'reproduced', label: '已复现' },
-      { level: 'derived', label: '已推导' },
-    ],
+    levelLabelsZh: { none: '无', reproduced: '已复现', anecdotal: '零散的', proven: '已证明' },
     description: 'What backs it up.',
     descriptionZh: '它背后有什么支撑。',
   },
   {
     id: DIMENSION.conflict,
-    label: 'Conflict',
     labelZh: '冲突',
     // `suspected` is recordable so a distilled suggestion of it can be decided like any other (ADR 0011). Who
     // decides does not change: only the learner, through the one decision path.
-    levels: ['none', 'suspected', 'open', 'resolved'],
-    levelLabelsZh: [
-      { level: 'none', label: '无' },
-      { level: 'suspected', label: '疑似' },
-      { level: 'open', label: '未解决' },
-      { level: 'resolved', label: '已解决' },
-    ],
+    levelLabelsZh: { none: '无', suspected: '疑似', open: '未解决', resolved: '已解决' },
     description: 'Whether you hold something that contradicts it.',
     descriptionZh: '你是否同时持有与它矛盾的东西。',
   },
-]
+].map(recordable)
+
+/**
+ * Why a level may not be recorded on a recordable dimension, or `undefined` when it may.
+ *
+ * The one check behind both `record()` and a proposal's preview, so what a learner may write and what an agent
+ * may propose cannot disagree. A legacy level is refused here even though Core still accepts it for old events.
+ */
+function levelRefusal(
+  dimension: RecordableDimension,
+  level: string,
+): { readonly code: 'invalid_dimension_value'; readonly message: string } | undefined {
+  if (dimension.levels.includes(level)) return undefined
+  return {
+    code: 'invalid_dimension_value',
+    message: `"${level}" is not a level of ${dimension.id} that can be recorded. Available: ${dimension.levels.join(', ')}`,
+  }
+}
 
 /** One retrieved node, with everything a view needs to justify its position. */
 export interface RankedView {
@@ -425,6 +482,17 @@ export interface AskResult extends RecallResult {
 export interface RankRule {
   readonly signal: string
   readonly weight: number
+}
+
+/** One registered dimension as a client sees it, so no page has to write levels of its own (ADR 0013). */
+export interface VocabularyDimension {
+  readonly id: string
+  readonly label: string
+  readonly kind: string
+  /** Whether a person can record it from a surface; see `RECORDABLE_DIMENSIONS`. */
+  readonly recordable: boolean
+  /** Every registered level in registration order. A legacy level is shown, never offered for new input. */
+  readonly levels: readonly { readonly id: string; readonly legacy: boolean }[]
 }
 
 export interface NodeView {
@@ -728,7 +796,7 @@ export class LearnSession {
       throw new SessionRefusal('missing_dimension', 'record needs at least one dimension')
     }
 
-    for (const [dimension] of entries) {
+    for (const [dimension, level] of entries) {
       const known = RECORDABLE_DIMENSIONS.find((candidate) => candidate.id === dimension)
       if (known === undefined) {
         throw new SessionRefusal(
@@ -736,6 +804,8 @@ export class LearnSession {
           `"${dimension}" is not recordable from this surface. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
         )
       }
+      const refusal = levelRefusal(known, level)
+      if (refusal !== undefined) throw new SessionRefusal(refusal.code, refusal.message)
     }
 
     return this.#exclusive(async () => {
@@ -906,6 +976,23 @@ export class LearnSession {
       ...(source === undefined ? {} : { source }),
     })
     return { edgeId: edge.id }
+  }
+
+  /** Every dimension the graph's registries hold, with its levels and which of them are legacy. */
+  vocabulary(): readonly VocabularyDimension[] {
+    return this.#episteme.registries.stateDimensions.list().map((definition) => {
+      const legacy = definition.legacyLevels ?? []
+      return {
+        id: definition.id,
+        label: definition.label,
+        kind: definition.kind,
+        recordable: RECORDABLE_DIMENSIONS.some((dimension) => dimension.id === definition.id),
+        levels: (definition.levels ?? []).map((level) => ({
+          id: level,
+          legacy: legacy.includes(level),
+        })),
+      }
+    })
   }
 
   /** Every node the learner can see, for an overview of their own graph. */
@@ -1993,13 +2080,7 @@ export class LearnSession {
             message: `"${proposal.dimension}" is not a dimension the learner records. Available: ${RECORDABLE_DIMENSIONS.map((d) => d.id).join(', ')}`,
           }
         }
-        if (!dimension.levels.includes(proposal.level)) {
-          return {
-            code: 'invalid_dimension_value',
-            message: `"${proposal.level}" is not a level of ${dimension.id}. Available: ${dimension.levels.join(', ')}`,
-          }
-        }
-        return undefined
+        return levelRefusal(dimension, proposal.level)
       }
     }
   }
