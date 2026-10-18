@@ -37,6 +37,8 @@ import {
   SuggestionStore,
   type Proposal,
   type Resolution,
+  type Review,
+  type Reviewer,
   type Suggestion,
   type SuggestionOrigin,
 } from './suggestions.js'
@@ -904,6 +906,11 @@ export class CognitiveSession {
     })
   }
 
+  /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
+  reviews(): readonly Review[] {
+    return this.#suggestions.reviews()
+  }
+
   /** Every draft still waiting for the learner, oldest first. */
   pendingSuggestions(): readonly Suggestion[] {
     return this.#suggestions.list()
@@ -933,16 +940,19 @@ export class CognitiveSession {
     suggestionId: string,
     decision: Decision,
     channel: DecisionChannel,
+    /** Who decided, as the caller's channel established it; kept in the review record (ADR 0012). */
+    reviewer?: Reviewer,
   ): Promise<DecisionResult> {
     // One decision at a time, from reading the draft to removing it: of two decisions on the same draft,
     // whichever is queued first wins, and the second finds it already decided.
-    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel))
+    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel, reviewer))
   }
 
   async #decideNow(
     suggestionId: string,
     decision: Decision,
     channel: DecisionChannel,
+    reviewer: Reviewer | undefined,
   ): Promise<DecisionResult> {
     // A decision on this draft that started before and was never settled (its write failed) is settled first,
     // so deciding again cannot commit a second time.
@@ -960,9 +970,15 @@ export class CognitiveSession {
       }
     }
 
-    // One write of one file, so it needs no record of its own: it happened or it did not.
+    // One write of one file, the draft gone and its review kept together: it happened or it did not.
     if (decision.action === 'dismiss') {
-      await this.#suggestions.remove(suggestion.id)
+      await this.#suggestions.dismiss({
+        suggestionId: suggestion.id,
+        outcome: 'dismissed',
+        channel,
+        ...(reviewer === undefined ? {} : { reviewer }),
+        decidedAt: systemClock.now(),
+      })
       return { ok: true, outcome: 'dismissed', suggestion }
     }
 
@@ -995,6 +1011,7 @@ export class CognitiveSession {
       proposal,
       planned: this.#plan(proposal, operationId),
       channel,
+      ...(reviewer === undefined ? {} : { reviewer }),
     }
     await this.#suggestions.begin(resolution)
 
@@ -1016,7 +1033,7 @@ export class CognitiveSession {
 
     await this.#persist()
     // The draft and the record go together, in one write, once the graph holds the change.
-    await this.#suggestions.complete(operationId)
+    await this.#suggestions.complete(operationId, systemClock.now())
     return { ok: true, outcome: resolution.outcome, suggestion, committed, operationId }
   }
 
@@ -1083,7 +1100,7 @@ export class CognitiveSession {
     if (this.#landed(resolution)) {
       // If a write failed, the change may so far exist only in memory. It is written before the draft goes.
       await this.#persist()
-      await this.#suggestions.complete(resolution.operationId)
+      await this.#suggestions.complete(resolution.operationId, systemClock.now())
       return { ...identify(resolution), settled: 'completed' }
     }
     await this.#suggestions.abandon(resolution.operationId)

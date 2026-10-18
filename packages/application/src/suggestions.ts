@@ -98,8 +98,8 @@ export interface Suggestion {
  * Version 2 added resolution records, version 3 landing records. Earlier files hold only what their version
  * knew and read unchanged.
  */
-export const SUGGESTIONS_SCHEMA_VERSION = 3
-const READABLE_VERSIONS: readonly number[] = [1, 2, 3]
+export const SUGGESTIONS_SCHEMA_VERSION = 4
+const READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4]
 
 /**
  * A decision that has started committing and has not been settled: a write-ahead record.
@@ -120,6 +120,36 @@ export interface Resolution {
   /** Ids chosen before committing, so the graph can be asked whether they are there. */
   readonly planned: { readonly nodeId?: string; readonly edgeIds: readonly string[] }
   readonly channel: string
+  /** Who decided, kept so the review record written when the decision lands can name them. */
+  readonly reviewer?: Reviewer
+}
+
+/**
+ * Who decided, as the service established it from their credential (ADR 0012). Provenance for finding a
+ * decision after the fact, not authority: a same-user agent with a shell can present the person's credential.
+ */
+export interface Reviewer {
+  readonly actorId: string
+  /** Absent when the decision arrived without a credential, such as a local elicitation answer. */
+  readonly credentialId?: string
+  readonly label?: string
+  readonly userAgent?: string
+}
+
+/**
+ * The durable record of one decision, a dismissal included (ADR 0012, decision 5).
+ *
+ * Kept beside the drafts and outside the understanding events. It is written in the same write that removes
+ * the draft, so a draft is gone exactly when its review is kept.
+ */
+export interface Review {
+  readonly suggestionId: string
+  readonly outcome: 'accepted' | 'modified' | 'dismissed'
+  readonly channel: string
+  readonly reviewer?: Reviewer
+  readonly decidedAt: number
+  /** The decision's operation, for an accepted or modified one. */
+  readonly operationId?: string
 }
 
 /**
@@ -147,6 +177,7 @@ type StoreRecord =
       readonly kind: 'landing'
       readonly landing: SubmissionLanding
     }
+  | { readonly schemaVersion: number; readonly kind: 'review'; readonly review: Review }
 
 /**
  * The drafts of one graph, in proposal order.
@@ -159,6 +190,7 @@ export class SuggestionStore {
   readonly #pending = new Map<string, Suggestion>()
   readonly #resolutions = new Map<string, Resolution>()
   readonly #landings = new Map<string, SubmissionLanding>()
+  readonly #reviews: Review[] = []
   #writeChain: Promise<void> = Promise.resolve()
 
   private constructor(filePath: string | undefined) {
@@ -190,7 +222,8 @@ export class SuggestionStore {
       if (record.kind === 'suggestion') store.#pending.set(record.suggestion.id, record.suggestion)
       else if (record.kind === 'resolution') {
         store.#resolutions.set(record.resolution.operationId, record.resolution)
-      } else
+      } else if (record.kind === 'review') store.#reviews.push(record.review)
+      else
         store.#landings.set(
           landingKey(record.landing.by, record.landing.submissionId),
           record.landing,
@@ -260,11 +293,26 @@ export class SuggestionStore {
     return this.#landings.get(landingKey(by, submissionId))
   }
 
-  /** Drops a draft that has been decided, and writes the change. Returns whether it was pending. */
+  /** Drops a draft and writes the change, leaving no record. Returns whether it was pending. */
   async remove(id: string): Promise<boolean> {
     if (!this.#pending.has(id)) return false
     await this.#change((pending) => pending.delete(id))
     return true
+  }
+
+  /** Drops a dismissed draft and keeps its review, in one write. Returns whether it was pending. */
+  async dismiss(review: Review): Promise<boolean> {
+    if (!this.#pending.has(review.suggestionId)) return false
+    await this.#change((pending, _, __, reviews) => {
+      pending.delete(review.suggestionId)
+      reviews.push(review)
+    })
+    return true
+  }
+
+  /** Every decision recorded, oldest first. */
+  reviews(): readonly Review[] {
+    return [...this.#reviews]
   }
 
   /** Decisions that started and were not settled, oldest first. Empty unless a write failed or the host died. */
@@ -282,13 +330,21 @@ export class SuggestionStore {
     await this.#change((_, resolutions) => resolutions.set(resolution.operationId, resolution))
   }
 
-  /** The decision landed: removes its draft and its record in one write. */
-  async complete(operationId: string): Promise<void> {
+  /** The decision landed: removes its draft and its record, and keeps its review, in one write. */
+  async complete(operationId: string, decidedAt: number): Promise<void> {
     const resolution = this.#resolutions.get(operationId)
     if (resolution === undefined) return
-    await this.#change((pending, resolutions) => {
+    await this.#change((pending, resolutions, _, reviews) => {
       pending.delete(resolution.suggestionId)
       resolutions.delete(operationId)
+      reviews.push({
+        suggestionId: resolution.suggestionId,
+        outcome: resolution.outcome,
+        channel: resolution.channel,
+        ...(resolution.reviewer === undefined ? {} : { reviewer: resolution.reviewer }),
+        decidedAt,
+        operationId,
+      })
     })
   }
 
@@ -311,17 +367,20 @@ export class SuggestionStore {
       pending: Map<string, Suggestion>,
       resolutions: Map<string, Resolution>,
       landings: Map<string, SubmissionLanding>,
+      reviews: Review[],
     ) => void,
   ): Promise<void> {
     const next = this.#writeChain.then(async () => {
       const pending = new Map(this.#pending)
       const resolutions = new Map(this.#resolutions)
       const landings = new Map(this.#landings)
-      change(pending, resolutions, landings)
-      await this.#writeNow(pending, resolutions, landings)
+      const reviews = [...this.#reviews]
+      change(pending, resolutions, landings, reviews)
+      await this.#writeNow(pending, resolutions, landings, reviews)
       replace(this.#pending, pending)
       replace(this.#resolutions, resolutions)
       replace(this.#landings, landings)
+      this.#reviews.splice(0, this.#reviews.length, ...reviews)
     })
     // The chain must survive a failed write without staying rejected, while the caller still sees the failure.
     this.#writeChain = next.then(
@@ -335,6 +394,7 @@ export class SuggestionStore {
     pending: ReadonlyMap<string, Suggestion>,
     resolutions: ReadonlyMap<string, Resolution>,
     landings: ReadonlyMap<string, SubmissionLanding>,
+    reviews: readonly Review[],
   ): Promise<void> {
     if (this.#filePath === undefined) return
     const lines = [
@@ -357,6 +417,13 @@ export class SuggestionStore {
           schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
           kind: 'landing',
           landing,
+        } satisfies StoreRecord),
+      ),
+      ...reviews.map((review) =>
+        JSON.stringify({
+          schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
+          kind: 'review',
+          review,
         } satisfies StoreRecord),
       ),
     ]
@@ -390,6 +457,7 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
     suggestion?: Suggestion
     resolution?: Resolution
     landing?: SubmissionLanding
+    review?: Review
   } | null
   const version = record?.schemaVersion
   if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version)) {
@@ -406,7 +474,10 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
   if (version >= 3 && record?.kind === 'landing' && record.landing !== undefined) {
     return { schemaVersion: version, kind: 'landing', landing: record.landing }
   }
+  if (version >= 4 && record?.kind === 'review' && record.review !== undefined) {
+    return { schemaVersion: version, kind: 'review', review: record.review }
+  }
   throw new Error(
-    `line ${lineNumber} of "${filePath}" is not a suggestion, a resolution or a landing record`,
+    `line ${lineNumber} of "${filePath}" is not a suggestion, a resolution, a landing or a review record`,
   )
 }
