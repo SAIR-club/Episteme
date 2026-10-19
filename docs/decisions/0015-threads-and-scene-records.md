@@ -1,6 +1,6 @@
 # 0015 — Conversation threads and scene records
 
-Status: **proposed** (2026-10-18). Builds on [ADR 0005](0005-fork-lineage.md) (forks),
+Status: **accepted** (2026-10-18). Builds on [ADR 0005](0005-fork-lineage.md) (forks),
 [ADR 0010](0010-episteme-service.md) (_Conversation structure is Episteme data_),
 [ADR 0011](0011-host-assisted-distillation.md) (the host reads, Episteme verifies),
 [ADR 0013](0013-repository-boundary.md) (who owns what) and [ADR 0014](0014-publication-and-reuse.md)
