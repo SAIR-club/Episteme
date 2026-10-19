@@ -45,8 +45,9 @@ what a particular person has come to understand from that material, as structure
 - **history**: every change kept as an event, so "I used to think this, and now I think that" can be read back.
 
 What was submitted to be read, a learning material or an excerpt of a conversation, is kept beside the graph
-as a source, never in it. This is not a conversation store: Episteme keeps only the excerpts it was sent, not
-whole conversations or their branches. Nothing an agent infers becomes part of
+as a source, never in it. Conversations are kept the same way: their raw turns are an archive only their owner
+reads, beside the graph and never in it, and only their summaries can be shared
+([ADR 0015](docs/decisions/0015-threads-and-scene-records.md)). Nothing an agent infers becomes part of
 the graph until the person decides on it. The graph records what the person accepted as a description of
 their understanding at that time. It does not prove they have mastered anything.
 
