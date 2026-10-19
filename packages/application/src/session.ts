@@ -46,6 +46,7 @@ import {
   type Proposal,
   type Resolution,
   ownerOf,
+  type Delegation,
   type Review,
   type Reviewer,
   type Suggestion,
@@ -1110,7 +1111,7 @@ export class CognitiveSession {
    */
   async propose(
     proposal: Proposal,
-    from: { readonly proposedBy: string; readonly rationale: string },
+    from: { readonly proposedBy: string; readonly rationale: string; readonly scope?: string },
   ): Promise<ProposeResult> {
     return this.#exclusive(async (): Promise<ProposeResult> => {
       // Checked inside the queue, against the graph as it is when the draft is kept.
@@ -1119,12 +1120,14 @@ export class CognitiveSession {
 
       const suggestion = await this.#suggestions.add({
         owner: this.#actor,
+        ...(from.scope === undefined ? {} : { scope: from.scope }),
         proposal: normalized(proposal),
         rationale: from.rationale.trim(),
         proposedBy: from.proposedBy,
         proposedAt: systemClock.now(),
       })
-      return { ok: true, suggestion }
+      const delegated = await this.#decideUnderDelegation(suggestion)
+      return { ok: true, suggestion, ...(delegated === undefined ? {} : { delegated }) }
     })
   }
 
@@ -1646,6 +1649,118 @@ export class CognitiveSession {
     })
   }
 
+  /**
+   * Grants a delegation (ADR 0016): from now on, agent proposals for this person in `scope` are confirmed for
+   * them by the service, through the same decision path, and recorded as delegated. Only the person grants it;
+   * the service's routes keep agent credentials out.
+   */
+  grantDelegation(scope = '*'): Promise<Delegation> {
+    return this.#exclusive(async () => {
+      const delegation: Delegation = {
+        id: `del_${randomUUID()}`,
+        owner: this.#actor,
+        scope: scope.trim() === '' ? '*' : scope.trim(),
+        grantedAt: systemClock.now(),
+      }
+      await this.#suggestions.putDelegation(delegation)
+      return delegation
+    })
+  }
+
+  /** Stops a delegation from the next proposal on. What it already decided stays until undone. */
+  revokeDelegation(id: string): Promise<Delegation> {
+    return this.#exclusive(async () => {
+      const delegation = this.delegations().find((candidate) => candidate.id === id)
+      if (delegation === undefined) {
+        throw new SessionRefusal('unknown_delegation', `there is no delegation "${id}" of yours`)
+      }
+      if (delegation.revokedAt !== undefined) return delegation
+      const revoked = { ...delegation, revokedAt: systemClock.now() }
+      await this.#suggestions.putDelegation(revoked)
+      return revoked
+    })
+  }
+
+  /** This person's delegations, live and revoked. */
+  delegations(): readonly Delegation[] {
+    return this.#suggestions.delegations().filter((delegation) => delegation.owner === this.#actor)
+  }
+
+  /**
+   * Revokes what a delegated decision committed (ADR 0016, decision 4): its state event, node or edge. Nothing is
+   * erased; the history keeps both, and a review records the undoing.
+   */
+  undoDelegated(suggestionId: string): Promise<{ readonly revoked: readonly string[] }> {
+    return this.#exclusive(async () => {
+      const review = this.reviews().find(
+        (candidate) =>
+          candidate.suggestionId === suggestionId &&
+          candidate.channel === 'delegation' &&
+          candidate.outcome === 'accepted',
+      )
+      if (review === undefined) {
+        throw new SessionRefusal(
+          'not_delegated',
+          `"${suggestionId}" was not decided for you under a delegation`,
+        )
+      }
+      if (this.reviews().some((r) => r.suggestionId === suggestionId && r.outcome === 'undone')) {
+        return { revoked: [] }
+      }
+      const revoked: string[] = []
+      const named = `suggestion ${suggestionId} from `
+      for (const node of this.#seen.listNodes()) {
+        for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
+          if ([...event.dimensions.values()].some((value) => value.sourceOf === suggestionId)) {
+            this.#episteme.log.revokeStateEvent(event.id, { reason: 'undone delegated decision' })
+            revoked.push(event.id)
+          }
+        }
+        if (node.actorId === this.#actor && node.properties['suggestion'] === suggestionId) {
+          this.#episteme.graph.revokeNode(node.id)
+          revoked.push(node.id)
+        }
+      }
+      for (const edge of this.#seen.listEdges()) {
+        if (edge.source?.includes(named) === true) {
+          this.#episteme.graph.revokeEdge(edge.id)
+          revoked.push(edge.id)
+        }
+      }
+      await this.#persist()
+      await this.#suggestions.addReview({
+        owner: this.#actor,
+        suggestionId,
+        outcome: 'undone',
+        channel: 'learn-review',
+        reviewer: { actorId: this.#actor },
+        decidedAt: systemClock.now(),
+      })
+      return { revoked }
+    })
+  }
+
+  /**
+   * Decides a fresh draft under a live delegation of its owner's, when one covers it (ADR 0016, decisions 2–3).
+   * Only ever called inside the mutation queue, right after the draft is kept.
+   */
+  async #decideUnderDelegation(suggestion: Suggestion): Promise<DecisionResult | undefined> {
+    const proposal = suggestion.proposal
+    // Never a conflict: delegation does not let a model pick a side.
+    if (proposal.kind === 'state' && proposal.dimension === 'conflict') return undefined
+    const delegation = this.delegations().find(
+      (candidate) =>
+        candidate.revokedAt === undefined &&
+        (candidate.scope === '*' || candidate.scope === suggestion.scope),
+    )
+    if (delegation === undefined) return undefined
+    return this.#decideNow(suggestion.id, { action: 'accept' }, 'delegation', {
+      actorId: this.#actor,
+      credentialId: delegation.id,
+      label: 'delegation',
+    })
+  }
+
   /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
   reviews(): readonly Review[] {
     return this.#suggestions.reviews().filter((review) => ownerOf(review) === this.#actor)
@@ -1888,7 +2003,8 @@ export class CognitiveSession {
         const value: StateValue = confirmed
           ? {
               level: proposal.level,
-              authority: 'confirmed',
+              // Confirmed for the person under their delegation, which their history says (ADR 0016).
+              authority: resolution.channel === 'delegation' ? 'delegated' : 'confirmed',
               confirmedBy: this.#actor,
               sourceOf: suggestion.id,
             }
@@ -2393,7 +2509,7 @@ export class CognitiveSession {
         })
       }
 
-      const suggestions = await this.#suggestions.addAll(
+      const stored = await this.#suggestions.addAll(
         kept.length,
         (chosen) =>
           kept.map((item) => ({
@@ -2420,6 +2536,10 @@ export class CognitiveSession {
               suggestionIds: ids,
             },
       )
+      // Under a delegation each kept draft is decided now, in the order kept, so one that refers to an earlier
+      // one finds it accepted. Whatever is refused waits in the queue like any other.
+      for (const suggestion of stored) await this.#decideUnderDelegation(suggestion)
+      const suggestions = stored
       return {
         ok: true,
         status: 'pending',
@@ -2654,7 +2774,7 @@ export class CognitiveSession {
 }
 
 /** Where a human made a decision, recorded with whatever it committed. */
-export type DecisionChannel = 'learn-review' | 'mcp-elicitation'
+export type DecisionChannel = 'learn-review' | 'mcp-elicitation' | 'delegation'
 
 /** What a human decided about a pending suggestion. */
 export type Decision =
@@ -2692,8 +2812,14 @@ function identify(resolution: Resolution): Omit<RecoveredDecision, 'settled'> {
   return { operationId: resolution.operationId, suggestionId: resolution.suggestionId }
 }
 
+/** A proposal's outcome. `delegated` is set when the service decided it under the person's delegation. */
 export type ProposeResult =
-  | { readonly ok: true; readonly suggestion: Suggestion }
+  | {
+      readonly ok: true
+      readonly suggestion: Suggestion
+      /** Set when the service decided it at once under the person's delegation (ADR 0016). */
+      readonly delegated?: DecisionResult
+    }
   | { readonly ok: false; readonly refusal: MutationRefusal }
 
 /**

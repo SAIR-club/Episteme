@@ -70,6 +70,7 @@ const RECALL_INPUT = fromJsonSchema<{ question: string }>({
 interface ProposeInput {
   kind: 'claim' | 'link' | 'state'
   rationale: string
+  scope?: string
   label?: string
   about?: string[]
   from?: string
@@ -107,6 +108,10 @@ function proposeInput(dimensions: readonly RecordableDimension[]) {
       relation: {
         type: 'string',
         description: 'link: a registered edge type, for example refers_to, supports, contradicts.',
+      },
+      scope: {
+        type: 'string',
+        description: 'The learning project or course this is about, if the learner works in one.',
       },
       target: { type: 'string', description: 'state: the id of the node the change is about.' },
       dimension: {
@@ -382,10 +387,19 @@ export function createEpistemeMcpServer(
       const outcome = await session.propose(proposal, {
         proposedBy: actingAgent(access, context),
         rationale: input.rationale,
+        ...(input.scope === undefined ? {} : { scope: input.scope }),
       })
       if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
 
       const { suggestion } = outcome
+      // The learner let the service confirm for them in this scope (ADR 0016): say so, and that they can undo it.
+      if (outcome.delegated?.ok === true) {
+        return result(
+          `Accepted for the learner under their delegation (${suggestion.id}). It is part of their understanding, ` +
+            `marked as confirmed for them; they can undo it.`,
+          { status: 'accepted', by: 'delegation', suggestion, result: outcome.delegated },
+        )
+      }
       if (access.elicitationDecisions && canAskLearner(server)) {
         return askLearner(session, suggestion, codec, context)
       }

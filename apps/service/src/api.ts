@@ -30,6 +30,9 @@ const DECISION_ROUTES: readonly string[] = [
 /** Publishing, withdrawing and adopting are contributions only a person makes (ADR 0014, decision 3). */
 const DECISION_PATTERNS: readonly RegExp[] = [
   /^POST \/api\/v1\/publications\/[^/]+\/(withdraw|adopt)$/,
+  // Granting, revoking and undoing delegation are the person's alone (ADR 0016, decision 1).
+  /^POST \/api\/v1\/delegations(\/[^/]+\/revoke)?$/,
+  /^POST \/api\/v1\/reviews\/[^/]+\/undo$/,
 ]
 
 /** What a request to the API asks to do. */
@@ -227,6 +230,8 @@ const TURN_SUMMARY = /^\/api\/v1\/threads\/([^/]+)\/turns\/([^/]+)\/summary$/
 const THREAD_FORK = /^\/api\/v1\/threads\/([^/]+)\/fork$/
 const SCENE_RECORDS = /^\/api\/v1\/scene-records\/([^/]+)$/
 const PUBLICATION = /^\/api\/v1\/publications\/([^/]+)$/
+const DELEGATION_REVOKE = /^\/api\/v1\/delegations\/([^/]+)\/revoke$/
+const REVIEW_UNDO = /^\/api\/v1\/reviews\/([^/]+)\/undo$/
 const PUBLICATION_ACTION = /^\/api\/v1\/publications\/([^/]+)\/(withdraw|adopt)$/
 
 /** A list of strings in a body field, or nothing when it is absent. */
@@ -299,7 +304,41 @@ export async function handleApi(
 
     // Every decision, dismissals included, with its channel and credential: for finding one after the fact.
     if (path === `${API_PREFIX}/reviews` && method === 'GET') {
-      sendJson(response, 200, { ...at(session), reviews: session.reviews() })
+      const channel = new URL(request.url ?? '/', 'http://localhost').searchParams.get('channel')
+      sendJson(response, 200, {
+        ...at(session),
+        reviews: session
+          .reviews()
+          .filter((review) => channel === null || review.channel === channel),
+      })
+      return
+    }
+
+    // Delegated confirmation (ADR 0016).
+    if (path === `${API_PREFIX}/delegations` && method === 'GET') {
+      sendJson(response, 200, { ...at(session), delegations: session.delegations() })
+      return
+    }
+    if (path === `${API_PREFIX}/delegations` && method === 'POST') {
+      const body = await readJson(request)
+      const delegation = await session.grantDelegation(
+        typeof body['scope'] === 'string' ? body['scope'] : '*',
+      )
+      sendJson(response, 200, { ...at(session), delegation })
+      return
+    }
+    const revokePath = DELEGATION_REVOKE.exec(path)
+    if (revokePath !== null && method === 'POST') {
+      const delegation = await refusing(response, () =>
+        session.revokeDelegation(segment(revokePath[1])),
+      )
+      if (delegation !== undefined) sendJson(response, 200, { ...at(session), delegation })
+      return
+    }
+    const undoPath = REVIEW_UNDO.exec(path)
+    if (undoPath !== null && method === 'POST') {
+      const undone = await refusing(response, () => session.undoDelegated(segment(undoPath[1])))
+      if (undone !== undefined) sendJson(response, 200, { ...at(session), ...undone })
       return
     }
 

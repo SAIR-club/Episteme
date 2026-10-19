@@ -75,6 +75,20 @@ export function newSuggestionIds(count: number): readonly string[] {
 export const SUGGESTED_NODE_PREFIX = 'cand:'
 
 /**
+ * A person's grant to let the service confirm agent proposals for them, within a scope (ADR 0016). Revoking
+ * writes `revokedAt`; the record stays.
+ */
+export interface Delegation {
+  readonly id: string
+  /** The person who granted it, always a human. */
+  readonly owner: string
+  /** `*` for everything of theirs, or a scope id (ADR 0015, decision 6). */
+  readonly scope: string
+  readonly grantedAt: number
+  readonly revokedAt?: number
+}
+
+/**
  * Whose a draft, a review or a source is: the person it was proposed for (ADR 0014, step S3). Records written
  * before a graph had more than one person carry none and belong to its own person.
  */
@@ -89,6 +103,8 @@ export interface Suggestion {
   readonly id: string
   /** The person it is proposed for; see `ownerOf`. */
   readonly owner?: string
+  /** The learning project or course it is about, which a delegation may be limited to (ADR 0016). */
+  readonly scope?: string
   readonly proposal: Proposal
   /** Why the agent proposes it. Required: a person cannot judge a suggestion that does not say why. */
   readonly rationale: string
@@ -163,7 +179,8 @@ export interface Review {
   /** The person whose draft it decided; see `ownerOf`. */
   readonly owner?: string
   readonly suggestionId: string
-  readonly outcome: 'accepted' | 'modified' | 'dismissed'
+  /** `undone` is the person revoking what a delegated decision committed (ADR 0016, decision 4). */
+  readonly outcome: 'accepted' | 'modified' | 'dismissed' | 'undone'
   readonly channel: string
   readonly reviewer?: Reviewer
   readonly decidedAt: number
@@ -199,6 +216,7 @@ type StoreRecord =
       readonly landing: SubmissionLanding
     }
   | { readonly schemaVersion: number; readonly kind: 'review'; readonly review: Review }
+  | { readonly schemaVersion: number; readonly kind: 'delegation'; readonly delegation: Delegation }
 
 /**
  * The drafts of one graph, in proposal order.
@@ -212,6 +230,7 @@ export class SuggestionStore {
   readonly #resolutions = new Map<string, Resolution>()
   readonly #landings = new Map<string, SubmissionLanding>()
   readonly #reviews: Review[] = []
+  readonly #delegations = new Map<string, Delegation>()
   #writeChain: Promise<void> = Promise.resolve()
 
   private constructor(filePath: string | undefined) {
@@ -244,6 +263,8 @@ export class SuggestionStore {
       else if (record.kind === 'resolution') {
         store.#resolutions.set(record.resolution.operationId, record.resolution)
       } else if (record.kind === 'review') store.#reviews.push(record.review)
+      else if (record.kind === 'delegation')
+        store.#delegations.set(record.delegation.id, record.delegation)
       else
         store.#landings.set(
           landingKey(ownerOf(record.landing), record.landing.by, record.landing.submissionId),
@@ -337,6 +358,23 @@ export class SuggestionStore {
     return [...this.#reviews]
   }
 
+  /** Appends a review on its own, such as the record of undoing a delegated decision. */
+  async addReview(review: Review): Promise<void> {
+    await this.#change((_, __, ___, reviews) => reviews.push(review))
+  }
+
+  /** Every delegation, live and revoked, in the order granted. */
+  delegations(): readonly Delegation[] {
+    return [...this.#delegations.values()]
+  }
+
+  /** Keeps a delegation, new or revoked. */
+  async putDelegation(delegation: Delegation): Promise<void> {
+    const next = new Map(this.#delegations)
+    next.set(delegation.id, delegation)
+    await this.#change(() => undefined, next)
+  }
+
   /** Decisions that started and were not settled, oldest first. Empty unless a write failed or the host died. */
   resolutions(): readonly Resolution[] {
     return [...this.#resolutions.values()]
@@ -392,6 +430,7 @@ export class SuggestionStore {
       landings: Map<string, SubmissionLanding>,
       reviews: Review[],
     ) => void,
+    delegations: ReadonlyMap<string, Delegation> = this.#delegations,
   ): Promise<void> {
     const next = this.#writeChain.then(async () => {
       const pending = new Map(this.#pending)
@@ -399,11 +438,12 @@ export class SuggestionStore {
       const landings = new Map(this.#landings)
       const reviews = [...this.#reviews]
       change(pending, resolutions, landings, reviews)
-      await this.#writeNow(pending, resolutions, landings, reviews)
+      await this.#writeNow(pending, resolutions, landings, reviews, delegations)
       replace(this.#pending, pending)
       replace(this.#resolutions, resolutions)
       replace(this.#landings, landings)
       this.#reviews.splice(0, this.#reviews.length, ...reviews)
+      if (delegations !== this.#delegations) replace(this.#delegations, delegations)
     })
     // The chain must survive a failed write without staying rejected, while the caller still sees the failure.
     this.#writeChain = next.then(
@@ -418,6 +458,7 @@ export class SuggestionStore {
     resolutions: ReadonlyMap<string, Resolution>,
     landings: ReadonlyMap<string, SubmissionLanding>,
     reviews: readonly Review[],
+    delegations: ReadonlyMap<string, Delegation>,
   ): Promise<void> {
     if (this.#filePath === undefined) return
     const lines = [
@@ -447,6 +488,13 @@ export class SuggestionStore {
           schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
           kind: 'review',
           review,
+        } satisfies StoreRecord),
+      ),
+      ...[...delegations.values()].map((delegation) =>
+        JSON.stringify({
+          schemaVersion: SUGGESTIONS_SCHEMA_VERSION,
+          kind: 'delegation',
+          delegation,
         } satisfies StoreRecord),
       ),
     ]
@@ -481,6 +529,7 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
     resolution?: Resolution
     landing?: SubmissionLanding
     review?: Review
+    delegation?: Delegation
   } | null
   const version = record?.schemaVersion
   if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version)) {
@@ -499,6 +548,9 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
   }
   if (version >= 4 && record?.kind === 'review' && record.review !== undefined) {
     return { schemaVersion: version, kind: 'review', review: record.review }
+  }
+  if (version >= 4 && record?.kind === 'delegation' && record.delegation !== undefined) {
+    return { schemaVersion: version, kind: 'delegation', delegation: record.delegation }
   }
   throw new Error(
     `line ${lineNumber} of "${filePath}" is not a suggestion, a resolution, a landing or a review record`,
