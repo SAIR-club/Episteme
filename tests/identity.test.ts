@@ -164,7 +164,7 @@ describe('local mode', () => {
 })
 
 describe('shared mode', () => {
-  // Reference material, which every person can see; the seeded questions are the graph's own person's.
+  // Reference material, which every person can see, like everything a topic seeds.
   const SHARED_STATE = { ...STATE, target: 'c_self_attention' }
 
   let users: string

@@ -105,6 +105,10 @@ async function seedTopicIfPresent(
       id: n.id ?? `node_${n.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
       label: n.label,
       kind: n.kind ?? 'concept',
+      // A topic is material the person is given: its questions and claims are not theirs until they say so.
+      given: true,
+      ...(topic.id === undefined ? {} : { topic: topic.id }),
+      ...(topic.source === undefined ? {} : { source: topic.source }),
     })
     count += 1
   }
