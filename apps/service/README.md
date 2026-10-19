@@ -106,6 +106,13 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `GET /api/v1/suggestions`         | the pending suggestions                                                                                                            | no               |
 | `GET /api/v1/reviews`             | every decision on a suggestion, dismissals included, with its channel and credential                                               | no               |
 | `POST /api/v1/session`            | `{ token }` → a Workspace session cookie, for the person's own `human` token only                                                  | no               |
+| `POST /api/v1/publications/preview` | `{ root, include?, threads?, supersedes?, note? }` → what becomes public and what stays private (ADR 0014)                         | no               |
+| `POST /api/v1/publications`       | the same body → the publication; needs `--sharing` and the person's own token                                                      | yes              |
+| `GET /api/v1/publications`        | live publications, newest first (`?author=`, `?scope=`, `?q=`)                                                                     | no               |
+| `GET /api/v1/publications/:id`    | members, relations, thread summaries (never raw turns), author and version chain                                                   | no               |
+| `POST …/publications/:id/withdraw` | the author withdraws it; others stop reading it                                                                                    | yes              |
+| `POST …/publications/:id/adopt`   | `{ node, dimensions, reason? }` → the caller's own state event naming the publication                                              | yes              |
+| `GET /api/v1/updates`             | adopted publications that have a newer live version, with what changed                                                             | no               |
 | `GET /api/v1/threads`             | the caller's conversation threads, newest first (`?scope=` narrows); ADR 0015                                                      | no               |
 | `POST /api/v1/threads`            | `{ title, scope?, hostSession? }` → a new thread                                                                                   | archive only     |
 | `GET /api/v1/threads/:id`         | the thread, its turns raw (owner only) and their current summaries                                                                 | no               |

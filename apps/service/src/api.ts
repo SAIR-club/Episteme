@@ -23,11 +23,21 @@ const DECISION_ROUTES: readonly string[] = [
   `POST ${API_PREFIX}/suggestions/decide`,
   `POST ${API_PREFIX}/record`,
   `POST ${API_PREFIX}/nodes`,
+  `POST ${API_PREFIX}/publications/preview`,
+  `POST ${API_PREFIX}/publications`,
+]
+
+/** Publishing, withdrawing and adopting are contributions only a person makes (ADR 0014, decision 3). */
+const DECISION_PATTERNS: readonly RegExp[] = [
+  /^POST \/api\/v1\/publications\/[^/]+\/(withdraw|adopt)$/,
 ]
 
 /** What a request to the API asks to do. */
 export function operationOf(method: string, path: string): Operation {
-  return DECISION_ROUTES.includes(`${method} ${path}`) ? 'decide' : 'read'
+  const route = `${method} ${path}`
+  return DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))
+    ? 'decide'
+    : 'read'
 }
 
 export interface ApiContext {
@@ -216,6 +226,17 @@ const THREAD_TURNS = /^\/api\/v1\/threads\/([^/]+)\/turns$/
 const TURN_SUMMARY = /^\/api\/v1\/threads\/([^/]+)\/turns\/([^/]+)\/summary$/
 const THREAD_FORK = /^\/api\/v1\/threads\/([^/]+)\/fork$/
 const SCENE_RECORDS = /^\/api\/v1\/scene-records\/([^/]+)$/
+const PUBLICATION = /^\/api\/v1\/publications\/([^/]+)$/
+const PUBLICATION_ACTION = /^\/api\/v1\/publications\/([^/]+)\/(withdraw|adopt)$/
+
+/** A list of strings in a body field, or nothing when it is absent. */
+function strings(value: unknown, field: string): readonly string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new RequestError(`"${field}" must be a list of strings`)
+  }
+  return value as string[]
+}
 const SCENE_RECORD = /^\/api\/v1\/scene-records\/([^/]+)\/(.+)$/
 
 /** A path segment, decoded, or a 400 when it is not valid percent-encoding. */
@@ -540,6 +561,100 @@ export async function handleApi(
         session.putSceneRecord(segment(recordPath[1]), segment(recordPath[2]), body['value']),
       )
       if (record !== undefined) sendJson(response, 200, { ...at(session), record })
+      return
+    }
+
+    // Sharing (ADR 0014): publish, browse, adopt, follow updates. Each acts for the caller's person.
+    if (
+      (path === `${API_PREFIX}/publications/preview` || path === `${API_PREFIX}/publications`) &&
+      method === 'POST'
+    ) {
+      const body = await readJson(request)
+      const include = strings(body['include'], 'include')
+      const threads = strings(body['threads'], 'threads')
+      const publicationRequest = {
+        root: asString(body['root'], 'root'),
+        ...(include === undefined ? {} : { include }),
+        ...(threads === undefined ? {} : { threads }),
+        ...(typeof body['supersedes'] === 'string' ? { supersedes: body['supersedes'] } : {}),
+        ...(typeof body['note'] === 'string' ? { note: body['note'] } : {}),
+      }
+      if (path.endsWith('/preview')) {
+        const plan = session.publicationPlan(publicationRequest)
+        if (!plan.ok) {
+          sendRefusal(response, 422, plan.refusal.code, plan.refusal.message)
+          return
+        }
+        sendJson(response, 200, { ...at(session), ...plan })
+        return
+      }
+      const published = await session.publish(publicationRequest)
+      if (!published.ok) {
+        sendRefusal(response, 422, published.refusal.code, published.refusal.message)
+        return
+      }
+      sendJson(response, 200, { ...at(session), publication: published.publication })
+      return
+    }
+    if (path === `${API_PREFIX}/publications` && method === 'GET') {
+      const query = new URL(request.url ?? '/', 'http://localhost').searchParams
+      sendJson(response, 200, {
+        ...at(session),
+        publications: session.browsePublications({
+          ...(query.get('author') === null ? {} : { author: query.get('author')! }),
+          ...(query.get('scope') === null ? {} : { scope: query.get('scope')! }),
+          ...(query.get('q') === null ? {} : { q: query.get('q')! }),
+        }),
+      })
+      return
+    }
+    const publicationPath = PUBLICATION.exec(path)
+    if (publicationPath !== null && method === 'GET') {
+      const view = session.publicationView(segment(publicationPath[1]))
+      if (view === undefined) {
+        sendRefusal(response, 404, 'unknown_publication', 'there is no such publication to read')
+        return
+      }
+      sendJson(response, 200, { ...at(session), ...view })
+      return
+    }
+    const actionPath = PUBLICATION_ACTION.exec(path)
+    if (actionPath !== null && method === 'POST') {
+      const id = segment(actionPath[1])
+      const body = await readJson(request)
+      if (actionPath[2] === 'withdraw') {
+        const withdrawn = await session.withdrawPublication(
+          id,
+          typeof body['reason'] === 'string' ? body['reason'] : undefined,
+        )
+        if (!withdrawn.ok) {
+          sendRefusal(response, 422, withdrawn.refusal.code, withdrawn.refusal.message)
+          return
+        }
+        sendJson(response, 200, { ...at(session), withdrawal: withdrawn.withdrawal })
+        return
+      }
+      const node = asString(body['node'], 'node')
+      const dimensions = asObject(body['dimensions'], 'dimensions')
+      const levels: Record<string, string> = {}
+      for (const [dimension, level] of Object.entries(dimensions)) {
+        levels[dimension] = asString(level, `dimensions.${dimension}`)
+      }
+      const adopted = await refusing(response, () =>
+        session.adopt(id, node, levels, {
+          ...(typeof body['reason'] === 'string' ? { reason: body['reason'] } : {}),
+        }),
+      )
+      if (adopted === undefined) return
+      sendJson(response, 200, {
+        ...at(session),
+        ...adopted,
+        understanding: session.understandingOf(node),
+      })
+      return
+    }
+    if (path === `${API_PREFIX}/updates` && method === 'GET') {
+      sendJson(response, 200, { ...at(session), updates: session.updates() })
       return
     }
 
