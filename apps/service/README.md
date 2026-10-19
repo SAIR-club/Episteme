@@ -106,6 +106,14 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `GET /api/v1/suggestions`         | the pending suggestions                                                                                                            | no               |
 | `GET /api/v1/reviews`             | every decision on a suggestion, dismissals included, with its channel and credential                                               | no               |
 | `POST /api/v1/session`            | `{ token }` → a Workspace session cookie, for the person's own `human` token only                                                  | no               |
+| `GET /api/v1/threads`             | the caller's conversation threads, newest first (`?scope=` narrows); ADR 0015                                                      | no               |
+| `POST /api/v1/threads`            | `{ title, scope?, hostSession? }` → a new thread                                                                                   | archive only     |
+| `GET /api/v1/threads/:id`         | the thread, its turns raw (owner only) and their current summaries                                                                 | no               |
+| `POST /api/v1/threads/:id/turns`  | `{ speaker: learner | agent, text }` → the turn, kept raw                                                                          | archive only     |
+| `POST …/turns/:turn/summary`      | `{ text, quotes }` → the summary; a learner turn needs a verbatim quote                                                            | archive only     |
+| `POST /api/v1/threads/:id/fork`   | `{ turn, title? }` → a new line from that turn                                                                                     | archive only     |
+| `GET /api/v1/scene-records/:ns`   | the caller's latest records in a scene's namespace (`?prefix=`)                                                                    | no               |
+| `GET/PUT …/scene-records/:ns/:key` | one record; `PUT { value }` writes the next version, `null` removes it                                                             | scene data only  |
 | `POST /api/v1/recall`             | `{ question }` → what is already understood that bears on it, and why. Same result as MCP `recall`                                 | no               |
 | `GET /api/v1/reflect`             | progress and the number of pending suggestions. Same result as MCP `reflect`                                                       | no               |
 | `GET /api/v1/nodes/:id/history`   | every recorded change of understanding of one node, in the persisted form                                                          | no               |

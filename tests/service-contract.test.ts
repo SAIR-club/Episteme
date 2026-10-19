@@ -120,7 +120,16 @@ describe('deciding', () => {
   it('is not something MCP offers, under any name', async () => {
     const { body } = await agent.rpc('tools/list')
     const tools = (body['result'] as { tools: { name: string }[] }).tools.map((tool) => tool.name)
-    expect([...tools].sort()).toEqual(['distill', 'propose', 'recall', 'reflect'])
+    expect([...tools].sort()).toEqual([
+      'distill',
+      'propose',
+      'recall',
+      'reflect',
+      'thread_append',
+      'thread_fork',
+      'thread_open',
+      'thread_summarize',
+    ])
     expect(tools.some((name) => /decide|confirm|accept|dismiss|commit/i.test(name))).toBe(false)
   })
 })
