@@ -978,6 +978,11 @@ export class CognitiveSession {
     readonly scope?: string
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
+    /**
+     * Material the person was given, such as a course's topic, rather than their own thinking. Seeded at
+     * `reference` tier whatever its kind, so a given claim or question never counts as their understanding.
+     */
+    readonly given?: boolean
   }): Promise<NodeView> {
     return this.#exclusive(async () => {
       // The id is chosen inside the queue, so two concurrent additions cannot both pick the same next id.
@@ -992,7 +997,7 @@ export class CognitiveSession {
               : NODE.question,
         // A concept the learner introduces is reference material; a claim is their own thinking. The tier
         // decides whether it counts as understanding, so it is not a cosmetic field.
-        tier: input.kind === 'concept' ? 'reference' : 'thought',
+        tier: input.kind === 'concept' || input.given === true ? 'reference' : 'thought',
         ...(input.topic === undefined ? {} : { topic: input.topic }),
         ...(input.source === undefined ? {} : { source: input.source }),
         ...(input.scope === undefined ? {} : { scope: input.scope }),

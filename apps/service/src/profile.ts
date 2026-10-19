@@ -15,6 +15,10 @@ export interface SeedNode {
 export interface SeedTopic {
   readonly title: string
   readonly about?: string
+  /** The topic every seeded node is tagged with: `transformer` tags it `topic:transformer`. */
+  readonly id?: string
+  /** Where the material comes from, such as `paper:arxiv:1706.03762`, recorded on every seeded node. */
+  readonly source?: string
   readonly nodes: readonly SeedNode[]
   readonly edges?: readonly {
     readonly from: string
@@ -27,6 +31,8 @@ export const BLANK_TOPIC: SeedTopic = Object.freeze({ title: 'blank', nodes: [] 
 
 export const TRANSFORMERS: SeedTopic = Object.freeze({
   title: 'Transformer 如何处理顺序',
+  id: 'transformer',
+  source: 'paper:arxiv:1706.03762',
   about:
     'Transformer 架构中与序列顺序有关的部分：为什么仅靠注意力无法表达顺序，以及为此加入了什么。',
   nodes: [

@@ -129,6 +129,14 @@ describe('the state endpoint', () => {
     expect(field<string>(body, 'retriever')).toBe('hybrid')
   })
 
+  it('seeds the topic as material the person was given, not as their own thinking', async () => {
+    const { body } = await get('/api/v1/state')
+    const nodes = list<{ nodeId: string; tier: string; tags: string[] }>(body, 'nodes')
+    const question = nodes.find((node) => node.nodeId === 'q_why_order')
+    expect(question?.tier).toBe('reference')
+    expect(question?.tags).toContain('topic:transformer')
+  })
+
   it('attaches each node\u2019s recorded understanding, so the page needs one request', async () => {
     const first = await get('/api/v1/state')
     const aNode = list<{ nodeId: string }>(first.body, 'nodes')[0]?.nodeId
