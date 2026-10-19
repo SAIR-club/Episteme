@@ -140,4 +140,4 @@ on something named.
    tree, scheduling, real-time updates, multi-user access, shared subject knowledge, and Forum as a second
    scene.
 
-The [roadmap](../planning/roadmap.md) turns these into phases and records what each one proves.
+The [MindLink product spec](../planning/mindlink-spec.md) breaks the work that builds on them into issues.
