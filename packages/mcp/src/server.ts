@@ -19,6 +19,7 @@ import {
   type RecordableDimension,
   type SceneView,
   type RecallResult,
+  type RecallSummary,
   type ProgressSummary,
 } from '@episteme/application'
 
@@ -54,13 +55,28 @@ function clientNameOf(context: ServerContext): string | undefined {
   return typeof info?.name === 'string' ? info.name : undefined
 }
 
-const RECALL_INPUT = fromJsonSchema<{ question: string }>({
+const RECALL_INPUT = fromJsonSchema<{
+  question: string
+  scope?: string
+  depth?: 'summary' | 'full'
+}>({
   type: 'object',
   properties: {
     question: {
       type: 'string',
       minLength: 1,
       description: 'The question being worked on, in the learner’s words where possible.',
+    },
+    scope: {
+      type: 'string',
+      description:
+        'A learning project or course to prefer. Related items outside it can still appear.',
+    },
+    depth: {
+      type: 'string',
+      enum: ['summary', 'full'],
+      description:
+        '`summary` (recommended first): one line per item within a budget; then `expand` the few you need. `full` (the default): every item with its reasons.',
     },
   },
   required: ['question'],
@@ -245,6 +261,7 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
 /** The tools every Episteme MCP server offers. A scene's tools may not reuse these names. */
 export const BUILT_IN_TOOLS: readonly string[] = [
   'recall',
+  'expand',
   'propose',
   'distill',
   'reflect',
@@ -352,9 +369,37 @@ export function createEpistemeMcpServer(
       inputSchema: RECALL_INPUT,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ question }) => {
-      const recalled = await session.recall(question)
+    async ({ question, scope, depth }) => {
+      const options = scope === undefined ? {} : { scope }
+      if (depth === 'summary') {
+        const summary = await session.recallSummary(question, options)
+        return result(describeSummary(summary), summary)
+      }
+      const recalled = await session.recall(question, options)
       return result(describeRecall(recalled), recalled)
+    },
+  )
+
+  server.registerTool(
+    'expand',
+    {
+      title: 'Expand one recalled item',
+      description:
+        'The full detail of one node from a summary: its words, what the learner recorded about it, its neighbours and where it came from. Changes nothing.',
+      inputSchema: EXPAND_INPUT,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    ({ node }) => {
+      const expanded = session.expand(node)
+      if (expanded === undefined) {
+        return refused('unknown_node', `there is no node "${node}" the learner can see`)
+      }
+      return result(
+        `${expanded.label} [${expanded.nodeId}], ${expanded.neighbours.length} neighbour(s); recorded: ${
+          expanded.understanding.map((d) => `${d.id}=${d.level}`).join(', ') || 'nothing'
+        }.`,
+        expanded,
+      )
     },
   )
 
@@ -781,6 +826,24 @@ function registerThreadTools(
         () => 'New line opened.',
       ),
   )
+}
+
+const EXPAND_INPUT = fromJsonSchema<{ node: string }>({
+  type: 'object',
+  properties: { node: { type: 'string', minLength: 1, description: 'A node id from recall.' } },
+  required: ['node'],
+  additionalProperties: false,
+})
+
+function describeSummary(summary: RecallSummary): string {
+  const lines = summary.entries.map(
+    (entry) =>
+      `- ${entry.label} [${entry.nodeId}]${entry.state === undefined ? '' : ` (${entry.state})`}${
+        entry.openConflict === true ? ' — open conflict, do not build on it' : ''
+      }${entry.inScope === true ? ' — in scope' : ''}`,
+  )
+  if (summary.truncated > 0) lines.push(`${summary.truncated} more left out by the budget.`)
+  return lines.length === 0 ? 'Nothing relevant is recorded yet.' : lines.join('\n')
 }
 
 function result(text: string, structured: object): CallToolResult {

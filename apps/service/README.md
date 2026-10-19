@@ -125,9 +125,10 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `POST /api/v1/threads/:id/fork`   | `{ turn, title? }` → a new line from that turn                                                                                     | archive only     |
 | `GET /api/v1/scene-records/:ns`   | the caller's latest records in a scene's namespace (`?prefix=`)                                                                    | no               |
 | `GET/PUT …/scene-records/:ns/:key` | one record; `PUT { value }` writes the next version, `null` removes it                                                             | scene data only  |
-| `POST /api/v1/recall`             | `{ question }` → what is already understood that bears on it, and why. Same result as MCP `recall`                                 | no               |
+| `POST /api/v1/recall`             | `{ question, scope?, depth?: summary | full, budget? }` → what is understood that bears on it, and why; same as MCP `recall`       | no               |
 | `GET /api/v1/reflect`             | progress and the number of pending suggestions. Same result as MCP `reflect`                                                       | no               |
 | `GET /api/v1/nodes/:id/history`   | every recorded change of understanding of one node, in the persisted form                                                          | no               |
+| `GET /api/v1/nodes/:id`           | one node in full: its words, your state, visible neighbours, origin; same as MCP `expand`                                          | no               |
 | `POST /api/v1/suggestions/decide` | `{ id, action: accept \| modify \| dismiss, proposal? }` → the person's decision on one suggestion                                 | yes              |
 | `POST /api/v1/distill`            | `{ text, title? }` → pending suggestions distilled from material. Same result as MCP `distill`                                     | drafts only      |
 | `POST /api/v1/record`             | `{ target, dimensions, reason? }` → what the person states about their own understanding                                           | yes              |

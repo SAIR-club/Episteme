@@ -122,6 +122,7 @@ describe('deciding', () => {
     const tools = (body['result'] as { tools: { name: string }[] }).tools.map((tool) => tool.name)
     expect([...tools].sort()).toEqual([
       'distill',
+      'expand',
       'propose',
       'recall',
       'reflect',

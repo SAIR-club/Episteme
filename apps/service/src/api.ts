@@ -224,6 +224,7 @@ async function refusing<T>(
 }
 
 const NODE_HISTORY = /^\/api\/v1\/nodes\/([^/]+)\/history$/
+const NODE_DETAIL = /^\/api\/v1\/nodes\/([^/]+)$/
 const THREAD = /^\/api\/v1\/threads\/([^/]+)$/
 const THREAD_TURNS = /^\/api\/v1\/threads\/([^/]+)\/turns$/
 const TURN_SUMMARY = /^\/api\/v1\/threads\/([^/]+)\/turns\/([^/]+)\/summary$/
@@ -386,7 +387,20 @@ export async function handleApi(
     if (path === `${API_PREFIX}/recall` && method === 'POST') {
       const body = await readJson(request)
       const question = asString(body['question'], 'question')
-      const { epoch, revision, result } = await readSettled(session, () => session.recall(question))
+      const options = typeof body['scope'] === 'string' ? { scope: body['scope'] } : {}
+      if (body['depth'] === 'summary') {
+        const { epoch, revision, result } = await readSettled(session, () =>
+          session.recallSummary(question, {
+            ...options,
+            ...(typeof body['budget'] === 'number' ? { budget: body['budget'] } : {}),
+          }),
+        )
+        sendJson(response, 200, { epoch, revision, ...result })
+        return
+      }
+      const { epoch, revision, result } = await readSettled(session, () =>
+        session.recall(question, options),
+      )
       sendJson(response, 200, { epoch, revision, ...result })
       return
     }
@@ -398,6 +412,17 @@ export async function handleApi(
         progress: session.progress(),
         pendingSuggestions: session.pendingSuggestions().length,
       })
+      return
+    }
+
+    const detail = NODE_DETAIL.exec(path)
+    if (detail !== null && method === 'GET') {
+      const expanded = session.expand(segment(detail[1]))
+      if (expanded === undefined) {
+        sendRefusal(response, 404, 'unknown_node', 'there is no such node you can see')
+        return
+      }
+      sendJson(response, 200, { ...at(session), node: expanded })
       return
     }
 

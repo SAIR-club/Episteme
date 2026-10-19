@@ -387,6 +387,83 @@ export interface PublicationUpdate {
   readonly removed: readonly string[]
 }
 
+/** How many items recall returns. */
+const RECALL_LIMIT = 8
+/** What a scope adds to an item's score: enough to lift it above an unscoped near-tie, not above a clear match. */
+export const SCOPE_BOOST = 0.15
+/** The characters a compact recall may use by default. */
+export const DEFAULT_RECALL_BUDGET = 2000
+
+export interface RecallOptions {
+  /** A project or course to prefer, not to filter by (ADR 0015, decision 6). */
+  readonly scope?: string
+  /** For `recallSummary`: the characters it may use. */
+  readonly budget?: number
+}
+
+export interface RecallSummaryEntry {
+  readonly nodeId: string
+  readonly label: string
+  readonly type: string
+  readonly score: number
+  /** What this person recorded about it, compactly. */
+  readonly state?: string
+  readonly openConflict?: true
+  readonly inScope?: true
+}
+
+export interface RecallSummary {
+  readonly question: string
+  readonly scope?: string
+  readonly entries: readonly RecallSummaryEntry[]
+  /** How many retrieved items the budget left out. */
+  readonly truncated: number
+  readonly budget: number
+}
+
+export interface ExpandedNode {
+  readonly nodeId: string
+  readonly label: string
+  readonly type: string
+  readonly tier: string
+  readonly tags: readonly string[]
+  readonly text?: string
+  readonly author: string
+  readonly source?: string
+  readonly origin?: unknown
+  readonly understanding: readonly { readonly id: string; readonly level: string }[]
+  readonly neighbours: readonly {
+    readonly edgeId: string
+    readonly type: string
+    readonly direction: 'in' | 'out'
+    readonly nodeId: string
+    readonly label: string
+  }[]
+  /** Live publications it is a member of. */
+  readonly publications: readonly string[]
+}
+
+/** A ranked item with the scope's boost added, as a reason of its own. */
+function withScopeBoost(entry: RankedView, scope: string): RankedView {
+  const score = entry.score + SCOPE_BOOST
+  const reasons = [
+    ...entry.reasons,
+    {
+      signal: 'scope',
+      value: 1,
+      weight: SCOPE_BOOST,
+      contribution: SCOPE_BOOST,
+      share: 0,
+      explanation: `belongs to "${scope}", the scope asked for`,
+      explanationZh: `属于你指定的范围「${scope}」`,
+      labelZh: '范围',
+    },
+  ]
+    .map((reason) => ({ ...reason, share: score === 0 ? 0 : reason.contribution / score }))
+    .sort((left, right) => right.contribution - left.contribution)
+  return { ...entry, score, reasons }
+}
+
 /** What a person asks to publish: a node of theirs, and optionally more of theirs it reaches. */
 export interface PublicationRequest {
   readonly root: string
@@ -692,15 +769,115 @@ export class CognitiveSession {
    * For a surface whose own agent writes the answer, such as an MCP host. It is the same retrieval `ask`
    * uses, so an agent recalling a question sees exactly the evidence the Learn surface would show for it.
    */
-  async recall(question: string): Promise<RecallResult> {
-    return this.#recallView(question, await this.#retrieve(question))
+  async recall(question: string, options: RecallOptions = {}): Promise<RecallResult> {
+    if (options.scope === undefined)
+      return this.#recallView(question, await this.#retrieve(question))
+    // A scope is a preference, not a wall: more is retrieved, what lies in the scope rises, and the boost is a
+    // reason in the ranking like any other signal, so the order stays checkable (ADR 0015, decision 6).
+    const view = this.#recallView(question, await this.#retrieve(question, RECALL_LIMIT * 2))
+    const inScope = this.#inScope(options.scope)
+    const ranked = view.ranked
+      .map((entry) => (inScope.has(entry.nodeId) ? withScopeBoost(entry, options.scope!) : entry))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, RECALL_LIMIT)
+    const kept = new Set(ranked.map((entry) => entry.nodeId))
+    const known = view.known
+      .filter((entry) => kept.has(entry.nodeId))
+      .sort((left, right) => Number(inScope.has(right.nodeId)) - Number(inScope.has(left.nodeId)))
+    return { ...view, ranked, known }
   }
 
-  #retrieve(question: string): Promise<RelevantContext> {
+  /**
+   * Recall in its compact layer (ADR 0015 and #44): one line per item, within a budget of characters, so an agent
+   * reads the gist first and asks `expand` for the few it needs. Says how many items the budget left out.
+   */
+  async recallSummary(question: string, options: RecallOptions = {}): Promise<RecallSummary> {
+    const full = await this.recall(question, options)
+    const budget = options.budget ?? DEFAULT_RECALL_BUDGET
+    const inScope = options.scope === undefined ? new Set<string>() : this.#inScope(options.scope)
+    const stateOf = new Map(full.known.map((entry) => [entry.nodeId, entry]))
+    const entries: RecallSummaryEntry[] = []
+    let used = 0
+    for (const item of full.ranked) {
+      const known = stateOf.get(item.nodeId)
+      const entry: RecallSummaryEntry = {
+        nodeId: item.nodeId,
+        label: item.label,
+        type: item.type,
+        score: Math.round(item.score * 1000) / 1000,
+        ...(known === undefined
+          ? {}
+          : { state: known.dimensions.map((d) => `${d.id}=${d.level}`).join(', ') }),
+        ...(known !== undefined && known.openConflicts.length > 0 ? { openConflict: true } : {}),
+        ...(inScope.has(item.nodeId) ? { inScope: true } : {}),
+      }
+      const size = JSON.stringify(entry).length
+      if (used + size > budget) break
+      used += size
+      entries.push(entry)
+    }
+    return {
+      question,
+      ...(options.scope === undefined ? {} : { scope: options.scope }),
+      entries,
+      truncated: full.ranked.length - entries.length,
+      budget,
+    }
+  }
+
+  /**
+   * One node in full, for an agent that read its line in a summary and needs the detail: its words, this
+   * person's state, its visible neighbours and where it came from. `undefined` for a node they cannot see.
+   */
+  expand(nodeId: string): ExpandedNode | undefined {
+    const node = this.#seen.getNode(nodeId)
+    if (node === undefined) return undefined
+    const neighbours = this.#seen.edgesOf(node.id).map((edge) => {
+      const outgoing = edge.from === node.id
+      const other = outgoing ? edge.to : edge.from
+      return {
+        edgeId: edge.id,
+        type: edge.type,
+        direction: outgoing ? ('out' as const) : ('in' as const),
+        nodeId: other,
+        label: this.#seen.getNode(other)?.label ?? other,
+      }
+    })
+    const text = node.properties['text']
+    return {
+      nodeId: node.id,
+      label: node.label,
+      type: node.type,
+      tier: node.meta.tier ?? 'thought',
+      tags: node.tags,
+      ...(typeof text === 'string' && text !== node.label ? { text } : {}),
+      author: node.actorId,
+      ...(node.source === undefined ? {} : { source: node.source }),
+      ...(node.properties['origin'] === undefined ? {} : { origin: node.properties['origin'] }),
+      understanding: this.understandingOf(node.id),
+      neighbours,
+      publications: this.publications()
+        .filter((publication) => publication.members.includes(node.id))
+        .map((publication) => publication.id),
+    }
+  }
+
+  /** The ids of the nodes this person can see that carry `scope:<scope>`. */
+  #inScope(scope: string): ReadonlySet<string> {
+    const tag = `scope:${scope}`
+    return new Set(
+      this.#seen
+        .listNodes()
+        .filter((node) => node.tags.includes(tag))
+        .map((node) => node.id),
+    )
+  }
+
+  #retrieve(question: string, limit = RECALL_LIMIT): Promise<RelevantContext> {
     return retrieveWith(this.#retriever, this.#seen, this.#episteme.log, question, {
       actorId: this.#actor,
       depth: 1,
-      limit: 8,
+      limit,
     })
   }
 

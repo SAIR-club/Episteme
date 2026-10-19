@@ -43,6 +43,7 @@ describe('what an agent can do', () => {
     // The conversation tools record the person's archive (ADR 0015); none confirms or writes understanding.
     expect(tools.sort()).toEqual([
       'distill',
+      'expand',
       'propose',
       'recall',
       'reflect',

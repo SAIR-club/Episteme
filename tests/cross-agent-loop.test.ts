@@ -227,6 +227,7 @@ describe('understanding one agent proposed, recalled by another', () => {
     // The conversation tools write the person's archive, never their understanding (ADR 0015).
     const expected = [
       'distill',
+      'expand',
       'propose',
       'recall',
       'reflect',
