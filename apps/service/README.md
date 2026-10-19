@@ -106,6 +106,10 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `GET /api/v1/suggestions`         | the pending suggestions                                                                                                            | no               |
 | `GET /api/v1/reviews`             | every decision on a suggestion, dismissals included, with its channel and credential                                               | no               |
 | `POST /api/v1/session`            | `{ token }` → a Workspace session cookie, for the person's own `human` token only                                                  | no               |
+| `GET /api/v1/delegations`         | the caller's delegations, live and revoked (ADR 0016)                                                                              | no               |
+| `POST /api/v1/delegations`        | `{ scope? }` → the service confirms agent proposals in that scope for the person                                                   | yes              |
+| `POST …/delegations/:id/revoke`   | stops it from the next proposal on                                                                                                 | yes              |
+| `POST …/reviews/:suggestion/undo` | revokes what a delegated decision committed; `GET /reviews?channel=delegation` lists them                                          | yes              |
 | `POST /api/v1/publications/preview` | `{ root, include?, threads?, supersedes?, note? }` → what becomes public and what stays private (ADR 0014)                         | no               |
 | `POST /api/v1/publications`       | the same body → the publication; needs `--sharing` and the person's own token                                                      | yes              |
 | `GET /api/v1/publications`        | live publications, newest first (`?author=`, `?scope=`, `?q=`)                                                                     | no               |
