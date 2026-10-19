@@ -218,6 +218,7 @@ describe('scene MCP tools', () => {
     const names = (body['result'] as { tools: { name: string }[] }).tools.map((tool) => tool.name)
     expect(names.sort()).toEqual([
       'distill',
+      'expand',
       'node_count',
       'propose',
       'recall',
