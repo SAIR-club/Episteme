@@ -59,6 +59,8 @@ export interface SuggestionOrigin {
   readonly time?: { readonly from: number; readonly to: number }
   /** Who said those words, when they lie in one speaker's turn of a dialogue (ADR 0011). */
   readonly speaker?: string
+  /** The thread turn the words lie in, when the material came from a thread (ADR 0015, decision 5). */
+  readonly turn?: string
 }
 
 /**

@@ -24,6 +24,12 @@ export interface SceneView {
   ): ReturnType<CognitiveSession['historyOf']>
   vocabulary(): ReturnType<CognitiveSession['vocabulary']>
   pendingSuggestions(): ReturnType<CognitiveSession['pendingSuggestions']>
+  /** The caller's records in this scene's own namespace (ADR 0015, decision 7). Never understanding. */
+  readonly records: {
+    get(key: string): ReturnType<CognitiveSession['sceneRecord']>
+    list(prefix?: string): ReturnType<CognitiveSession['sceneRecords']>
+    put(key: string, value: unknown): ReturnType<CognitiveSession['putSceneRecord']>
+  }
 }
 
 /**
@@ -46,5 +52,10 @@ export function sceneViewOf(session: CognitiveSession): SceneView {
     historyOf: (...args: Parameters<CognitiveSession['historyOf']>) => session.historyOf(...args),
     vocabulary: () => session.vocabulary(),
     pendingSuggestions: () => session.pendingSuggestions(),
+    records: Object.freeze({
+      get: (key: string) => session.sceneRecord(session.scene.name, key),
+      list: (prefix?: string) => session.sceneRecords(session.scene.name, prefix),
+      put: (key: string, value: unknown) => session.putSceneRecord(session.scene.name, key, value),
+    }),
   })
 }
