@@ -32,6 +32,8 @@ with the holder's process id.
 
 `startService(options)` starts the same service from code, and `close()` releases the graph.
 
+To run one service that a course shares, over the network, see [docs/deployment.md](../../docs/deployment.md).
+
 People and tokens of a shared deployment are managed on the machine that runs it:
 
 ```bash
