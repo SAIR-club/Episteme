@@ -41,7 +41,11 @@ export interface StateValue {
   readonly sourceOf?: string
 }
 
-export type StateAuthority = 'author' | 'suggested' | 'confirmed'
+/**
+ * How a value became the actor's: written by them, only suggested, confirmed by the person, or confirmed for them
+ * by the service under a delegation they granted and can revoke (ADR 0016).
+ */
+export type StateAuthority = 'author' | 'suggested' | 'confirmed' | 'delegated'
 
 /** A resolved snapshot of dimensions for one node, for one actor. */
 export type DimensionIndex = ReadonlyMap<DimensionId, StateValue>

@@ -238,6 +238,8 @@ function assertHumanOwnsTheValue(
     )
   }
 
+  // `confirmed` and `delegated` alike must name the human whose state it becomes: a delegation is the person's
+  // grant, so the person, never an agent, stands behind the value (ADR 0016).
   const confirmedBy = value.confirmedBy
   if (confirmedBy === undefined) {
     throw new GuardRejection(
