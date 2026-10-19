@@ -224,7 +224,17 @@ describe('understanding one agent proposed, recalled by another', () => {
   })
 
   it('gives neither agent a way to decide', async () => {
-    const expected = ['distill', 'propose', 'recall', 'reflect']
+    // The conversation tools write the person's archive, never their understanding (ADR 0015).
+    const expected = [
+      'distill',
+      'propose',
+      'recall',
+      'reflect',
+      'thread_append',
+      'thread_fork',
+      'thread_open',
+      'thread_summarize',
+    ]
     expect(await toolNames(agentA)).toEqual(expected)
     expect(await toolNames(agentB)).toEqual(expected)
   })

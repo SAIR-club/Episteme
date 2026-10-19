@@ -57,6 +57,8 @@ export interface Source {
   /** The host's own identifier for the conversation, when it gave one. Opaque, provenance only. */
   readonly hostSession?: string
   readonly submissions?: readonly SourceSubmission[]
+  /** The thread and turns the material was built from (ADR 0015, decision 5). */
+  readonly thread?: { readonly id: string; readonly turns: readonly string[] }
 }
 
 /**

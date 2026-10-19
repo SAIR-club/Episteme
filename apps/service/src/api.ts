@@ -211,6 +211,21 @@ async function refusing<T>(
 }
 
 const NODE_HISTORY = /^\/api\/v1\/nodes\/([^/]+)\/history$/
+const THREAD = /^\/api\/v1\/threads\/([^/]+)$/
+const THREAD_TURNS = /^\/api\/v1\/threads\/([^/]+)\/turns$/
+const TURN_SUMMARY = /^\/api\/v1\/threads\/([^/]+)\/turns\/([^/]+)\/summary$/
+const THREAD_FORK = /^\/api\/v1\/threads\/([^/]+)\/fork$/
+const SCENE_RECORDS = /^\/api\/v1\/scene-records\/([^/]+)$/
+const SCENE_RECORD = /^\/api\/v1\/scene-records\/([^/]+)\/(.+)$/
+
+/** A path segment, decoded, or a 400 when it is not valid percent-encoding. */
+function segment(value: string | undefined): string {
+  try {
+    return decodeURIComponent(value ?? '')
+  } catch {
+    throw new RequestError('a path segment is not valid percent-encoding')
+  }
+}
 
 /**
  * Serves one request under `/api/v1`. Every path that reaches here is answered, if only with a 404.
@@ -347,9 +362,19 @@ export async function handleApi(
     // understanding: what is found joins the review queue.
     if (path === `${API_PREFIX}/distill` && method === 'POST') {
       const body = await readJson(request)
-      const text = asString(body['text'], 'text')
-      const title = typeof body['title'] === 'string' ? body['title'] : undefined
-      const outcome = await session.distill(title === undefined ? { text } : { title, text })
+      // Either material sent as text, or turns of one of the caller's threads (ADR 0015, decision 5).
+      const outcome =
+        typeof body['thread'] === 'string'
+          ? await session.distillThread(body['thread'], {
+              ...(Array.isArray(body['turns'])
+                ? { turns: body['turns'].filter((id): id is string => typeof id === 'string') }
+                : {}),
+            })
+          : await (async () => {
+              const text = asString(body['text'], 'text')
+              const title = typeof body['title'] === 'string' ? body['title'] : undefined
+              return session.distill(title === undefined ? { text } : { title, text })
+            })()
       if (!outcome.ok) {
         sendRefusal(response, 422, outcome.refusal.code, outcome.refusal.message)
         return
@@ -412,6 +437,109 @@ export async function handleApi(
         nodes: session.listNodes(),
         events: session.eventCount,
       })
+      return
+    }
+
+    // Conversation threads (ADR 0015). Every one is the caller's own; another person's is not found.
+    if (path === `${API_PREFIX}/threads` && method === 'GET') {
+      const scope = new URL(request.url ?? '/', 'http://localhost').searchParams.get('scope')
+      sendJson(response, 200, { ...at(session), threads: session.threads(scope ?? undefined) })
+      return
+    }
+    if (path === `${API_PREFIX}/threads` && method === 'POST') {
+      const body = await readJson(request)
+      const thread = await refusing(response, () =>
+        session.openThread({
+          title: asString(body['title'], 'title'),
+          ...(typeof body['scope'] === 'string' ? { scope: body['scope'] } : {}),
+          ...(typeof body['hostSession'] === 'string' ? { hostSession: body['hostSession'] } : {}),
+        }),
+      )
+      if (thread !== undefined) sendJson(response, 200, { ...at(session), thread })
+      return
+    }
+    const threadPath = THREAD.exec(path)
+    if (threadPath !== null && method === 'GET') {
+      const view = session.threadView(segment(threadPath[1]))
+      if (view === undefined) {
+        sendRefusal(response, 404, 'unknown_thread', 'there is no such thread of yours')
+        return
+      }
+      sendJson(response, 200, { ...at(session), ...view })
+      return
+    }
+    const turnsPath = THREAD_TURNS.exec(path)
+    if (turnsPath !== null && method === 'POST') {
+      const body = await readJson(request)
+      const speaker = body['speaker']
+      if (speaker !== 'learner' && speaker !== 'agent') {
+        throw new RequestError('"speaker" must be learner or agent')
+      }
+      const turn = await refusing(response, () =>
+        session.appendTurn(segment(turnsPath[1]), {
+          speaker,
+          text: asString(body['text'], 'text'),
+        }),
+      )
+      if (turn !== undefined) sendJson(response, 200, { ...at(session), turn })
+      return
+    }
+    const summaryPath = TURN_SUMMARY.exec(path)
+    if (summaryPath !== null && method === 'POST') {
+      const body = await readJson(request)
+      const quotes = Array.isArray(body['quotes'])
+        ? body['quotes'].filter((quote): quote is string => typeof quote === 'string')
+        : []
+      const summary = await refusing(response, () =>
+        session.summarizeTurn(segment(summaryPath[1]), segment(summaryPath[2]), {
+          text: asString(body['text'], 'text'),
+          quotes,
+        }),
+      )
+      if (summary !== undefined) sendJson(response, 200, { ...at(session), summary })
+      return
+    }
+    const forkPath = THREAD_FORK.exec(path)
+    if (forkPath !== null && method === 'POST') {
+      const body = await readJson(request)
+      const thread = await refusing(response, () =>
+        session.forkThread(
+          segment(forkPath[1]),
+          asString(body['turn'], 'turn'),
+          typeof body['title'] === 'string' ? body['title'] : undefined,
+        ),
+      )
+      if (thread !== undefined) sendJson(response, 200, { ...at(session), thread })
+      return
+    }
+
+    // A scene's own records, the caller's only (ADR 0015, decision 7).
+    const recordsPath = SCENE_RECORDS.exec(path)
+    if (recordsPath !== null && method === 'GET') {
+      const prefix = new URL(request.url ?? '/', 'http://localhost').searchParams.get('prefix')
+      sendJson(response, 200, {
+        ...at(session),
+        records: session.sceneRecords(segment(recordsPath[1]), prefix ?? ''),
+      })
+      return
+    }
+    const recordPath = SCENE_RECORD.exec(path)
+    if (recordPath !== null && method === 'GET') {
+      const record = session.sceneRecord(segment(recordPath[1]), segment(recordPath[2]))
+      if (record === undefined) {
+        sendRefusal(response, 404, 'unknown_record', 'there is no such record of yours')
+        return
+      }
+      sendJson(response, 200, { ...at(session), record })
+      return
+    }
+    if (recordPath !== null && method === 'PUT') {
+      const body = await readJson(request)
+      if (!('value' in body)) throw new RequestError('"value" is required; null removes the record')
+      const record = await refusing(response, () =>
+        session.putSceneRecord(segment(recordPath[1]), segment(recordPath[2]), body['value']),
+      )
+      if (record !== undefined) sendJson(response, 200, { ...at(session), record })
       return
     }
 

@@ -40,7 +40,17 @@ describe('what an agent can do', () => {
   it('offers recall, propose, reflect and distill, and nothing that confirms or writes', async () => {
     const { body } = await rpc('tools/list')
     const tools = (body['result'] as { tools: { name: string }[] }).tools.map((tool) => tool.name)
-    expect(tools.sort()).toEqual(['distill', 'propose', 'recall', 'reflect'])
+    // The conversation tools record the person's archive (ADR 0015); none confirms or writes understanding.
+    expect(tools.sort()).toEqual([
+      'distill',
+      'propose',
+      'recall',
+      'reflect',
+      'thread_append',
+      'thread_fork',
+      'thread_open',
+      'thread_summarize',
+    ])
   })
 
   it('has no way to call a tool that is not offered', async () => {

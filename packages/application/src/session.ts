@@ -8,6 +8,7 @@ import {
   systemClock,
   toSerializedEvent,
   type SerializedStateEvent,
+  defineDomainPack,
   type DomainPack,
   type ActorId,
   type DimensionId,
@@ -61,15 +62,20 @@ import {
 import { CANDIDATE_PREFIX, type CognitiveAgent } from '@episteme/agent'
 import {
   RuleBasedDistiller,
+  MIN_QUOTE_SIGNS,
   canonicalText,
   distill,
   hostRefusalOf,
+  occurrencesOf,
   prepareHostReading,
+  quoteSigns,
   type DistillationPolicy,
   type HostItem,
 } from '@episteme/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { openLocalStorage } from '@episteme/storage-local'
+import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './scene-records.js'
+import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
 import { learnScene } from './learn-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
 
@@ -90,9 +96,18 @@ const EDGE = {
   refersTo: asId<EdgeTypeId>('refers_to'),
 } as const
 
-function defaultTags(topic = 'general'): readonly Tag[] {
-  return [topicTag(topic), tag('scene', 'cognitive')]
+function defaultTags(topic = 'general', scope?: string): readonly Tag[] {
+  const tags = [topicTag(topic), tag('scene', 'cognitive')]
+  return scope === undefined ? tags : [...tags, tag('scope', scope)]
 }
+
+/**
+ * What the application itself registers for every scene: the `scope` tag namespace, which marks the learning
+ * project or course a node belongs to (ADR 0015, decision 6).
+ */
+const applicationPack: DomainPack = defineDomainPack('episteme-application', {
+  tagNamespaces: [{ namespace: 'scope', label: 'Scope' }],
+})
 
 function defaultResponder(
   input: { readonly text: string },
@@ -269,6 +284,31 @@ export interface ProgressSummary {
   readonly summary: string
 }
 
+/** How a thread's speakers are written when its turns become material to distil. */
+const LEARNER_LABEL = '学习者'
+const AGENT_LABEL = '助手'
+
+/** The thread a distillation's material was built from, and where each of its turns lies in the text. */
+export interface ThreadMaterial {
+  readonly id: string
+  readonly turns: readonly { readonly id: string; readonly start: number; readonly end: number }[]
+}
+
+/** A thread as its owner reads it: every turn, raw, with its current summary. */
+export interface ThreadView {
+  readonly thread: Thread
+  readonly turns: readonly (Turn & { readonly summary?: TurnSummary })[]
+}
+
+/** An origin, with the turn its words lie in when the material came from a thread. */
+function withTurn(origin: SuggestionOrigin, thread: ThreadMaterial | undefined): SuggestionOrigin {
+  if (thread === undefined) return origin
+  const turn = thread.turns.find(
+    (range) => origin.span.start >= range.start && origin.span.start < range.end,
+  )
+  return turn === undefined ? origin : { ...origin, turn: turn.id }
+}
+
 /** What a person asks to publish: a node of theirs, and optionally more of theirs it reaches. */
 export interface PublicationRequest {
   readonly root: string
@@ -325,6 +365,8 @@ interface SessionParts {
   readonly suggestions: SuggestionStore
   readonly sources: SourceStore
   readonly store: Store | undefined
+  readonly threads: ThreadStore
+  readonly records: SceneRecordStore
   /** The graph file, when there is one, so it can be copied aside before its first publication. */
   readonly filePath: string | undefined
   readonly sharing: boolean
@@ -386,7 +428,7 @@ export class CognitiveSession {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
     const scene = options.scene ?? learnScene
-    const packs = options.packs ?? scene.packs
+    const packs = [applicationPack, ...(options.packs ?? scene.packs)]
 
     // One embedding cache for every person's retriever: what a text means does not depend on who asks.
     const cache = new InMemoryEmbeddingCache()
@@ -409,6 +451,8 @@ export class CognitiveSession {
         episteme,
         suggestions: await SuggestionStore.open(),
         sources: await SourceStore.open(),
+        threads: await ThreadStore.open(),
+        records: await SceneRecordStore.open(),
         store: undefined,
         filePath: undefined,
         sharing: options.sharing === true,
@@ -420,12 +464,17 @@ export class CognitiveSession {
     let episteme: Episteme
     let suggestions: SuggestionStore
     let sources: SourceStore
+    let threads: ThreadStore
+    let records: SceneRecordStore
     try {
       episteme = await openEpisteme(storage, { actors, actorId: HUMAN, packs })
       // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
       suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
       // Material distilled into this graph, kept beside it like the drafts and owned with it.
       sources = await SourceStore.open(`${options.filePath}.sources.jsonl`)
+      // Conversations and a scene's own records, beside the graph and owned with it (ADR 0015).
+      threads = await ThreadStore.open(`${options.filePath}.threads.jsonl`)
+      records = await SceneRecordStore.open(`${options.filePath}.scene.jsonl`)
     } catch (error) {
       // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
       await storage.close()
@@ -436,6 +485,8 @@ export class CognitiveSession {
       episteme,
       suggestions,
       sources,
+      threads,
+      records,
       store: storage,
       filePath: options.filePath,
       sharing: options.sharing === true,
@@ -662,6 +713,8 @@ export class CognitiveSession {
     readonly kind: 'claim' | 'concept' | 'question'
     readonly topic?: string
     readonly source?: string
+    /** The learning project or course the node belongs to (ADR 0015, decision 6). */
+    readonly scope?: string
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
   }): Promise<NodeView> {
@@ -681,6 +734,7 @@ export class CognitiveSession {
         tier: input.kind === 'concept' ? 'reference' : 'thought',
         ...(input.topic === undefined ? {} : { topic: input.topic }),
         ...(input.source === undefined ? {} : { source: input.source }),
+        ...(input.scope === undefined ? {} : { scope: input.scope }),
       })
       await this.#persist()
       return node
@@ -759,7 +813,7 @@ export class CognitiveSession {
       type: input.type,
       label,
       properties: { text: label, ...input.properties },
-      tags: defaultTags(input.topic ?? 'general'),
+      tags: defaultTags(input.topic ?? 'general', input.scope),
       tier: input.tier,
       actorId: this.#actor,
       ...(input.source === undefined ? {} : { source: input.source }),
@@ -1072,6 +1126,223 @@ export class CognitiveSession {
       () => false,
     )
     if (!exists) await copyFile(file, backup)
+  }
+
+  /** Opens a conversation thread for this person (ADR 0015). */
+  openThread(input: {
+    readonly title: string
+    readonly scope?: string
+    readonly hostSession?: string
+  }): Promise<Thread> {
+    return this.#exclusive(async () => {
+      const title = input.title.trim()
+      if (title === '') throw new SessionRefusal('missing_property', 'a thread needs a title')
+      const thread: Thread = {
+        id: `thr_${randomUUID()}`,
+        owner: this.#actor,
+        title,
+        ...(input.scope === undefined ? {} : { scope: input.scope }),
+        ...(input.hostSession === undefined ? {} : { hostSession: input.hostSession }),
+        createdAt: systemClock.now(),
+      }
+      await this.#parts.threads.addThread(thread)
+      return thread
+    })
+  }
+
+  /** Records one turn of a thread of this person's, raw. */
+  appendTurn(
+    threadId: string,
+    input: { readonly speaker: 'learner' | 'agent'; readonly text: string; readonly by?: string },
+  ): Promise<Turn> {
+    return this.#exclusive(async () => {
+      this.#ownThread(threadId)
+      const text = canonicalText(input.text)
+      if (text.trim() === '') throw new SessionRefusal('missing_property', 'a turn needs words')
+      const turn: Turn = {
+        id: `turn_${randomUUID()}`,
+        thread: threadId,
+        seq: this.#parts.threads.ownTurns(threadId).length + 1,
+        speaker: input.speaker,
+        text,
+        by: input.by ?? this.#actor,
+        at: systemClock.now(),
+      }
+      await this.#parts.threads.addTurn(turn)
+      return turn
+    })
+  }
+
+  /**
+   * Keeps a host's summary of a turn (ADR 0015, decision 2).
+   *
+   * A learner's turn needs at least one quote of their own words, each found verbatim in the turn, so the summary
+   * is tied to what they wrote. A newer summary replaces the current one; the earlier ones stay.
+   */
+  summarizeTurn(
+    threadId: string,
+    turnId: string,
+    input: { readonly text: string; readonly quotes?: readonly string[]; readonly by?: string },
+  ): Promise<TurnSummary> {
+    return this.#exclusive(async () => {
+      this.#ownThread(threadId)
+      const turn = this.#parts.threads
+        .turnsOf(threadId)
+        .find((candidate) => candidate.id === turnId)
+      if (turn === undefined) {
+        throw new SessionRefusal('unknown_turn', `"${turnId}" is not a turn of "${threadId}"`)
+      }
+      const text = input.text.trim()
+      if (text === '') throw new SessionRefusal('missing_property', 'a summary needs words')
+      const quotes = (input.quotes ?? []).map((quote) => canonicalText(quote))
+      if (turn.speaker === 'learner' && quotes.length === 0) {
+        throw new SessionRefusal(
+          'missing_quote',
+          'a summary of the learner’s turn must quote at least some of their own words',
+        )
+      }
+      for (const quote of quotes) {
+        if (quoteSigns(quote) < MIN_QUOTE_SIGNS) {
+          throw new SessionRefusal(
+            'quote_too_short',
+            `a quote needs at least ${MIN_QUOTE_SIGNS} letters or digits to rest on`,
+          )
+        }
+        if (occurrencesOf(turn.text, quote).length === 0) {
+          throw new SessionRefusal('quote_not_found', `"${quote}" is not in the turn`)
+        }
+      }
+      const summary: TurnSummary = {
+        turn: turn.id,
+        text,
+        quotes,
+        by: input.by ?? this.#actor,
+        at: systemClock.now(),
+      }
+      await this.#parts.threads.addSummary(summary)
+      return summary
+    })
+  }
+
+  /** Opens a new line from a turn of a thread of this person's (ADR 0015, decision 3). */
+  forkThread(threadId: string, turnId: string, title?: string): Promise<Thread> {
+    return this.#exclusive(async () => {
+      const parent = this.#ownThread(threadId)
+      if (!this.#parts.threads.turnsOf(threadId).some((turn) => turn.id === turnId)) {
+        throw new SessionRefusal('unknown_turn', `"${turnId}" is not a turn of "${threadId}"`)
+      }
+      const thread: Thread = {
+        id: `thr_${randomUUID()}`,
+        owner: this.#actor,
+        title: title?.trim() || parent.title,
+        ...(parent.scope === undefined ? {} : { scope: parent.scope }),
+        parent: { thread: threadId, turn: turnId },
+        createdAt: systemClock.now(),
+      }
+      await this.#parts.threads.addThread(thread)
+      return thread
+    })
+  }
+
+  /** This person's threads, newest first. */
+  threads(scope?: string): readonly Thread[] {
+    return this.#parts.threads.threadsOf(this.#actor, scope)
+  }
+
+  /** A thread of this person's as it reads: its turns, raw, each with its current summary. */
+  threadView(threadId: string): ThreadView | undefined {
+    const thread = this.#parts.threads.thread(threadId)
+    if (thread === undefined || thread.owner !== this.#actor) return undefined
+    return {
+      thread,
+      turns: this.#parts.threads.turnsOf(threadId).map((turn) => {
+        const summary = this.#parts.threads.summaryOf(turn.id)
+        return { ...turn, ...(summary === undefined ? {} : { summary }) }
+      }),
+    }
+  }
+
+  /**
+   * Distills turns of a thread of this person's (ADR 0015, decision 5): the turns become a dialogue, kept as a
+   * source that names the thread, and every candidate's origin names the turn its words are in.
+   */
+  distillThread(
+    threadId: string,
+    options: { readonly turns?: readonly string[]; readonly requestedBy?: string } = {},
+  ): Promise<DistillOutcome> {
+    const view = this.threadView(threadId)
+    if (view === undefined) {
+      return Promise.resolve({
+        ok: false,
+        refusal: { code: 'unknown_thread', message: `there is no thread "${threadId}" of yours` },
+      })
+    }
+    const chosen = view.turns.filter(
+      (turn) => options.turns === undefined || options.turns.includes(turn.id),
+    )
+    let text = ''
+    const ranges: { id: string; start: number; end: number }[] = []
+    for (const turn of chosen) {
+      const line = `${turn.speaker === 'learner' ? LEARNER_LABEL : AGENT_LABEL}: ${turn.text}`
+      const start = text.length
+      text += `${line}\n`
+      ranges.push({ id: turn.id, start, end: start + line.length })
+    }
+    return this.distill(
+      { title: view.thread.title, text },
+      {
+        learner: LEARNER_LABEL,
+        thread: { id: threadId, turns: ranges },
+        ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
+      },
+    )
+  }
+
+  #ownThread(threadId: string): Thread {
+    const thread = this.#parts.threads.thread(threadId)
+    if (thread === undefined || thread.owner !== this.#actor) {
+      throw new SessionRefusal('unknown_thread', `there is no thread "${threadId}" of yours`)
+    }
+    return thread
+  }
+
+  /** The latest version of one of this person's records in a scene's namespace (ADR 0015, decision 7). */
+  sceneRecord(namespace: string, key: string): SceneRecord | undefined {
+    return this.#parts.records.get(namespace, this.#actor, key)
+  }
+
+  /** This person's latest records in a scene's namespace. */
+  sceneRecords(namespace: string, prefix = ''): readonly SceneRecord[] {
+    return this.#parts.records.list(namespace, this.#actor, prefix)
+  }
+
+  /** Writes the next version of one of this person's records. `null` removes it, keeping its history. */
+  putSceneRecord(
+    namespace: string,
+    key: string,
+    value: unknown,
+    by?: string,
+  ): Promise<SceneRecord> {
+    return this.#exclusive(async () => {
+      if (namespace.trim() === '' || key.trim() === '') {
+        throw new SessionRefusal('missing_property', 'a scene record needs a namespace and a key')
+      }
+      const size = Buffer.byteLength(JSON.stringify(value ?? null), 'utf8')
+      if (size > MAX_SCENE_RECORD_BYTES) {
+        throw new SessionRefusal(
+          'value_too_large',
+          `a scene record holds at most ${MAX_SCENE_RECORD_BYTES} bytes; this one is ${size}`,
+        )
+      }
+      return this.#parts.records.put({
+        namespace,
+        owner: this.#actor,
+        key,
+        value: value ?? null,
+        by: by ?? this.#actor,
+        at: systemClock.now(),
+      })
+    })
   }
 
   /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
@@ -1509,6 +1780,8 @@ export class CognitiveSession {
         readonly hostSession?: string
         readonly submissionId?: string
       }
+      /** Set by `distillThread`: the thread the material was built from, and where each turn lies in it. */
+      readonly thread?: ThreadMaterial
     } = {},
   ): Promise<DistillOutcome> {
     return this.#exclusive(async (): Promise<DistillOutcome> => {
@@ -1802,6 +2075,14 @@ export class CognitiveSession {
           reader,
           digest: textDigest(text),
           ...(host?.hostSession === undefined ? {} : { hostSession: host.hostSession }),
+          ...(options.thread === undefined
+            ? {}
+            : {
+                thread: {
+                  id: options.thread.id,
+                  turns: options.thread.turns.map((turn) => turn.id),
+                },
+              }),
           ...(submission === undefined ? {} : { submissions: [submission] }),
         })
       } else if (submission !== undefined) {
@@ -1823,7 +2104,7 @@ export class CognitiveSession {
             rationale: item.rationale,
             proposedBy,
             proposedAt: now,
-            origin: item.origin,
+            origin: withTurn(item.origin, options.thread),
             ...(item.basis === undefined ? {} : { basis: item.basis }),
             ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
           })),
@@ -2308,6 +2589,7 @@ export interface NodeInput {
   readonly tier: 'draft' | 'thought' | 'reference'
   readonly topic?: string
   readonly source?: string
+  readonly scope?: string
   /** Properties beyond the label's `text`, such as a distilled node's provenance. */
   readonly properties?: Readonly<Record<string, unknown>>
 }

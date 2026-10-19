@@ -238,7 +238,16 @@ const REFLECT_INPUT = fromJsonSchema<Record<string, never>>({
 })
 
 /** The tools every Episteme MCP server offers. A scene's tools may not reuse these names. */
-export const BUILT_IN_TOOLS: readonly string[] = ['recall', 'propose', 'distill', 'reflect']
+export const BUILT_IN_TOOLS: readonly string[] = [
+  'recall',
+  'propose',
+  'distill',
+  'reflect',
+  'thread_open',
+  'thread_append',
+  'thread_summarize',
+  'thread_fork',
+]
 
 /** What a scene's tool receives: a view of the session that cannot decide or write, and who is calling. */
 export interface SceneToolContext {
@@ -464,6 +473,8 @@ export function createEpistemeMcpServer(
     },
   )
 
+  registerThreadTools(server, session, access)
+
   const view = sceneViewOf(session)
   for (const tool of sceneTools) {
     server.registerTool(
@@ -597,6 +608,165 @@ function describeProgress(progress: ProgressSummary, pending: number): string {
   }
   lines.push(`${pending} suggestion(s) pending the learner’s decision.`)
   return lines.join('\n')
+}
+
+const THREAD_OPEN_INPUT = fromJsonSchema<{ title: string; scope?: string; hostSession?: string }>({
+  type: 'object',
+  properties: {
+    title: { type: 'string', minLength: 1, description: 'What the conversation is about.' },
+    scope: { type: 'string', description: 'The learning project or course it belongs to.' },
+    hostSession: { type: 'string', description: 'Your own id for this conversation.' },
+  },
+  required: ['title'],
+  additionalProperties: false,
+})
+
+const THREAD_APPEND_INPUT = fromJsonSchema<{
+  thread: string
+  speaker: 'learner' | 'agent'
+  text: string
+}>({
+  type: 'object',
+  properties: {
+    thread: { type: 'string', minLength: 1 },
+    speaker: { type: 'string', enum: ['learner', 'agent'] },
+    text: { type: 'string', minLength: 1, description: 'The words of the turn, exactly as said.' },
+  },
+  required: ['thread', 'speaker', 'text'],
+  additionalProperties: false,
+})
+
+const THREAD_SUMMARIZE_INPUT = fromJsonSchema<{
+  thread: string
+  turn: string
+  text: string
+  quotes?: string[]
+}>({
+  type: 'object',
+  properties: {
+    thread: { type: 'string', minLength: 1 },
+    turn: { type: 'string', minLength: 1 },
+    text: {
+      type: 'string',
+      minLength: 1,
+      description: 'The turn in fewer words. Keep what was asked or said; do not add to it.',
+    },
+    quotes: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'For a learner turn, at least one: words of the turn copied verbatim, which the summary rests on.',
+    },
+  },
+  required: ['thread', 'turn', 'text'],
+  additionalProperties: false,
+})
+
+const THREAD_FORK_INPUT = fromJsonSchema<{ thread: string; turn: string; title?: string }>({
+  type: 'object',
+  properties: {
+    thread: { type: 'string', minLength: 1 },
+    turn: { type: 'string', minLength: 1, description: 'The turn the new line continues from.' },
+    title: { type: 'string' },
+  },
+  required: ['thread', 'turn'],
+  additionalProperties: false,
+})
+
+/**
+ * The conversation tools (ADR 0015): open a thread, record turns raw, summarize them, and fork a new line. They
+ * write the person's conversation archive, never their understanding; nothing here decides anything.
+ */
+function registerThreadTools(
+  server: McpServer,
+  session: CognitiveSession,
+  access: McpAccess,
+): void {
+  const answering = async (work: () => Promise<object>, describe: (value: object) => string) => {
+    try {
+      const value = await work()
+      return result(describe(value), value)
+    } catch (error) {
+      if (!isRefusal(error)) throw error
+      return refused(error.code, error.message)
+    }
+  }
+
+  server.registerTool(
+    'thread_open',
+    {
+      title: 'Open a conversation thread',
+      description:
+        'Open a thread for the conversation you are having with the learner, so its turns are kept for them. Call once per conversation; use thread_fork to start a second line from an earlier turn.',
+      inputSchema: THREAD_OPEN_INPUT,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    (input) =>
+      answering(
+        async () => ({ thread: await session.openThread(input) }),
+        () => 'Thread opened. Record each turn with thread_append.',
+      ),
+  )
+
+  server.registerTool(
+    'thread_append',
+    {
+      title: 'Record a turn',
+      description:
+        'Record one turn of the conversation, exactly as said, as the learner or as yourself. It is kept as the learner’s archive, never as their understanding.',
+      inputSchema: THREAD_APPEND_INPUT,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    ({ thread, speaker, text }, context) =>
+      answering(
+        async () => ({
+          turn: await session.appendTurn(thread, {
+            speaker,
+            text,
+            by: agentActorFor(access.caller?.label ?? clientNameOf(context)),
+          }),
+        }),
+        () => 'Turn recorded.',
+      ),
+  )
+
+  server.registerTool(
+    'thread_summarize',
+    {
+      title: 'Summarize a turn',
+      description:
+        'Give a turn in fewer words. For a learner turn, quote at least some of their words verbatim in `quotes`; a quote that is not in the turn is refused. A newer summary replaces the current one.',
+      inputSchema: THREAD_SUMMARIZE_INPUT,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    ({ thread, turn, text, quotes }, context) =>
+      answering(
+        async () => ({
+          summary: await session.summarizeTurn(thread, turn, {
+            text,
+            quotes: quotes ?? [],
+            by: agentActorFor(access.caller?.label ?? clientNameOf(context)),
+          }),
+        }),
+        () => 'Summary kept.',
+      ),
+  )
+
+  server.registerTool(
+    'thread_fork',
+    {
+      title: 'Fork a conversation',
+      description:
+        'Start a new line of the conversation from an earlier turn, so two questions can be followed without mixing them. The original thread is unchanged.',
+      inputSchema: THREAD_FORK_INPUT,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    ({ thread, turn, title }) =>
+      answering(
+        async () => ({ thread: await session.forkThread(thread, turn, title) }),
+        () => 'New line opened.',
+      ),
+  )
 }
 
 function result(text: string, structured: object): CallToolResult {

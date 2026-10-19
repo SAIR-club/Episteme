@@ -223,6 +223,10 @@ describe('scene MCP tools', () => {
       'recall',
       'reflect',
       'suggest_stance',
+      'thread_append',
+      'thread_fork',
+      'thread_open',
+      'thread_summarize',
     ])
 
     const counted = await agent.call('node_count', {})
@@ -286,6 +290,7 @@ describe('what an extension is handed', () => {
         'propose',
         'recall',
         'recordableDimensions',
+        'records',
         'sceneName',
         'understandingOf',
         'vocabulary',
