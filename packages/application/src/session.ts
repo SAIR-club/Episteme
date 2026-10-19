@@ -309,10 +309,89 @@ function withTurn(origin: SuggestionOrigin, thread: ThreadMaterial | undefined):
   return turn === undefined ? origin : { ...origin, turn: turn.id }
 }
 
+/** A published node as anyone may read it. No state of anyone's is part of it. */
+export interface PublicNode {
+  readonly nodeId: string
+  readonly label: string
+  readonly type: string
+  readonly author: string
+  readonly source?: string
+  readonly origin?: unknown
+  /** Whether its author holds it by their own decision or under a delegation (ADR 0016). */
+  readonly confirmation: 'person' | 'delegation'
+}
+
+/** A thread in a publication: summaries only. */
+export interface PublishedThread {
+  readonly id: string
+  readonly title: string
+  readonly turns: readonly {
+    readonly turn: string
+    readonly seq: number
+    readonly speaker: 'learner' | 'agent'
+    readonly summary: string
+  }[]
+}
+
+export type PublicationPlan =
+  | {
+      readonly ok: true
+      readonly publication: Publication
+      readonly public: {
+        readonly nodes: readonly PublicNode[]
+        readonly threads: readonly PublishedThread[]
+      }
+      readonly private: {
+        readonly otherNodes: number
+        readonly state: string
+        readonly drafts: number
+        readonly sources: number
+        readonly unsummarizedTurns: readonly string[]
+        readonly reminder: string
+      }
+    }
+  | { readonly ok: false; readonly refusal: MutationRefusal }
+
+export interface PublicationSummary {
+  readonly id: string
+  readonly author: string
+  readonly createdAt: number
+  readonly rootLabel: string
+  readonly members: number
+  /** 1 for a first publication, 2 for the one that superseded it, and so on. */
+  readonly version: number
+  readonly note?: string
+}
+
+export interface PublicationView {
+  readonly publication: Publication
+  readonly live: boolean
+  readonly withdrawnAt?: number
+  readonly nodes: readonly PublicNode[]
+  readonly edges: readonly {
+    readonly id: string
+    readonly type: string
+    readonly from: string
+    readonly to: string
+  }[]
+  readonly threads: readonly PublishedThread[]
+  /** The version chain, oldest first, this one included. */
+  readonly versions: readonly string[]
+}
+
+export interface PublicationUpdate {
+  readonly adopted: string
+  readonly newer: string
+  readonly added: readonly string[]
+  readonly removed: readonly string[]
+}
+
 /** What a person asks to publish: a node of theirs, and optionally more of theirs it reaches. */
 export interface PublicationRequest {
   readonly root: string
   readonly include?: readonly string[]
+  /** Threads of the author's whose summaries are published with it; never their raw turns (ADR 0015). */
+  readonly threads?: readonly string[]
   /** Their earlier live publication this one replaces. */
   readonly supersedes?: string
   readonly note?: string
@@ -658,7 +737,11 @@ export class CognitiveSession {
   async record(
     target: NodeId | string,
     dimensions: Readonly<Record<string, string>>,
-    options: { readonly reason?: string } = {},
+    options: {
+      readonly reason?: string
+      /** Where the statement came from. Adopting names the publication (ADR 0014, decision 4). */
+      readonly source?: string
+    } = {},
   ): Promise<{
     readonly eventId: string
     readonly recorded: readonly { id: string; level: string }[]
@@ -691,7 +774,7 @@ export class CognitiveSession {
           ]),
         ),
         ...(options.reason === undefined ? {} : { reason: options.reason }),
-        source: 'learn-surface',
+        source: options.source ?? 'learn-surface',
       })
       await this.#persist()
       return {
@@ -1052,9 +1135,42 @@ export class CognitiveSession {
    * private: their state, their other nodes, their drafts and sources.
    */
   previewPublication(request: PublicationRequest): PublicationPreview {
-    const refusal = this.#sharingRefusal()
+    const refusal = this.#sharingRefusal() ?? this.#threadRefusal(request)
     if (refusal !== undefined) return { ok: false, refusal }
     return this.#episteme.log.previewPublication(this.#publicationDraft(request))
+  }
+
+  /**
+   * The preview a person confirms before publishing (ADR 0014, story step 1): what becomes public, and what stays
+   * private, including the turns of a listed thread that are not summarized and so are left out.
+   */
+  publicationPlan(request: PublicationRequest): PublicationPlan {
+    const preview = this.previewPublication(request)
+    if (!preview.ok) return preview
+    const members = new Set<string>(preview.publication.members)
+    return {
+      ok: true,
+      publication: preview.publication,
+      public: {
+        nodes: preview.publication.members.map((id) => this.#publicNode(id)),
+        threads: (preview.publication.threads ?? []).map((id) => this.#publishedThread(id)),
+      },
+      private: {
+        otherNodes: this.#seen
+          .listNodes()
+          .filter((node) => node.actorId === this.#actor && !members.has(node.id)).length,
+        state: 'none of your recorded understanding is published',
+        drafts: this.#ownSuggestions().length,
+        sources: this.sources().length,
+        unsummarizedTurns: (preview.publication.threads ?? []).flatMap((id) =>
+          this.#parts.threads
+            .turnsOf(id)
+            .filter((turn) => this.#parts.threads.summaryOf(turn.id) === undefined)
+            .map((turn) => turn.id),
+        ),
+        reminder: 'check the summaries for anything personal before publishing; Episteme does not',
+      },
+    }
   }
 
   /**
@@ -1065,7 +1181,7 @@ export class CognitiveSession {
    */
   publish(request: PublicationRequest): Promise<PublicationPreview> {
     return this.#exclusive(async () => {
-      const refusal = this.#sharingRefusal()
+      const refusal = this.#sharingRefusal() ?? this.#threadRefusal(request)
       if (refusal !== undefined) return { ok: false, refusal }
       const draft = this.#publicationDraft(request)
       const preview = this.#episteme.log.previewPublication(draft)
@@ -1097,6 +1213,190 @@ export class CognitiveSession {
     return this.#episteme.log.publications.live()
   }
 
+  /** Live publications to browse (ADR 0014, story step 2), newest first. */
+  browsePublications(
+    query: { readonly author?: string; readonly scope?: string; readonly q?: string } = {},
+  ): readonly PublicationSummary[] {
+    const text = query.q?.trim().toLowerCase()
+    return this.publications()
+      .filter((publication) => query.author === undefined || publication.actorId === query.author)
+      .map((publication) => ({ publication, root: this.#episteme.graph.getNode(publication.root) }))
+      .filter(
+        ({ root }) =>
+          query.scope === undefined || root?.tags.includes(`scope:${query.scope}`) === true,
+      )
+      .filter(
+        ({ publication, root }) =>
+          text === undefined ||
+          text === '' ||
+          (root?.label.toLowerCase().includes(text) ?? false) ||
+          publication.members.some((id) =>
+            this.#episteme.graph.getNode(id)?.label.toLowerCase().includes(text),
+          ),
+      )
+      .map(({ publication, root }) => ({
+        id: publication.id,
+        author: publication.actorId,
+        createdAt: publication.createdAt,
+        rootLabel: root?.label ?? publication.root,
+        members: publication.members.length,
+        version: this.#versionsOf(publication.id).findIndex((id) => id === publication.id) + 1,
+        ...(publication.note === undefined ? {} : { note: publication.note }),
+      }))
+      .reverse()
+  }
+
+  /**
+   * One publication as anyone may read it (ADR 0014, story step 2): its members as a structure, with where each
+   * came from, the relations between them, the author, the version chain both ways, and its threads' summaries.
+   */
+  publicationView(id: string): PublicationView | undefined {
+    const publication = this.#episteme.log.publications.get(id)
+    if (publication === undefined) return undefined
+    const withdrawal = this.#episteme.log.publications.withdrawalOf(id)
+    // Withdrawing stops reading it (ADR 0014); only its author still sees what it held.
+    if (withdrawal !== undefined && publication.actorId !== this.#actor) return undefined
+    return {
+      publication,
+      live: withdrawal === undefined,
+      ...(withdrawal === undefined ? {} : { withdrawnAt: withdrawal.withdrawnAt }),
+      nodes: publication.members.map((member) => this.#publicNode(member)),
+      edges: publication.edges
+        .map((edgeId) => this.#episteme.graph.getEdge(edgeId))
+        .filter((edge) => edge !== undefined)
+        .map((edge) => ({ id: edge.id, type: edge.type, from: edge.from, to: edge.to })),
+      threads: (publication.threads ?? []).map((thread) => this.#publishedThread(thread)),
+      versions: this.#versionsOf(publication.id),
+    }
+  }
+
+  /**
+   * Adopts a member of someone else's publication as this person's own understanding, at their own levels
+   * (ADR 0014, decision 4): one state event of theirs on the author's node, naming the publication. No copy.
+   */
+  async adopt(
+    publicationId: string,
+    nodeId: string,
+    dimensions: Readonly<Record<string, string>>,
+    options: { readonly reason?: string } = {},
+  ): Promise<{
+    readonly eventId: string
+    readonly recorded: readonly { id: string; level: string }[]
+  }> {
+    const publication = this.#episteme.log.publications.get(publicationId)
+    if (publication === undefined || !this.#episteme.log.publications.isLive(publicationId)) {
+      throw new SessionRefusal('not_live', `"${publicationId}" is not a live publication`)
+    }
+    if (publication.actorId === this.#actor) {
+      throw new SessionRefusal(
+        'own_publication',
+        'this is your own publication; record your understanding directly',
+      )
+    }
+    if (!publication.members.includes(nodeId as NodeId)) {
+      throw new SessionRefusal('not_a_member', `"${nodeId}" is not part of "${publicationId}"`)
+    }
+    return this.record(nodeId, dimensions, {
+      ...(options.reason === undefined ? {} : { reason: options.reason }),
+      source: `publication:${publicationId}`,
+    })
+  }
+
+  /**
+   * Publications this person adopted from that have a newer live version (ADR 0014, story step 5), with what
+   * changed between the two. Nothing changes for them until they decide.
+   */
+  updates(): readonly PublicationUpdate[] {
+    const adopted = new Set<string>()
+    for (const node of this.#seen.listNodes()) {
+      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
+        if (event.source?.startsWith('publication:') === true) {
+          adopted.add(event.source.slice('publication:'.length))
+        }
+      }
+    }
+    const updates: PublicationUpdate[] = []
+    for (const id of adopted) {
+      const versions = this.#versionsOf(id)
+      const newest = versions[versions.length - 1]
+      if (newest === undefined || newest === id || !this.#episteme.log.publications.isLive(newest))
+        continue
+      const before = new Set<string>(this.#episteme.log.publications.get(id)?.members ?? [])
+      const after = new Set<string>(this.#episteme.log.publications.get(newest)?.members ?? [])
+      updates.push({
+        adopted: id,
+        newer: newest,
+        added: [...after].filter((member) => !before.has(member)),
+        removed: [...before].filter((member) => !after.has(member)),
+      })
+    }
+    return updates
+  }
+
+  /** A publication's version chain, oldest first: what it supersedes, back to the first, then what supersedes it. */
+  #versionsOf(id: string): readonly string[] {
+    const all = this.#episteme.log.publications.all()
+    const earlier: string[] = []
+    for (let at = this.#episteme.log.publications.get(id); at?.supersedes !== undefined; ) {
+      earlier.unshift(at.supersedes)
+      at = this.#episteme.log.publications.get(at.supersedes)
+    }
+    const later: string[] = []
+    for (let at = id; ; ) {
+      const next = all.find((publication) => publication.supersedes === at)
+      if (next === undefined) break
+      later.push(next.id)
+      at = next.id
+    }
+    return [...earlier, id, ...later]
+  }
+
+  /** A published node as anyone may read it: no one's state, only what the node itself carries. */
+  #publicNode(id: string): PublicNode {
+    const node = this.#episteme.graph.getNode(id)
+    const source = node?.source ?? ''
+    return {
+      nodeId: id,
+      label: node?.label ?? id,
+      type: node?.type ?? 'unknown',
+      author: node?.actorId ?? 'unknown',
+      ...(node?.source === undefined ? {} : { source: node.source }),
+      ...(typeof node?.properties['origin'] === 'object'
+        ? { origin: node.properties['origin'] }
+        : {}),
+      // How the author came to hold it: by their own decision, or under a delegation (ADR 0016, decision 5).
+      confirmation: source.includes('via delegation') ? 'delegation' : 'person',
+    }
+  }
+
+  /** A thread as a publication shows it: its turns' current summaries, never their raw words. */
+  #publishedThread(id: string): PublishedThread {
+    const thread = this.#parts.threads.thread(id)
+    return {
+      id,
+      title: thread?.title ?? id,
+      turns: this.#parts.threads
+        .turnsOf(id)
+        .map((turn) => ({ turn, summary: this.#parts.threads.summaryOf(turn.id) }))
+        .filter((entry) => entry.summary !== undefined)
+        .map(({ turn, summary }) => ({
+          turn: turn.id,
+          seq: turn.seq,
+          speaker: turn.speaker,
+          summary: summary?.text ?? '',
+        })),
+    }
+  }
+
+  #threadRefusal(request: PublicationRequest): MutationRefusal | undefined {
+    for (const id of request.threads ?? []) {
+      if (this.#parts.threads.thread(id)?.owner !== this.#actor) {
+        return { code: 'not_publishable', message: `"${id}" is not a thread of yours` }
+      }
+    }
+    return undefined
+  }
+
   #publicationDraft(request: PublicationRequest): PublicationDraft {
     return {
       id: `pub_${randomUUID()}`,
@@ -1105,6 +1405,7 @@ export class CognitiveSession {
       ...(request.include === undefined ? {} : { include: request.include }),
       ...(request.supersedes === undefined ? {} : { supersedes: request.supersedes }),
       ...(request.note === undefined ? {} : { note: request.note }),
+      ...(request.threads === undefined ? {} : { threads: [...new Set(request.threads)] }),
     }
   }
 
