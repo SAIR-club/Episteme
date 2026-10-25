@@ -43,6 +43,14 @@ function idOf(token: string): string {
   return token.split('_')[1]!
 }
 
+/**
+ * The secret part of `ep_<id>_<secret>`: everything after the id. The secret is base64url, which may itself
+ * contain `_`, so splitting on `_` would cut it short, or leave it empty when it starts with one.
+ */
+function secretOf(token: string): string {
+  return token.slice(`ep_${idOf(token)}_`.length)
+}
+
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-agent-tokens-'))
 })
@@ -77,6 +85,12 @@ describe('shared mode', () => {
     })
   })
 
+  it('reads the secret part of a token even when it starts with or contains an underscore', () => {
+    // base64url secrets may hold `_`; one that starts with it once made the check below compare against ''.
+    expect(secretOf('ep_0123456789ab__starts-with_underscore')).toBe('_starts-with_underscore')
+    expect(idOf('ep_0123456789ab__starts-with_underscore')).toBe('0123456789ab')
+  })
+
   it('lists only the caller’s own tokens, and never a secret', async () => {
     const listed = await call('/api/v1/tokens', { token: linHuman })
     expect(listed.status).toBe(200)
@@ -97,7 +111,7 @@ describe('shared mode', () => {
       },
     ])
     for (const secret of [linHuman, linAgent, meiHuman, meiAgent]) {
-      expect(listed.text).not.toContain(secret.split('_')[2])
+      expect(listed.text).not.toContain(secretOf(secret))
     }
     expect(listed.text).not.toContain(idOf(meiHuman))
     expect(listed.text).not.toContain(idOf(meiAgent))
@@ -131,7 +145,7 @@ describe('shared mode', () => {
     expect(refused).toMatchObject({ status: 403, body: { code: 'human_required' } })
 
     const listed = await call('/api/v1/tokens', { token: linHuman })
-    expect(listed.text).not.toContain(secret.split('_')[2])
+    expect(listed.text).not.toContain(secretOf(secret))
     expect((listed.body['tokens'] as { id: string }[]).map((token) => token.id)).toContain(
       idOf(secret),
     )
