@@ -43,7 +43,8 @@ pnpm serve tokens add <actorId> --kind agent --label claude-code  # one per host
 pnpm serve tokens revoke <token id>                               # refused from the next request
 ```
 
-The user file holds only a salted `scrypt` hash of each token.
+The user file holds only a salted `scrypt` hash of each token. A person can also list their own tokens, issue
+agent tokens and revoke them over REST (`/api/v1/tokens`, below), with their own credential.
 
 ## Trust
 
@@ -95,6 +96,7 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | 403    | an agent's credential where only the person may act   | `human_required`               |
 | 403    | the request comes from outside the boundary           | `outside_boundary`             |
 | 404    | no such route, or no such node                        | `no_route`, `unknown_node`     |
+| 404    | no such token of the caller's, whether or not it exists | `unknown_token`              |
 | 415    | a change not sent as `application/json`               | `outside_boundary`             |
 | 422    | understood, and refused: the application's own reason | the application's refusal code |
 | 500    | a defect in the service                               | `internal`                     |
@@ -108,6 +110,9 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `GET /api/v1/suggestions`         | the pending suggestions                                                                                                            | no               |
 | `GET /api/v1/reviews`             | every decision on a suggestion, dismissals included, with its channel and credential                                               | no               |
 | `POST /api/v1/session`            | `{ token }` → a Workspace session cookie, for the person's own `human` token only                                                  | no               |
+| `GET /api/v1/tokens`              | the caller's own tokens: `{ tokens: [{ id, kind, label, createdAt, revokedAt?, current }] }`, never a secret; shared mode only | no               |
+| `POST /api/v1/tokens`             | `{ label }` → `{ token: { id, kind: agent, label, createdAt }, secret }`: a new agent token, its secret shown this once            | users file       |
+| `POST …/tokens/:id/revoke`        | `{ token }` with `revokedAt`: refused from the next request, REST and MCP; not the token the request is made with                | users file       |
 | `GET /api/v1/delegations`         | the caller's delegations, live and revoked (ADR 0016)                                                                              | no               |
 | `POST /api/v1/delegations`        | `{ scope? }` → the service confirms agent proposals in that scope for the person                                                   | yes              |
 | `POST …/delegations/:id/revoke`   | stops it from the next proposal on                                                                                                 | yes              |
@@ -135,6 +140,10 @@ Every error has the same shape: `{ "error": "<message>", "code": "<code>" }`.
 | `POST /api/v1/distill`            | `{ text, title? }` → pending suggestions distilled from material. Same result as MCP `distill`                                     | drafts only      |
 | `POST /api/v1/record`             | `{ target, dimensions, reason? }` → what the person states about their own understanding                                           | yes              |
 | `POST /api/v1/nodes`              | `{ label, kind?: claim \| concept }` → a node of the person's own                                                                  | yes              |
+
+The three token routes need the person's own credential (`403 human_required` for an agent's). A `kind` other
+than `agent` is refused with `422 agent_tokens_only`, revoking the token in use with `422 current_credential`,
+and in local mode, which has no user file, all three answer `422 not_available_in_local_mode`.
 
 A scene may add routes of its own under `/api/v1/scene/<profile name>/…` (ADR 0013, _Scene extensions_). They
 answer with the same revision fields and error format, and cannot decide or record.
