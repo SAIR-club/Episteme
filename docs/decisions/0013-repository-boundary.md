@@ -132,6 +132,17 @@ offers `workflow_next` to agents and project settings to its Workspace. It canno
   `record`, `addNode`, `link`, `graph` or `log`, at run time as well as in its type. A scene extension is
   reachable by an agent, so handing it the session would give an agent a way around the one human-decision
   path. Anything a scene wants to change is proposed and waits for the person.
+- **The view also reads the caller's own threads, browses publications and reads one publication's public
+  content** (`threads`, `threadView`, `browsePublications`, `publicationView`), added for MindLink
+  (SAIR-club/MindLink#11, gaps G1 and G2): a scene's tools need the person's own conversations and the work
+  others have published. All are the session's reads unchanged: a thread that is not the caller's cannot be
+  read, browsing returns only live publications, and `publicationView` returns exactly what
+  `GET /api/v1/publications/:id` returns to the same caller, so a withdrawn publication is unreadable to all but
+  its author (ADR 0014). None carries adoption or conflict counts, because those would be computed from other
+  people's state events, which only their own actor may read (ADR 0014, decision 2). A scene that wants a
+  course's stuck points computes them itself from public data only: how many distinct authors published about
+  the same concept or question in the course's scope, and the public `contradicts` relations between published
+  nodes. Nobody's private state is read.
 - A refusal a handler throws is answered as a refusal: `isError` with its code over MCP, 422 over REST.
 
 What a scene extension may not do is the same as what an agent may not do. When a scene needs a capability
