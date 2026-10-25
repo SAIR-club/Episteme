@@ -76,6 +76,25 @@ interface TokenRecord {
   readonly revokedAt?: string
 }
 
+/** What a person may see of one of their tokens: never its secret, salt or hash. */
+export interface TokenSummary {
+  readonly id: string
+  readonly kind: CredentialKind
+  readonly label: string
+  readonly createdAt: string
+  readonly revokedAt?: string
+}
+
+function summaryOf(record: TokenRecord): TokenSummary {
+  return {
+    id: record.id,
+    kind: record.kind,
+    label: record.label,
+    createdAt: record.createdAt,
+    ...(record.revokedAt === undefined ? {} : { revokedAt: record.revokedAt }),
+  }
+}
+
 interface PersonRecord {
   readonly actorId: string
   readonly displayName: string
@@ -132,6 +151,8 @@ export class Directory {
   #people: readonly PersonRecord[]
   /** Tokens already verified, so a request does not pay for `scrypt` twice. Cleared when the file changes. */
   readonly #verified = new Map<string, Caller>()
+  /** The service's own writes to the user file, one at a time, so two requests cannot lose each other's change. */
+  #writes: Promise<unknown> = Promise.resolve()
 
   private constructor(path: string | undefined, people: readonly PersonRecord[], modified: number) {
     this.#path = path
@@ -182,6 +203,86 @@ export class Directory {
     return undefined
   }
 
+  /** Whether people manage their own tokens here: only with a user file, that is, in shared mode. */
+  get selfService(): boolean {
+    return this.#path !== undefined
+  }
+
+  /** Whether the credential with this id exists and is not revoked, for a session opened with it earlier. */
+  isLive(credentialId: string): boolean {
+    this.#reloadIfChanged()
+    return this.#people.some((person) =>
+      person.tokens.some((token) => token.id === credentialId && token.revokedAt === undefined),
+    )
+  }
+
+  /** A person's own tokens, revoked ones included, oldest first. */
+  tokensOf(actorId: string): readonly TokenSummary[] {
+    this.#reloadIfChanged()
+    const person = this.#people.find((candidate) => candidate.actorId === actorId)
+    return (person?.tokens ?? []).map(summaryOf)
+  }
+
+  /** Issues an agent token for a person. The secret is returned here and nowhere else, ever. */
+  async issueAgentToken(
+    actorId: string,
+    label: string,
+  ): Promise<{ readonly token: string; readonly summary: TokenSummary }> {
+    return this.#change((file) => {
+      if (!file.people.some((person) => person.actorId === actorId)) {
+        throw new Error(`there is no person "${actorId}" in the user file`)
+      }
+      const { token, record } = issue('agent', label)
+      return {
+        file: withToken(file, actorId, record),
+        result: { token, summary: summaryOf(record) },
+      }
+    })
+  }
+
+  /**
+   * Revokes one of a person's own tokens, and returns it; `undefined` when the person has no token with that id,
+   * whether or not someone else does. Revoking a revoked token changes nothing and returns it as it is.
+   */
+  async revokeOwnToken(actorId: string, tokenId: string): Promise<TokenSummary | undefined> {
+    return this.#change((file) => {
+      const record = file.people
+        .find((person) => person.actorId === actorId)
+        ?.tokens.find((token) => token.id === tokenId)
+      if (record === undefined) return { result: undefined }
+      if (record.revokedAt !== undefined) return { result: summaryOf(record) }
+      const revokedAt = new Date().toISOString()
+      return {
+        file: withRevoked(file, tokenId, revokedAt),
+        result: summaryOf({ ...record, revokedAt }),
+      }
+    })
+  }
+
+  /**
+   * Applies one change to the user file as it is on disk now, so a change made with the CLI meanwhile is kept,
+   * and makes it this directory's view at once. Changes run one after another.
+   */
+  async #change<T>(
+    edit: (file: UserFile) => { readonly file?: UserFile; readonly result: T },
+  ): Promise<T> {
+    const path = this.#path
+    if (path === undefined) throw new Error('there is no user file to change in local mode')
+    const run = this.#writes.then(async () => {
+      const { file, result } = edit(await readUsers(path))
+      if (file !== undefined) {
+        await writeUsers(path, file)
+        this.#people = file.people
+        this.#modified = statSync(path).mtimeMs
+        this.#verified.clear()
+      }
+      return result
+    })
+    // The queue carries on after a failed change; the failure itself goes to the request that made it.
+    this.#writes = run.catch(() => undefined)
+    return run
+  }
+
   #reloadIfChanged(): void {
     if (this.#path === undefined) return
     const modified = statSync(this.#path).mtimeMs
@@ -202,7 +303,8 @@ async function readUsers(path: string): Promise<UserFile> {
 }
 
 async function writeUsers(path: string, file: UserFile): Promise<void> {
-  const temporary = `${path}.tmp`
+  // A temporary file of its own, so the CLI and a running service never write into the same one.
+  const temporary = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`
   await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
@@ -241,13 +343,29 @@ export async function addToken(
     throw new Error(`there is no person "${actorId}" in "${path}"`)
   }
   const { token, record } = issue(kind, label)
-  await writeUsers(path, {
+  await writeUsers(path, withToken(file, actorId, record))
+  return token
+}
+
+function withToken(file: UserFile, actorId: string, record: TokenRecord): UserFile {
+  return {
     ...file,
     people: file.people.map((person) =>
       person.actorId === actorId ? { ...person, tokens: [...person.tokens, record] } : person,
     ),
-  })
-  return token
+  }
+}
+
+function withRevoked(file: UserFile, tokenId: string, revokedAt: string): UserFile {
+  return {
+    ...file,
+    people: file.people.map((person) => ({
+      ...person,
+      tokens: person.tokens.map((token) =>
+        token.id === tokenId && token.revokedAt === undefined ? { ...token, revokedAt } : token,
+      ),
+    })),
+  }
 }
 
 /** Revokes a token by its id. A running service refuses it at the next request. */
@@ -256,16 +374,7 @@ export async function revokeToken(path: string, tokenId: string): Promise<void> 
   if (!file.people.some((person) => person.tokens.some((token) => token.id === tokenId))) {
     throw new Error(`there is no token "${tokenId}" in "${path}"`)
   }
-  const revokedAt = new Date().toISOString()
-  await writeUsers(path, {
-    ...file,
-    people: file.people.map((person) => ({
-      ...person,
-      tokens: person.tokens.map((token) =>
-        token.id === tokenId && token.revokedAt === undefined ? { ...token, revokedAt } : token,
-      ),
-    })),
-  })
+  await writeUsers(path, withRevoked(file, tokenId, new Date().toISOString()))
 }
 
 /** The cookie a Workspace holds instead of the person's token. */
