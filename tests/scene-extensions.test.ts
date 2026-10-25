@@ -2,10 +2,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  CognitiveSession,
   SessionRefusal,
   defaultDistillationPolicy,
   defaultSessionPack,
   recordableDimensions,
+  sceneViewOf,
   type SceneView,
   type SessionScene,
 } from '@episteme/application'
@@ -283,6 +285,7 @@ describe('what an extension is handed', () => {
 
     for (const view of handed) {
       expect(Object.keys(view).sort()).toEqual([
+        'browsePublications',
         'distill',
         'historyOf',
         'listNodes',
@@ -293,13 +296,126 @@ describe('what an extension is handed', () => {
         'recordableDimensions',
         'records',
         'sceneName',
+        'threadView',
+        'threads',
         'understandingOf',
         'vocabulary',
       ])
-      for (const forbidden of ['decide', 'record', 'addNode', 'link', 'graph', 'log', 'close']) {
+      for (const forbidden of [
+        'decide',
+        'record',
+        'addNode',
+        'link',
+        'graph',
+        'log',
+        'close',
+        'adopt',
+        'publish',
+        'withdrawPublication',
+        'openThread',
+        'appendTurn',
+        'forActor',
+      ]) {
         expect(forbidden in view).toBe(false)
       }
       expect(Object.isFrozen(view)).toBe(true)
+    }
+  })
+})
+
+describe('what a view reads of two people on one graph', () => {
+  let shared: string
+  let owner: CognitiveSession
+  let lin: CognitiveSession
+  let wei: CognitiveSession
+
+  beforeEach(async () => {
+    shared = await mkdtemp(join(tmpdir(), 'episteme-scene-view-'))
+    owner = await CognitiveSession.open({ filePath: join(shared, 'shared.jsonl'), sharing: true })
+    lin = owner.forActor('actor_human_lin', 'Lin')
+    wei = owner.forActor('actor_human_wei', 'Wei')
+  })
+
+  afterEach(async () => {
+    await owner.close()
+    await rm(shared, { recursive: true, force: true })
+  })
+
+  it('lists the caller’s own threads and never reads another person’s', async () => {
+    const course = await lin.openThread({ title: 'Positions', scope: 'ml-2026' })
+    await lin.appendTurn(course.id, {
+      speaker: 'learner',
+      text: 'Why do transformers need positions?',
+    })
+    const other = await lin.openThread({ title: 'Elsewhere' })
+    const weis = await wei.openThread({ title: 'Wei’s own', scope: 'ml-2026' })
+
+    const linView = sceneViewOf(lin)
+    const weiView = sceneViewOf(wei)
+
+    expect(linView.threads().map((thread) => thread.id)).toEqual(
+      expect.arrayContaining([course.id, other.id]),
+    )
+    expect(linView.threads()).toHaveLength(2)
+    expect(linView.threads('ml-2026').map((thread) => thread.id)).toEqual([course.id])
+    expect(linView.threadView(course.id)?.turns.map((turn) => turn.text)).toEqual([
+      'Why do transformers need positions?',
+    ])
+
+    expect(weiView.threads().map((thread) => thread.id)).toEqual([weis.id])
+    expect(weiView.threads('ml-2026').map((thread) => thread.id)).toEqual([weis.id])
+    expect(weiView.threadView(course.id)).toBeUndefined()
+    expect(weiView.threadView(other.id)).toBeUndefined()
+    expect(linView.threadView(weis.id)).toBeUndefined()
+  })
+
+  it('browses only live publications, by scope, and shows no adopter', async () => {
+    const claim = (
+      await lin.addNode({
+        label: 'Attention alone does not encode order',
+        kind: 'claim',
+        scope: 'ml-2026',
+      })
+    ).nodeId
+    const elsewhere = (await lin.addNode({ label: 'Heads specialise', kind: 'claim' })).nodeId
+    const unpublished = (
+      await lin.addNode({ label: 'A private hunch', kind: 'claim', scope: 'ml-2026' })
+    ).nodeId
+    const live = await lin.publish({ root: claim })
+    const withdrawn = await lin.publish({ root: elsewhere })
+    if (!live.ok || !withdrawn.ok) throw new Error('refused')
+    await lin.withdrawPublication(withdrawn.publication.id)
+
+    const weiView = sceneViewOf(wei)
+    const browsed = weiView.browsePublications()
+    expect(browsed.map((summary) => summary.id)).toEqual([live.publication.id])
+    expect(weiView.browsePublications({ scope: 'ml-2026' }).map((summary) => summary.id)).toEqual([
+      live.publication.id,
+    ])
+    expect(weiView.browsePublications({ scope: 'other-course' })).toEqual([])
+    expect(weiView.browsePublications({ q: 'hunch' })).toEqual([])
+    expect(weiView.browsePublications({ author: 'actor_human_lin' })).toHaveLength(1)
+    expect(JSON.stringify(browsed)).not.toContain(unpublished)
+    expect(JSON.stringify(browsed)).not.toContain(withdrawn.publication.id)
+
+    // Adopting is the adopter's own state event, visible only to them (ADR 0014, decision 2): browsing shows
+    // neither who adopted nor how many did.
+    const third = owner.forActor('actor_human_qin', 'Qin')
+    await wei.adopt(live.publication.id, claim, { confidence: 'high' })
+    await third.adopt(live.publication.id, claim, { confidence: 'low' })
+    const after = sceneViewOf(lin).browsePublications()
+    expect(after).toEqual(browsed)
+    expect(Object.keys(after[0] ?? {}).sort()).toEqual([
+      'author',
+      'createdAt',
+      'id',
+      'members',
+      'rootLabel',
+      'version',
+    ])
+    const text = JSON.stringify(after)
+    for (const adopter of ['actor_human_wei', 'actor_human_qin']) {
+      expect(text).not.toContain(adopter)
     }
   })
 })
