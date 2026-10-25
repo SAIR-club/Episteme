@@ -19,6 +19,7 @@ export {
   type Caller,
   type CredentialKind,
   type DeploymentMode,
+  type TokenSummary,
 } from './identity.js'
 export { API_PREFIX, readSettled } from './api.js'
 export { workspaceFile } from './workspace.js'
