@@ -35,6 +35,25 @@ Each token is printed once. Give a student their `human` token for the Workspace
 they use. Revoke one with `tokens revoke <id>`; the running service refuses it from the next request, because it
 reads the user file again when it changes.
 
+A student can also manage their own agent tokens over REST with their `human` token (or the Workspace's
+session cookie), for example from a web front end, so they do not need you for each new host:
+
+```bash
+# list my tokens: id, kind, label, createdAt, revokedAt if revoked, and which one this request used
+curl -H "Authorization: Bearer <human token>" https://episteme.example.edu/api/v1/tokens
+# issue an agent token for one host; the secret is in this response only
+curl -X POST -H "Authorization: Bearer <human token>" -H "content-type: application/json"   -d '{"label":"codex"}' https://episteme.example.edu/api/v1/tokens
+# revoke one of my tokens by its id
+curl -X POST -H "Authorization: Bearer <human token>" -H "content-type: application/json"   -d '{}' https://episteme.example.edu/api/v1/tokens/<token id>/revoke
+```
+
+An agent token is refused all three (`403 human_required`). A person sees and revokes only their own tokens; a
+token of someone else's is answered `404 unknown_token`, as if it did not exist. Human tokens are issued only with
+the CLI, and the token a request is made with cannot revoke itself (`422 current_credential`): revoke a lost
+human token from another one, or with `tokens revoke`. These writes go to the same user file as the CLI's, in
+the same format; the service makes its own one at a time, but does not lock out a CLI command run at the very
+same moment.
+
 For a class, run `users add` and the two `tokens add` once per student from a list, and hand out the tokens by a
 private channel. The user file stores only salted hashes; a lost token cannot be recovered, only revoked and
 reissued.

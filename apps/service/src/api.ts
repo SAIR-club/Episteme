@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
-import type { Caller, Operation } from './identity.js'
+import type { Caller, Directory, Operation } from './identity.js'
 import type { SceneProfile } from './profile.js'
 
 /**
@@ -25,6 +25,9 @@ const DECISION_ROUTES: readonly string[] = [
   `POST ${API_PREFIX}/nodes`,
   `POST ${API_PREFIX}/publications/preview`,
   `POST ${API_PREFIX}/publications`,
+  // A person's own tokens: listing them included, since it shows which hosts act for them.
+  `GET ${API_PREFIX}/tokens`,
+  `POST ${API_PREFIX}/tokens`,
 ]
 
 /** Publishing, withdrawing and adopting are contributions only a person makes (ADR 0014, decision 3). */
@@ -33,6 +36,7 @@ const DECISION_PATTERNS: readonly RegExp[] = [
   // Granting, revoking and undoing delegation are the person's alone (ADR 0016, decision 1).
   /^POST \/api\/v1\/delegations(\/[^/]+\/revoke)?$/,
   /^POST \/api\/v1\/reviews\/[^/]+\/undo$/,
+  /^POST \/api\/v1\/tokens\/[^/]+\/revoke$/,
 ]
 
 /** What a request to the API asks to do. */
@@ -50,6 +54,8 @@ export interface ApiContext {
   readonly seeded: boolean
   /** Who the request is for, when its credential says (ADR 0012). Authorization has already run. */
   readonly caller: Caller | undefined
+  /** The people of a shared deployment and their tokens; `undefined` in local mode, which has no user file. */
+  readonly people: Directory | undefined
 }
 
 /**
@@ -233,6 +239,9 @@ const SCENE_RECORDS = /^\/api\/v1\/scene-records\/([^/]+)$/
 const PUBLICATION = /^\/api\/v1\/publications\/([^/]+)$/
 const DELEGATION_REVOKE = /^\/api\/v1\/delegations\/([^/]+)\/revoke$/
 const REVIEW_UNDO = /^\/api\/v1\/reviews\/([^/]+)\/undo$/
+const TOKEN_REVOKE = /^\/api\/v1\/tokens\/([^/]+)\/revoke$/
+/** What a token's label may be: a short name for the host, as `actor_agent_<label>` will show it. */
+const MAX_LABEL = 64
 const PUBLICATION_ACTION = /^\/api\/v1\/publications\/([^/]+)\/(withdraw|adopt)$/
 
 /** A list of strings in a body field, or nothing when it is absent. */
@@ -261,7 +270,7 @@ export async function handleApi(
   request: IncomingMessage,
   response: ServerResponse,
   path: string,
-  { session, profile, seeded, caller }: ApiContext,
+  { session, profile, seeded, caller, people }: ApiContext,
 ): Promise<void> {
   try {
     await route()
@@ -340,6 +349,73 @@ export async function handleApi(
     if (undoPath !== null && method === 'POST') {
       const undone = await refusing(response, () => session.undoDelegated(segment(undoPath[1])))
       if (undone !== undefined) sendJson(response, 200, { ...at(session), ...undone })
+      return
+    }
+
+    // A person's own tokens (ADR 0012, decision 2): list them, issue an agent token, revoke one. Only the person's
+    // own credential reaches here; authorization has refused an agent's.
+    const revokeTokenPath = TOKEN_REVOKE.exec(path)
+    if (
+      (path === `${API_PREFIX}/tokens` && (method === 'GET' || method === 'POST')) ||
+      (revokeTokenPath !== null && method === 'POST')
+    ) {
+      if (people === undefined || !people.selfService || caller === undefined) {
+        sendRefusal(
+          response,
+          422,
+          'not_available_in_local_mode',
+          'local mode has no user file: agents need no token here, and the person’s token is minted at each start',
+        )
+        return
+      }
+      if (method === 'GET' && revokeTokenPath === null) {
+        sendJson(response, 200, {
+          tokens: people
+            .tokensOf(caller.actorId)
+            .map((token) => ({ ...token, current: token.id === caller.credentialId })),
+        })
+        return
+      }
+      if (revokeTokenPath === null) {
+        const body = await readJson(request)
+        if (body['kind'] !== undefined && body['kind'] !== 'agent') {
+          sendRefusal(
+            response,
+            422,
+            'agent_tokens_only',
+            'only agent tokens are issued here; a human token is issued with the CLI on the service’s machine',
+          )
+          return
+        }
+        const label = asString(body['label'], 'label').trim()
+        const unprintable = [...label].some((character) => {
+          const code = character.codePointAt(0) ?? 0
+          return code < 0x20 || code === 0x7f
+        })
+        if (label.length > MAX_LABEL || unprintable) {
+          throw new RequestError(`"label" must be at most ${MAX_LABEL} printable characters`)
+        }
+        const issued = await people.issueAgentToken(caller.actorId, label)
+        // The secret is in this response and nowhere else: the user file keeps only its hash.
+        sendJson(response, 200, { token: issued.summary, secret: issued.token })
+        return
+      }
+      const tokenId = segment(revokeTokenPath[1])
+      if (tokenId === caller.credentialId) {
+        sendRefusal(
+          response,
+          422,
+          'current_credential',
+          'this is the token this request is made with; revoke it from another of your credentials, or with the CLI',
+        )
+        return
+      }
+      const revoked = await people.revokeOwnToken(caller.actorId, tokenId)
+      if (revoked === undefined) {
+        sendRefusal(response, 404, 'unknown_token', 'there is no such token of yours')
+        return
+      }
+      sendJson(response, 200, { token: revoked })
       return
     }
 

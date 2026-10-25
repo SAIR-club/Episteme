@@ -72,6 +72,13 @@ once.
 - **Administration** is a CLI on the machine that runs the service: `episteme users add <name>`,
   `episteme tokens add <actor> --kind human|agent --label <label>`, `episteme tokens revoke <id>`. No sign-up,
   email or third-party login in this version.
+- **Self-service** (MindLink#24). In shared mode a person also manages their own tokens over REST, with their
+  own `human` credential only: `GET /api/v1/tokens` lists theirs (never a secret, salt or hash, never another
+  person's), `POST /api/v1/tokens { label }` issues an **agent** token and returns its secret once, in that
+  response, and `POST /api/v1/tokens/:id/revoke` revokes one of theirs. A human token is never issued this way;
+  that stays with the CLI. A token that is not the caller's is answered as unknown, whether or not it exists, and
+  the token a request is made with cannot be revoked by that request. A browser session ends with the token that
+  opened it. Local mode has no user file and refuses all three with `not_available_in_local_mode`.
 
 ### 3. What each kind may do
 

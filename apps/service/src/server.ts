@@ -191,6 +191,8 @@ async function serve(
       }
     } else if (credential !== undefined) {
       caller = browsers.resolve(credential.session)
+      // A session ends with the token that opened it: once that is revoked, the cookie counts as no credential.
+      if (caller !== undefined && !directory.isLive(caller.credentialId)) caller = undefined
     }
 
     const handled =
@@ -206,6 +208,7 @@ async function serve(
                   profile,
                   seeded,
                   caller,
+                  people,
                 }),
               )
             : workspace !== undefined
