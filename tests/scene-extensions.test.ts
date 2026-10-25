@@ -18,6 +18,8 @@ import {
   type StateDimensionDefinition,
 } from '@episteme/core'
 import {
+  addPerson,
+  addToken,
   startService,
   type EpistemeService,
   type SceneProfile,
@@ -292,6 +294,7 @@ describe('what an extension is handed', () => {
         'pendingSuggestions',
         'progress',
         'propose',
+        'publicationView',
         'recall',
         'recordableDimensions',
         'records',
@@ -416,6 +419,137 @@ describe('what a view reads of two people on one graph', () => {
     const text = JSON.stringify(after)
     for (const adopter of ['actor_human_wei', 'actor_human_qin']) {
       expect(text).not.toContain(adopter)
+    }
+  })
+})
+
+describe('a publication read through a view, on a shared service', () => {
+  let sharedDirectory: string
+  let sharedService: EpistemeService
+  let people: Record<'lin' | 'wei' | 'qin', { id: string; token: string }>
+
+  /** A scene route that answers with what the caller's view reads of one publication. */
+  const READ_PUBLICATION: SceneRoute = {
+    method: 'GET',
+    path: '/publication',
+    handle: ({ view, query }) => ({ view: view.publicationView(query.get('id') ?? '') ?? null }),
+  }
+
+  async function get(path: string, token: string) {
+    const response = await fetch(`${sharedService.apiUrl}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+  }
+
+  async function post(path: string, token: string, body: unknown) {
+    const response = await fetch(`${sharedService.apiUrl}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+  }
+
+  /** A body without the revision it was read at, which every route adds. */
+  function content(body: Record<string, unknown>): Record<string, unknown> {
+    const { epoch: _epoch, revision: _revision, ...rest } = body
+    return rest
+  }
+
+  async function viewed(id: string, token: string): Promise<unknown> {
+    const answer = await get(`/scene/debate/publication?id=${encodeURIComponent(id)}`, token)
+    expect(answer.status).toBe(200)
+    return answer.body['view']
+  }
+
+  async function linPublishes(label: string): Promise<{ node: string; publication: string }> {
+    const created = await post('/nodes', people.lin.token, { label })
+    const node = (created.body['node'] as { nodeId: string }).nodeId
+    const published = await post('/publications', people.lin.token, { root: node })
+    expect(published.status).toBe(200)
+    return { node, publication: (published.body['publication'] as { id: string }).id }
+  }
+
+  beforeEach(async () => {
+    sharedDirectory = await mkdtemp(join(tmpdir(), 'episteme-scene-shared-'))
+    const users = join(sharedDirectory, 'users.json')
+    const person = async (name: string) => {
+      const id = await addPerson(users, name)
+      return { id, token: await addToken(users, id, 'human', 'workspace') }
+    }
+    people = { lin: await person('Lin'), wei: await person('Wei'), qin: await person('Qin') }
+    sharedService = await startService({
+      port: 0,
+      graph: join(sharedDirectory, 'shared.jsonl'),
+      mode: 'shared',
+      users,
+      publicOrigin: 'https://episteme.example.edu',
+      sharing: true,
+      profile: debateProfile({ routes: [READ_PUBLICATION] }),
+    })
+  })
+
+  afterEach(async () => {
+    await sharedService.close()
+    await rm(sharedDirectory, { recursive: true, force: true })
+  })
+
+  it('reads a live publication exactly as the REST route does for the same caller', async () => {
+    const { publication } = await linPublishes('The motion confuses cause and effect')
+
+    for (const caller of [people.lin, people.wei]) {
+      const rest = await get(`/publications/${publication}`, caller.token)
+      expect(rest.status).toBe(200)
+      expect(await viewed(publication, caller.token)).toEqual(content(rest.body))
+    }
+    expect(await viewed('publication_nowhere', people.wei.token)).toBeNull()
+  })
+
+  it('reads a withdrawn publication as REST does: gone for others, still there for its author', async () => {
+    const { publication } = await linPublishes('A position I take back')
+    expect((await post(`/publications/${publication}/withdraw`, people.lin.token, {})).status).toBe(
+      200,
+    )
+
+    expect((await get(`/publications/${publication}`, people.wei.token)).status).toBe(404)
+    expect(await viewed(publication, people.wei.token)).toBeNull()
+
+    const rest = await get(`/publications/${publication}`, people.lin.token)
+    expect(rest.body['live']).toBe(false)
+    expect(await viewed(publication, people.lin.token)).toEqual(content(rest.body))
+  })
+
+  it('carries no adopter and no state level', async () => {
+    const { node, publication } = await linPublishes('The motion confuses cause and effect')
+    const before = await viewed(publication, people.lin.token)
+    for (const [adopter, level] of [
+      [people.wei, 'disagree'],
+      [people.qin, 'unsure'],
+    ] as const) {
+      const adopted = await post(`/publications/${publication}/adopt`, adopter.token, {
+        node,
+        dimensions: { stance: level },
+      })
+      expect(adopted.status).toBe(200)
+    }
+
+    for (const caller of [people.lin, people.wei, people.qin]) {
+      const view = (await viewed(publication, caller.token)) as Record<string, unknown>
+      // Nobody's adoption changes what the publication shows, whoever reads it.
+      expect(view).toEqual(before)
+      expect(Object.keys(view).sort()).toEqual([
+        'edges',
+        'live',
+        'nodes',
+        'publication',
+        'threads',
+        'versions',
+      ])
+      const text = JSON.stringify(view)
+      for (const absent of [people.wei.id, people.qin.id, 'disagree', 'unsure', 'stance']) {
+        expect(text).not.toContain(absent)
+      }
     }
   })
 })

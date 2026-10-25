@@ -3,7 +3,7 @@ import type { CognitiveSession } from './session.js'
 /**
  * What a scene's own MCP tools and REST routes may do with a session (ADR 0013, scene extensions).
  *
- * Reads (the caller's own threads and the publications anyone may browse among them), proposals and
+ * Reads (the caller's own threads and the publications anyone may browse and read among them), proposals and
  * distillation, and nothing that decides or writes. A scene extension is reachable by an
  * agent, so handing it the session would hand an agent `decide` and the graph: the one human-decision path
  * would then have a side door. Whatever a scene wants to change goes through `propose` or `distill` and waits
@@ -36,6 +36,12 @@ export interface SceneView {
   browsePublications(
     ...args: Parameters<CognitiveSession['browsePublications']>
   ): ReturnType<CognitiveSession['browsePublications']>
+  /**
+   * One publication's public content (ADR 0014), exactly as `GET /api/v1/publications/:id` returns it to the
+   * same caller: its members, the relations it made public, thread summaries and version chain. No one's state
+   * and no adopter. `undefined` for an unknown publication, or a withdrawn one the caller did not write.
+   */
+  publicationView(id: string): ReturnType<CognitiveSession['publicationView']>
   /** The caller's records in this scene's own namespace (ADR 0015, decision 7). Never understanding. */
   readonly records: {
     get(key: string): ReturnType<CognitiveSession['sceneRecord']>
@@ -68,6 +74,7 @@ export function sceneViewOf(session: CognitiveSession): SceneView {
     threadView: (threadId: string) => session.threadView(threadId),
     browsePublications: (...args: Parameters<CognitiveSession['browsePublications']>) =>
       session.browsePublications(...args),
+    publicationView: (id: string) => session.publicationView(id),
     records: Object.freeze({
       get: (key: string) => session.sceneRecord(session.scene.name, key),
       list: (prefix?: string) => session.sceneRecords(session.scene.name, prefix),
