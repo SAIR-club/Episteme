@@ -1,8 +1,8 @@
 # Vision
 
 Why Episteme exists, what it is for, and where its edges are. This file changes only when the
-direction itself changes. The plan for getting there is in [`roadmap.md`](roadmap.md), and what is
-being done now is in [`current-plan.md`](current-plan.md).
+direction itself changes. What is being built now is in
+[`mindlink-spec.md`](mindlink-spec.md).
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Source: [`README.md`](../../README.md).
 - **The person decides.** An agent may suggest; only the person's decision makes anything their
   understanding.
 
-Sources: [`README.md`](../../README.md), [roadmap: Positioning](roadmap.md#positioning-a-layer-agents-attach-to-not-another-agent),
+Sources: [`README.md`](../../README.md), [roadmap (archived): Positioning](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-19/docs/planning/roadmap.md#positioning-a-layer-agents-attach-to-not-another-agent),
 [ADR 0008](../decisions/0008-agent-plugin-surface.md).
 
 ## Product direction
@@ -57,7 +57,7 @@ stop adding features rather than add more of them.
 - **B**: "From that same earlier understanding, I later took two different paths."
 - **C**: "Because I understood it this way before, today's answer is different."
 
-Source: [roadmap: The gate, unchanged](roadmap.md#the-gate-unchanged).
+Source: [roadmap (archived): The gate, unchanged](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-19/docs/planning/roadmap.md#the-gate-unchanged).
 
 ## Boundaries
 
@@ -81,4 +81,4 @@ complex governance             educational-effect experiments
 full Lean integration
 ```
 
-Source: [roadmap: Explicitly out of scope for now](roadmap.md#explicitly-out-of-scope-for-now).
+Source: [roadmap (archived): Explicitly out of scope for now](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-19/docs/planning/roadmap.md#explicitly-out-of-scope-for-now).

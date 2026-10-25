@@ -54,7 +54,7 @@
 
 - 对外定位从"共享知识图谱"改为"同一门课同学之间的共享理解"。
 - 引导式提问的指标：被预测的问题被点选的比例；从开始学到通过自测所用的时间。
-- 1k star 来自开发者，不来自学生，所以由 Episteme 以 MCP 插件的形式承担。本月比赛优先，Episteme 的对外发布（英文 README、一行安装、演示）排在最后一周，见[开发计划](development-plan-2026-10.md)。
+- 1k star 来自开发者，不来自学生，所以由 Episteme 以 MCP 插件的形式承担。本月比赛优先，Episteme 的对外发布（英文 README、一行安装、演示）排在最后一周，见 [#46](https://github.com/SAIR-club/Episteme/issues/46)。
 
 ## 来源
 

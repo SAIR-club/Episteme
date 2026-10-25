@@ -273,13 +273,10 @@ opt-in.
 - [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
 - [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
 - [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
-- [Vision](docs/planning/vision.md) · [Roadmap](docs/planning/roadmap.md) ·
-  [Decision log](docs/planning/decision-log.md) · [Open questions](docs/planning/open-questions.md) ·
+- [Vision](docs/planning/vision.md) · [Decision log](docs/planning/decision-log.md) ·
   [Discussions](docs/discussions/index.md)
-- [v0.1.0 release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md) ·
-  [Current plan](docs/planning/current-plan.md)
-- [Phase 1 report](PHASE1_REPORT.md)
-- [Phase 2 report](PHASE2_REPORT.md)
+- [MindLink product spec](docs/planning/mindlink-spec.md) (the current plan)
+- [v0.1.0 release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
 
 ## Limitations in v0.1.0
 
@@ -310,9 +307,10 @@ mock as the deterministic test double the loop's proofs depend on ([ADR 0008](do
 
 ## What comes next
 
-Development is paused after v0.1.0. When it resumes, the first step is not a new feature: it is one end-to-end
-learning session with a real Claude Code host and a real learner, and a second session that shows whether what
-they confirmed the first time is recalled and used. See [docs/planning/current-plan.md](docs/planning/current-plan.md).
+Episteme's side of the shared service is in place: identity, visibility, publications, threads and scene records,
+delegated confirmation and layered recall. Development now centres on MindLink, the learning application built on
+it; what it will be and the issues that build it are in the
+[MindLink product spec](docs/planning/mindlink-spec.md).
 
 ## Technical principles
 
