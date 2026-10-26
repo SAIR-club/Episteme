@@ -127,7 +127,8 @@ function proposeInput(dimensions: readonly RecordableDimension[]) {
       },
       scope: {
         type: 'string',
-        description: 'The learning project or course this is about, if the learner works in one.',
+        description:
+          'The learning project or course this is about, if the learner works in one. A claim the learner accepts is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
       },
       target: { type: 'string', description: 'state: the id of the node the change is about.' },
       dimension: {
@@ -149,6 +150,7 @@ interface DistillInput {
   title?: string
   text: string
   candidates?: HostItem[]
+  scope?: string
   learner?: string
   hostSession?: string
   submissionId?: string
@@ -232,6 +234,11 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
         required: ['kind', 'quote', 'basis', 'rationale'],
         additionalProperties: false,
       },
+    },
+    scope: {
+      type: 'string',
+      description:
+        'The learning project or course this material belongs to. Every node the learner accepts from it is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
     },
     learner: {
       ...SHORT_TEXT,
@@ -471,11 +478,12 @@ export function createEpistemeMcpServer(
       },
     },
     async (input, context) => {
-      const { title, text, candidates, learner, hostSession, submissionId } = input
+      const { title, text, candidates, scope, learner, hostSession, submissionId } = input
       // Who asked is recorded for provenance. With candidates, the asking agent's model did the reading and
       // proposes what is kept; without them, Episteme's distiller does.
       const outcome = await session.distill(title === undefined ? { text } : { title, text }, {
         requestedBy: actingAgent(access, context),
+        ...(scope === undefined ? {} : { scope }),
         ...(learner === undefined ? {} : { learner }),
         ...(candidates === undefined
           ? {}

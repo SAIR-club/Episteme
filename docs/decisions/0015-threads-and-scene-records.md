@@ -123,6 +123,13 @@ itself so that every scene has it. `addNode`, `record` and the decision path acc
 what they create. Recall may prefer a scope (#44); a scope is a preference, not a wall, because a learner's
 subjects are linked.
 
+A scope also travels with a suggestion: `propose` and `distill` take an optional `scope`, kept on every draft they
+make, and the node a draft becomes when it is accepted carries `scope:<scope>`, whether the person accepted it, put
+it in their own words first, or a delegation (ADR 0016) accepted it for them. A state change or a link is not a
+node and gets no tag. `POST /nodes` takes a scope too, for a node a person adds by hand. A scope id is a non-blank
+string of at most 100 characters without control characters, and not `*`; anything else is refused with
+`invalid_scope`.
+
 ### 7. Scene records: a scene's own data, never understanding
 
 ```ts

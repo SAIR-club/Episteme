@@ -524,9 +524,12 @@ export async function handleApi(
     if (path === `${API_PREFIX}/distill` && method === 'POST') {
       const body = await readJson(request)
       // Either material sent as text, or turns of one of the caller's threads (ADR 0015, decision 5).
+      // The learning project or course the suggestions are made in; nodes accepted from them carry it.
+      const scope = body['scope'] === undefined ? undefined : asString(body['scope'], 'scope')
       const outcome =
         typeof body['thread'] === 'string'
           ? await session.distillThread(body['thread'], {
+              ...(scope === undefined ? {} : { scope }),
               ...(Array.isArray(body['turns'])
                 ? { turns: body['turns'].filter((id): id is string => typeof id === 'string') }
                 : {}),
@@ -534,7 +537,10 @@ export async function handleApi(
           : await (async () => {
               const text = asString(body['text'], 'text')
               const title = typeof body['title'] === 'string' ? body['title'] : undefined
-              return session.distill(title === undefined ? { text } : { title, text })
+              return session.distill(
+                title === undefined ? { text } : { title, text },
+                scope === undefined ? {} : { scope },
+              )
             })()
       if (!outcome.ok) {
         sendRefusal(response, 422, outcome.refusal.code, outcome.refusal.message)
@@ -590,7 +596,10 @@ export async function handleApi(
       const body = await readJson(request)
       const label = asString(body['label'], 'label')
       const kind = body['kind'] === 'concept' ? 'concept' : 'claim'
-      const node = await refusing(response, () => session.addNode({ label, kind }))
+      const scope = body['scope'] === undefined ? undefined : asString(body['scope'], 'scope')
+      const node = await refusing(response, () =>
+        session.addNode({ label, kind, ...(scope === undefined ? {} : { scope }) }),
+      )
       if (node === undefined) return
       sendJson(response, 200, {
         ...at(session),
