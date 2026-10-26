@@ -174,6 +174,46 @@ describe('distill with a scope', () => {
   })
 })
 
+describe('distilling a thread', () => {
+  async function threadIn(scope: string | undefined): Promise<string> {
+    const thread = await session.openThread({
+      title: '位置编码',
+      ...(scope === undefined ? {} : { scope }),
+    })
+    await session.appendTurn(thread.id, { speaker: 'learner', text: '为什么需要位置编码？' })
+    await session.appendTurn(thread.id, {
+      speaker: 'agent',
+      text: '因为自注意力本身不区分词的顺序。',
+    })
+    return thread.id
+  }
+
+  it('uses the thread’s own scope when none is given', async () => {
+    const outcome = await session.distillThread(await threadIn('ml-2026'))
+    if (!outcome.ok) throw new Error(outcome.refusal.message)
+    expect(outcome.suggestions.length).toBeGreaterThan(0)
+    expect(outcome.suggestions.every((suggestion) => suggestion.scope === 'ml-2026')).toBe(true)
+  })
+
+  it('lets a scope given by the caller win over the thread’s', async () => {
+    const outcome = await session.distillThread(await threadIn('ml-2026'), { scope: 'stats-101' })
+    if (!outcome.ok) throw new Error(outcome.refusal.message)
+    expect(outcome.suggestions.every((suggestion) => suggestion.scope === 'stats-101')).toBe(true)
+  })
+
+  it('has no scope for a thread opened without one', async () => {
+    const outcome = await session.distillThread(await threadIn(undefined))
+    if (!outcome.ok) throw new Error(outcome.refusal.message)
+    expect(outcome.suggestions.some((suggestion) => suggestion.scope !== undefined)).toBe(false)
+  })
+
+  it('distills without a scope, rather than failing, when the thread’s scope is not a valid one', async () => {
+    const outcome = await session.distillThread(await threadIn('*'))
+    if (!outcome.ok) throw new Error(outcome.refusal.message)
+    expect(outcome.suggestions.some((suggestion) => suggestion.scope !== undefined)).toBe(false)
+  })
+})
+
 describe('addNode with a scope', () => {
   it('refuses a bad one', async () => {
     await expect(session.addNode({ label: 'x', kind: 'claim', scope: ' ' })).rejects.toMatchObject({

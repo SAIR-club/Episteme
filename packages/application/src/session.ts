@@ -1811,12 +1811,21 @@ export class CognitiveSession {
       text += `${line}\n`
       ranges.push({ id: turn.id, start, end: start + line.length })
     }
+    // A thread opened in a project or course distills into it, unless the caller names another scope. A thread's
+    // scope is not checked when it is opened, so one that is not a valid scope id is not applied: the thread then
+    // distills without a scope, as every thread did before scopes were applied on accept.
+    const threadScope = view.thread.scope
+    const scope =
+      options.scope ??
+      (threadScope !== undefined && scopeProblem(threadScope) === undefined
+        ? threadScope
+        : undefined)
     return this.distill(
       { title: view.thread.title, text },
       {
         learner: LEARNER_LABEL,
         thread: { id: threadId, turns: ranges },
-        ...(options.scope === undefined ? {} : { scope: options.scope }),
+        ...(scope === undefined ? {} : { scope }),
         ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
       },
     )
