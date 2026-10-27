@@ -40,7 +40,7 @@ interface Thread {
   readonly id: ThreadId
   readonly owner: ActorId // the person whose conversation it is
   readonly title: string
-  readonly scope?: string // the learning project or course it belongs to (decision 6)
+  readonly scope?: string // the partition scope it belongs to (decision 6)
   readonly parent?: { readonly thread: ThreadId; readonly turn: TurnId } // set on a fork
   readonly hostSession?: string // the host's own id for the conversation, provenance only
   readonly createdAt: EpochMillis

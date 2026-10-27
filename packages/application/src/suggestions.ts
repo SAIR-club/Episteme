@@ -103,7 +103,7 @@ export interface Suggestion {
   readonly id: string
   /** The person it is proposed for; see `ownerOf`. */
   readonly owner?: string
-  /** The learning project or course it is about, which a delegation may be limited to (ADR 0016). */
+  /** The partition scope it is about, which a delegation may be limited to (ADR 0016). */
   readonly scope?: string
   readonly proposal: Proposal
   /** Why the agent proposes it. Required: a person cannot judge a suggestion that does not say why. */

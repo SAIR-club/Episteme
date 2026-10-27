@@ -98,7 +98,7 @@ const EDGE = {
   refersTo: asId<EdgeTypeId>('refers_to'),
 } as const
 
-/** The longest scope id accepted: a project or course id, not a sentence. */
+/** The longest scope id accepted: an identifier, not a sentence. */
 export const MAX_SCOPE_LENGTH = 100
 
 /**
@@ -131,8 +131,8 @@ function defaultTags(topic = 'general', scope?: string): readonly Tag[] {
 }
 
 /**
- * What the application itself registers for every scene: the `scope` tag namespace, which marks the learning
- * project or course a node belongs to (ADR 0015, decision 6).
+ * What the application itself registers for every scene: the `scope` tag namespace, which marks the partition
+ * scope a node belongs to (ADR 0015, decision 6).
  */
 const applicationPack: DomainPack = defineDomainPack('episteme-application', {
   tagNamespaces: [{ namespace: 'scope', label: 'Scope' }],
@@ -1002,7 +1002,7 @@ export class CognitiveSession {
     readonly kind: 'claim' | 'concept' | 'question'
     readonly topic?: string
     readonly source?: string
-    /** The learning project or course the node belongs to (ADR 0015, decision 6). */
+    /** The partition scope the node belongs to (ADR 0015, decision 6). */
     readonly scope?: string
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
@@ -2426,7 +2426,7 @@ export class CognitiveSession {
       readonly agent?: CognitiveAgent
       readonly policy?: DistillationPolicy
       readonly learner?: string
-      /** The learning project or course every suggestion is made in; nodes accepted from them carry it. */
+      /** The partition scope every suggestion is made in; nodes accepted from them carry it. */
       readonly scope?: string
       readonly host?: {
         readonly candidates: readonly HostItem[]
