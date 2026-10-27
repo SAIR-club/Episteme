@@ -524,7 +524,7 @@ export async function handleApi(
     if (path === `${API_PREFIX}/distill` && method === 'POST') {
       const body = await readJson(request)
       // Either material sent as text, or turns of one of the caller's threads (ADR 0015, decision 5).
-      // The learning project or course the suggestions are made in; nodes accepted from them carry it.
+      // The partition scope the suggestions are made in; nodes accepted from them carry it.
       const scope = body['scope'] === undefined ? undefined : asString(body['scope'], 'scope')
       const outcome =
         typeof body['thread'] === 'string'
