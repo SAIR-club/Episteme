@@ -423,7 +423,7 @@ export const SCOPE_BOOST = 0.15
 export const DEFAULT_RECALL_BUDGET = 2000
 
 export interface RecallOptions {
-  /** A project or course to prefer, not to filter by (ADR 0015, decision 6). */
+  /** A partition scope or domain namespace to prefer, not to filter by (ADR 0015, decision 6). */
   readonly scope?: string
   /** For `recallSummary`: the characters it may use. */
   readonly budget?: number
@@ -1007,7 +1007,7 @@ export class CognitiveSession {
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
     /**
-     * Material the person was given, such as a course's topic, rather than their own thinking. Seeded at
+     * Material the person was given, such as seed reference material, rather than their own thinking. Seeded at
      * `reference` tier whatever its kind, so a given claim or question never counts as their understanding.
      */
     readonly given?: boolean

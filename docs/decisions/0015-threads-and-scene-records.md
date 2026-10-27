@@ -118,9 +118,9 @@ path, exactly as for any other distillation (ADR 0009, 0011).
 
 ### 6. Scope: which project a node belongs to
 
-A node may carry a tag in the `scope` namespace, `scope:<project or course id>`, registered by the application
+A node may carry a tag in the `scope` namespace, `scope:<partition scope id>`, registered by the application
 itself so that every scene has it. `addNode`, `record` and the decision path accept an optional scope and tag
-what they create. Recall may prefer a scope (#44); a scope is a preference, not a wall, because a learner's
+what they create. Recall may prefer a scope (#44); a scope is a preference, not a wall, because a person's
 subjects are linked.
 
 A scope also travels with a suggestion: `propose` and `distill` take an optional `scope`, kept on every draft they

@@ -1,11 +1,10 @@
 /**
  * Episteme Core — public surface.
  *
- * Core does exactly one job: it is the graph itself. It contains no recommendation,
- * voting, ranking, course generation, quiz, reputation, moderation, agent workflow,
- * teaching strategy or UI state. Those belong to a Domain Extension or an Application,
- * and putting them here would mean the ontology can no longer serve Learn, Forum and
- * Research as one shared substrate.
+ * Core does exactly one job: it is the graph itself. It contains no application-specific
+ * ranking, scenario algorithms, agent workflow orchestration, UI state, or domain policies.
+ * Those belong to a Domain Extension or an Application, preserving Core as a generic
+ * substrate for any upstream application surface.
  *
  * Everything exported below must be usable with no frontend, no LLM and no database.
  */
