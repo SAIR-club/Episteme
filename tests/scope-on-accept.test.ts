@@ -207,10 +207,28 @@ describe('distilling a thread', () => {
     expect(outcome.suggestions.some((suggestion) => suggestion.scope !== undefined)).toBe(false)
   })
 
-  it('distills without a scope, rather than failing, when the thread’s scope is not a valid one', async () => {
-    const outcome = await session.distillThread(await threadIn('*'))
-    if (!outcome.ok) throw new Error(outcome.refusal.message)
-    expect(outcome.suggestions.some((suggestion) => suggestion.scope !== undefined)).toBe(false)
+  it('openThread refuses an invalid scope', async () => {
+    await expect(session.openThread({ title: 't', scope: '*' })).rejects.toMatchObject({
+      code: 'invalid_scope',
+    })
+  })
+
+  it('distillThread refuses an invalid scope override', async () => {
+    const thread = await session.openThread({ title: 't', scope: 'stats-101' })
+    const outcome = await session.distillThread(thread.id, { scope: '*' })
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) throw new Error('expected refusal')
+    expect(outcome.refusal.code).toBe('invalid_scope')
+  })
+
+  it('grantDelegation accepts * and valid scopes, and refuses an invalid scope', async () => {
+    await expect(session.grantDelegation('*')).resolves.toMatchObject({ scope: '*' })
+    await expect(session.grantDelegation('stats-101')).resolves.toMatchObject({
+      scope: 'stats-101',
+    })
+    await expect(session.grantDelegation('invalid*scope')).rejects.toMatchObject({
+      code: 'invalid_scope',
+    })
   })
 })
 
