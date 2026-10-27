@@ -13,7 +13,7 @@ export interface Thread {
   /** The person whose conversation it is. */
   readonly owner: string
   readonly title: string
-  /** The learning project or course it belongs to (ADR 0015, decision 6). */
+  /** The partition scope it belongs to (ADR 0015, decision 6). */
   readonly scope?: string
   /** Set on a fork: the turn it continues from. */
   readonly parent?: { readonly thread: string; readonly turn: string }

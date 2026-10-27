@@ -45,6 +45,12 @@ by calling the same `decide` with `accept`, as the person, on channel `delegatio
 review record. It does not modify, merge or rank: it accepts exactly what was proposed, and only if `decide`
 would accept it from the person. A refusal leaves the draft pending in the review queue, as for anyone.
 
+The scope that selects the delegation is the scope the draft was made in, and it is also the scope the accepted node
+is tagged with (ADR 0015, decision 6): a `propose` or `distill` in `ml-2026` is covered by a delegation for
+`ml-2026` or `*` and lands as a node tagged `scope:ml-2026`. The two meanings agree, so a delegation never accepts
+into a scope other than the one it was granted for. A `distill` that names no scope is covered only by a `*`
+delegation, as a `propose` without one always was.
+
 A state change committed this way is recorded with `authority: 'delegated'` rather than `confirmed`, and names
 the person in `confirmedBy`. The person's state is still the person's (state belongs to the actor); its history
 says how it got there.

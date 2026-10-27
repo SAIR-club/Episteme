@@ -10,6 +10,7 @@ import type {
 import {
   LexicalGraphRetriever,
   canExplain,
+  isOpenConflict,
   type RankSignal,
   type Retriever,
   type SignalContribution,
@@ -25,7 +26,7 @@ export interface KnownUnderstanding {
   readonly state: Readonly<Record<string, StateValue>>
   /** Whether the actor holds this with enough confidence to build on it. */
   readonly settled: boolean
-  /** Dimensions the actor currently has marked as conflicting, if any. */
+  /** The conflict level, when the actor has one recorded that is still unresolved (`suspected`, `open`). */
   readonly openConflicts: readonly string[]
 }
 
@@ -143,8 +144,8 @@ export async function retrieveWith(
 
       for (const [dimension, value] of state) {
         record[dimension] = value
-        if (dimension === 'conflict' && value.level !== undefined && value.level !== 'none') {
-          openConflicts.push(value.level)
+        if (dimension === 'conflict' && isOpenConflict(value.level)) {
+          openConflicts.push(value.level!)
         }
         const levels = SETTLED_DIMENSIONS[dimension]
         if (levels !== undefined && value.level !== undefined && levels.includes(value.level)) {

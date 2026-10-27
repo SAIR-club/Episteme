@@ -543,7 +543,7 @@ export function cognitiveValue(
   const conflict = level('conflict')
 
   let value = 0.2
-  if (conflict !== undefined && conflict !== 'none') value += 0.5
+  if (isOpenConflict(conflict)) value += 0.5
   if (confidence === 'low') value += 0.2
   else if (confidence === 'medium') value += 0.1
   if (articulation === 'low') value += 0.2
@@ -552,6 +552,14 @@ export function cognitiveValue(
   if (confidence === 'high' && articulation === 'high') value -= 0.2
 
   return Math.max(0, Math.min(1, value))
+}
+
+/**
+ * Whether a recorded conflict level still leaves the conflict open: `suspected` or `open`. `none` was never one and
+ * `resolved` has been worked through, so neither asks for attention or stops anything being built on.
+ */
+export function isOpenConflict(level: string | undefined): boolean {
+  return level !== undefined && level !== 'none' && level !== 'resolved'
 }
 
 export function toResult(
