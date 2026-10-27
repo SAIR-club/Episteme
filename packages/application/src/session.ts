@@ -33,6 +33,7 @@ import {
   type PublicationDraft,
   type PublicationPreview,
   type Withdrawal,
+  isOpenConflict,
   toAgentContext,
   type RankedEntry,
   type RelevantContext,
@@ -96,6 +97,32 @@ const NODE = {
 const EDGE = {
   refersTo: asId<EdgeTypeId>('refers_to'),
 } as const
+
+/** The longest scope id accepted: a project or course id, not a sentence. */
+export const MAX_SCOPE_LENGTH = 100
+
+/**
+ * Why `scope` cannot be a scope id, or `undefined` when it can (ADR 0015, decision 6). The one rule for every
+ * path that tags or files something under a scope: a non-blank string of at most `MAX_SCOPE_LENGTH`
+ * characters with no control characters, and not `*`, which a delegation uses for "everything" (ADR 0016).
+ */
+export function scopeProblem(scope: string): string | undefined {
+  const trimmed = scope.trim()
+  if (trimmed === '') return 'a scope id cannot be blank'
+  if (trimmed === '*') return 'a scope id cannot be "*", which a delegation uses for everything'
+  if (trimmed.length > MAX_SCOPE_LENGTH)
+    return `a scope id is at most ${MAX_SCOPE_LENGTH} characters`
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/u.test(trimmed)) return 'a scope id cannot contain control characters'
+  return undefined
+}
+
+/** A scope as it is stored and compared: trimmed. Refuses one that `scopeProblem` rejects. */
+function checkedScope(scope: string): string {
+  const problem = scopeProblem(scope)
+  if (problem !== undefined) throw new SessionRefusal('invalid_scope', problem)
+  return scope.trim()
+}
 
 function defaultTags(topic = 'general', scope?: string): readonly Tag[] {
   const tags = [topicTag(topic), tag('scene', 'cognitive')]
@@ -1079,7 +1106,10 @@ export class CognitiveSession {
       type: input.type,
       label,
       properties: { text: label, ...input.properties },
-      tags: defaultTags(input.topic ?? 'general', input.scope),
+      tags: defaultTags(
+        input.topic ?? 'general',
+        input.scope === undefined ? undefined : checkedScope(input.scope),
+      ),
       tier: input.tier,
       actorId: this.#actor,
       ...(input.source === undefined ? {} : { source: input.source }),
@@ -1203,7 +1233,7 @@ export class CognitiveSession {
         dimensions.find((entry) => entry.id === id)?.level
 
       const openConflicts = dimensions
-        .filter((entry) => entry.id === DIMENSION.conflict && entry.level !== 'none')
+        .filter((entry) => entry.id === DIMENSION.conflict && isOpenConflict(entry.level))
         .map((entry) => entry.level)
 
       // Same predicate as `retrieveWith`: a dimension in its settled band makes the item buildable.
@@ -1299,10 +1329,14 @@ export class CognitiveSession {
       // Checked inside the queue, against the graph as it is when the draft is kept.
       const refusal = this.#refusalOf(proposal, from)
       if (refusal !== undefined) return { ok: false, refusal }
+      // The scope selects a delegation (ADR 0016) and tags the node it becomes (ADR 0015, decision 6).
+      const problem = from.scope === undefined ? undefined : scopeProblem(from.scope)
+      if (problem !== undefined)
+        return { ok: false, refusal: { code: 'invalid_scope', message: problem } }
 
       const suggestion = await this.#suggestions.add({
         owner: this.#actor,
-        ...(from.scope === undefined ? {} : { scope: from.scope }),
+        ...(from.scope === undefined ? {} : { scope: from.scope.trim() }),
         proposal: normalized(proposal),
         rationale: from.rationale.trim(),
         proposedBy: from.proposedBy,
@@ -1754,7 +1788,11 @@ export class CognitiveSession {
    */
   distillThread(
     threadId: string,
-    options: { readonly turns?: readonly string[]; readonly requestedBy?: string } = {},
+    options: {
+      readonly turns?: readonly string[]
+      readonly requestedBy?: string
+      readonly scope?: string
+    } = {},
   ): Promise<DistillOutcome> {
     const view = this.threadView(threadId)
     if (view === undefined) {
@@ -1774,11 +1812,21 @@ export class CognitiveSession {
       text += `${line}\n`
       ranges.push({ id: turn.id, start, end: start + line.length })
     }
+    // A thread opened in a project or course distills into it, unless the caller names another scope. A thread's
+    // scope is not checked when it is opened, so one that is not a valid scope id is not applied: the thread then
+    // distills without a scope, as every thread did before scopes were applied on accept.
+    const threadScope = view.thread.scope
+    const scope =
+      options.scope ??
+      (threadScope !== undefined && scopeProblem(threadScope) === undefined
+        ? threadScope
+        : undefined)
     return this.distill(
       { title: view.thread.title, text },
       {
         learner: LEARNER_LABEL,
         thread: { id: threadId, turns: ranges },
+        ...(scope === undefined ? {} : { scope }),
         ...(options.requestedBy === undefined ? {} : { requestedBy: options.requestedBy }),
       },
     )
@@ -2217,6 +2265,8 @@ export class CognitiveSession {
           type: asId<NodeTypeId>(proposal.nodeType),
           tier: this.#tierOf(proposal.nodeType),
           source,
+          // The scope the suggestion was made in, kept whoever decides it and however it is worded then.
+          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
           // The text follows the label as decided, so a learner who puts it in their own words is not left
           // with the distiller's wording underneath.
           properties: {
@@ -2234,6 +2284,7 @@ export class CognitiveSession {
           type: NODE.claim,
           tier: 'thought',
           source,
+          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
           properties: provenanceOf(suggestion),
         })
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
@@ -2374,6 +2425,8 @@ export class CognitiveSession {
       readonly agent?: CognitiveAgent
       readonly policy?: DistillationPolicy
       readonly learner?: string
+      /** The learning project or course every suggestion is made in; nodes accepted from them carry it. */
+      readonly scope?: string
       readonly host?: {
         readonly candidates: readonly HostItem[]
         readonly hostSession?: string
@@ -2400,6 +2453,11 @@ export class CognitiveSession {
           },
         }
       }
+      const scopeFault = options.scope === undefined ? undefined : scopeProblem(options.scope)
+      if (scopeFault !== undefined) {
+        return { ok: false, refusal: { code: 'invalid_scope', message: scopeFault } }
+      }
+      const scope = options.scope?.trim()
       const host = options.host
       const submittedBy = options.requestedBy
       if (host !== undefined && host.candidates.length > MAX_HOST_ITEMS) {
@@ -2432,6 +2490,8 @@ export class CognitiveSession {
                 text,
                 ...(material.title === undefined ? {} : { title: material.title }),
                 ...(options.learner === undefined ? {} : { learner: options.learner }),
+                // Only when given, so the digest of a submission made without one is what it always was.
+                ...(scope === undefined ? {} : { scope }),
                 ...(host.hostSession === undefined ? {} : { hostSession: host.hostSession }),
                 candidates: host.candidates,
               }),
@@ -2700,6 +2760,7 @@ export class CognitiveSession {
               return at === undefined ? pendingAs.get(reference) : chosen[at]
             }),
             owner: this.#actor,
+            ...(scope === undefined ? {} : { scope }),
             rationale: item.rationale,
             proposedBy,
             proposedAt: now,
