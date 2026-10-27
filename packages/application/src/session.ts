@@ -110,6 +110,7 @@ export function scopeProblem(scope: string): string | undefined {
   const trimmed = scope.trim()
   if (trimmed === '') return 'a scope id cannot be blank'
   if (trimmed === '*') return 'a scope id cannot be "*", which a delegation uses for everything'
+  if (trimmed.includes('*')) return 'a scope id cannot contain "*"'
   if (trimmed.length > MAX_SCOPE_LENGTH)
     return `a scope id is at most ${MAX_SCOPE_LENGTH} characters`
   // eslint-disable-next-line no-control-regex
@@ -1657,11 +1658,12 @@ export class CognitiveSession {
     return this.#exclusive(async () => {
       const title = input.title.trim()
       if (title === '') throw new SessionRefusal('missing_property', 'a thread needs a title')
+      const scope = input.scope === undefined ? undefined : checkedScope(input.scope)
       const thread: Thread = {
         id: `thr_${randomUUID()}`,
         owner: this.#actor,
         title,
-        ...(input.scope === undefined ? {} : { scope: input.scope }),
+        ...(scope === undefined ? {} : { scope }),
         ...(input.hostSession === undefined ? {} : { hostSession: input.hostSession }),
         createdAt: systemClock.now(),
       }
@@ -1812,15 +1814,11 @@ export class CognitiveSession {
       text += `${line}\n`
       ranges.push({ id: turn.id, start, end: start + line.length })
     }
-    // A thread opened in a project or course distills into it, unless the caller names another scope. A thread's
-    // scope is not checked when it is opened, so one that is not a valid scope id is not applied: the thread then
-    // distills without a scope, as every thread did before scopes were applied on accept.
-    const threadScope = view.thread.scope
-    const scope =
-      options.scope ??
-      (threadScope !== undefined && scopeProblem(threadScope) === undefined
-        ? threadScope
-        : undefined)
+    const problem = options.scope === undefined ? undefined : scopeProblem(options.scope)
+    if (problem !== undefined) {
+      return Promise.resolve({ ok: false, refusal: { code: 'invalid_scope', message: problem } })
+    }
+    const scope = options.scope?.trim() ?? view.thread.scope
     return this.distill(
       { title: view.thread.title, text },
       {
@@ -1886,10 +1884,13 @@ export class CognitiveSession {
    */
   grantDelegation(scope = '*'): Promise<Delegation> {
     return this.#exclusive(async () => {
+      const trimmed = scope.trim()
+      if (trimmed === '') throw new SessionRefusal('missing_property', 'a scope cannot be blank')
+      const effectiveScope = trimmed === '*' ? '*' : checkedScope(trimmed)
       const delegation: Delegation = {
         id: `del_${randomUUID()}`,
         owner: this.#actor,
-        scope: scope.trim() === '' ? '*' : scope.trim(),
+        scope: effectiveScope,
         grantedAt: systemClock.now(),
       }
       await this.#suggestions.putDelegation(delegation)
