@@ -187,6 +187,7 @@ export {
   contextSummary,
   settledUnderstanding,
   hasOpenConflict,
+  isOpenConflict,
   toAgentContext,
 } from './retrieval/index.js'
 export type {

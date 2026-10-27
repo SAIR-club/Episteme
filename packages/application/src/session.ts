@@ -33,6 +33,7 @@ import {
   type PublicationDraft,
   type PublicationPreview,
   type Withdrawal,
+  isOpenConflict,
   toAgentContext,
   type RankedEntry,
   type RelevantContext,
@@ -1232,7 +1233,7 @@ export class CognitiveSession {
         dimensions.find((entry) => entry.id === id)?.level
 
       const openConflicts = dimensions
-        .filter((entry) => entry.id === DIMENSION.conflict && entry.level !== 'none')
+        .filter((entry) => entry.id === DIMENSION.conflict && isOpenConflict(entry.level))
         .map((entry) => entry.level)
 
       // Same predicate as `retrieveWith`: a dimension in its settled band makes the item buildable.

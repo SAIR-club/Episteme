@@ -121,7 +121,8 @@ context.summary // one readable line, '' when nothing is recorded
 ```
 
 `known` carries per-node state, a `settled` predicate over `confidence`/`articulation`, and any
-`openConflicts`. Two details are deliberate:
+`openConflicts`: a conflict level of `suspected` or `open` (`isOpenConflict`). A conflict marked `resolved`
+has been worked through and is not listed. Two details are deliberate:
 
 - **`summary` is `''` when nothing is recorded**, not a sentence saying so. "Nothing" must be
   distinguishable from "something" _as data_, because a responder branches on it; the display form is
