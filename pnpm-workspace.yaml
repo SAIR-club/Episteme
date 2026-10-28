@@ -3,9 +3,10 @@ packages:
   - 'apps/*'
   - 'tests'
 
-# pnpm blocks dependency build scripts by default. esbuild's postinstall fetches the
-# platform binary that Vitest needs, so it is the one allowance we make explicitly
-# instead of approving builds interactively.
+# pnpm blocks dependency build scripts by default. Each allowance is explicit instead of
+# approved interactively: esbuild's postinstall fetches the platform binary that Vitest needs,
+# and better-sqlite3's fetches the prebuilt SQLite driver for @episteme/storage-sqlite.
 allowBuilds:
+  better-sqlite3: true
   esbuild: true
   simple-git-hooks: true

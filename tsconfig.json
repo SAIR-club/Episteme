@@ -6,6 +6,7 @@
     { "path": "packages/core" },
     { "path": "packages/storage-memory" },
     { "path": "packages/storage-local" },
+    { "path": "packages/storage-sqlite" },
     { "path": "packages/agent" },
     { "path": "packages/sdk" },
     { "path": "packages/application" },

@@ -164,6 +164,7 @@ episteme/
 │   ├── domain-learn/       Learn domain pack: vocabulary, rules and the retrievers
 │   ├── storage-memory/     In-memory GraphStorageAdapter
 │   ├── storage-local/      Durable GraphStorageAdapter + event store (append-only JSONL)
+│   ├── storage-sqlite/     The same records in one SQLite file, held by an OS lock (ADR 0017)
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
 │   ├── application/        The use-case layer every surface drives (LearnSession)
