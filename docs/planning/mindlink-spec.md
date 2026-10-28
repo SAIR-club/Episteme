@@ -83,7 +83,7 @@
 | -- | ------ | -------- | ---- |
 | 基础积木 | 一个最小的教学动作，可以被很多活动复用 | 积木用到的工具 | 预测问题、挑出待复习、自测、复述检查、提交蒸馏 |
 | 活动积木 | 一个完整的学习环节 | 基础积木、工具 | `guide`、`review`、`feynman`、`explain` |
-| 工作流 | 一次学习的安排 | 活动积木、片段 | `speedrun`、`practice`、`deep` |
+| 工作流 | 一次学习的安排 | 活动积木、片段 | `speedrun`、`apply`、`deep` |
 
 - **目录结构类似 skill**：`BLOCK.md`（元数据和主说明，含 tell / hint / ask 三档）、`references/`（按需读取的资料）、`examples/`（示例对话，同时作为测试数据）。
 - **按需加载**：引擎按活动排进度；`workflow_next` 只返回当前活动当前强度的说明和子步骤清单；agent 执行到某个基础积木时再用 `block_read` 读详细说明。
@@ -146,7 +146,7 @@ MindLink 只能通过 `SceneView` 和公开的 REST 接口使用 Episteme。以�
 | 12 | 积木 | 基础积木 | 预测问题、挑出待复习、自测、复述检查、提交蒸馏等共用动作 | 8 | 新开 |
 | 13 | 积木 | 活动积木：定向与获取 | goal、diagnose、map、path、sources、explain、example | 8、12 | #6 |
 | 14 | 积木 | 活动积木：构建、检验与沉淀 | model、practice、recall、feynman、conflict、transfer、distill、compare、review、guide | 8、12 | #7 |
-| 15 | 积木 | 内置工作流与片段 | `speedrun`、`practice`、`deep` 和几个片段 | 13、14 | 新开 |
+| 15 | 积木 | 内置工作流与片段 | `speedrun`、`apply`、`deep` 和几个片段 | 13、14 | 新开 |
 | 16 | 共享 | 共享 | 发布、浏览、详情、复用、更新、课程卡点、recall 里的出处；对应的页面 | 2、4 | #13 |
 | 17 | 组装 | 项目首页 | 拼接进度、当前工作流步骤、待复习的条目、积木的结果统计 | 6、9、10 | 新开 |
 
