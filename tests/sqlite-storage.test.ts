@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process'
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CognitiveSession, GraphLockedError, copyGraph } from '@episteme/application'
+import {
+  CognitiveSession,
+  GraphLockedError,
+  UnfinishedGraphCopyError,
+  copyGraph,
+} from '@episteme/application'
 import { EpistemeError } from '@episteme/core'
 import { startService } from '@episteme/service'
 import { openLocalStorage } from '@episteme/storage-local'
@@ -171,12 +176,15 @@ describe('moving a graph between JSONL and SQLite', () => {
     )
   })
 
-  it('never copies into a graph that already has a history or companion files', async () => {
+  it('never copies over an existing graph or companion file, and leaves them as they were', async () => {
     const jsonl = join(directory, 'learn.jsonl')
     await writeClaim(jsonl, 'First')
-    await writeClaim(graph, 'Already here')
+    const kept = await writeClaim(graph, 'Already here')
 
-    await expect(copyGraph(jsonl, graph)).rejects.toThrow(/already holds a history/)
+    await expect(copyGraph(jsonl, graph)).rejects.toThrow(/already exists/)
+    const untouched = await CognitiveSession.open({ filePath: graph })
+    expect(untouched.listNodes().map((node) => node.nodeId)).toEqual([kept])
+    await untouched.close()
     const fresh = join(directory, 'fresh.db')
     await writeFile(`${fresh}.threads.jsonl`, '', 'utf8')
     await expect(copyGraph(jsonl, fresh)).rejects.toThrow(/already exists/)
@@ -195,5 +203,65 @@ describe('moving a graph between JSONL and SQLite', () => {
     const holder = await CognitiveSession.open({ filePath: jsonl })
     await expect(copyGraph(jsonl, graph)).rejects.toBeInstanceOf(GraphLockedError)
     await holder.close()
+    expect(await exists(graph)).toBe(false)
+    expect(await exists(`${graph}.copying`)).toBe(false)
+  })
+
+  it('removes everything it wrote when copying a companion file fails, so the copy can simply be run again', async () => {
+    const jsonl = join(directory, 'learn.jsonl')
+    const nodeId = await writeClaim(jsonl, 'Order matters to attention')
+    const session = await CognitiveSession.open({ filePath: jsonl })
+    await session.openThread({ title: 'Position encoding' })
+    await session.close()
+
+    // The threads file cannot be copied: a directory stands where it should be, so copying it is an I/O error
+    // raised after the graph itself has been saved into the target.
+    const threads = `${jsonl}.threads.jsonl`
+    await rename(threads, `${threads}.aside`)
+    await mkdir(threads)
+    await expect(copyGraph(jsonl, graph)).rejects.toThrow()
+
+    for (const path of [graph, `${graph}-wal`, `${graph}.copying`, `${graph}.threads.jsonl`]) {
+      expect(await exists(path)).toBe(false)
+    }
+    await rm(threads, { recursive: true })
+    await rename(`${threads}.aside`, threads)
+    // The source was released again.
+    const reopened = await CognitiveSession.open({ filePath: jsonl })
+    await reopened.close()
+    await copyGraph(jsonl, graph)
+    const copied = await CognitiveSession.open({ filePath: graph })
+    expect(copied.listNodes().map((node) => node.nodeId)).toContain(nodeId)
+    expect(copied.threads().map((thread) => thread.title)).toEqual(['Position encoding'])
+    await copied.close()
+  })
+
+  it('refuses the target of a copy that was killed part way, and starts over when the copy is run again', async () => {
+    const jsonl = join(directory, 'learn.jsonl')
+    const nodeId = await writeClaim(jsonl, 'From the source')
+    await writeFile(`${jsonl}.threads.jsonl`, '', 'utf8')
+
+    // What a copy killed after saving the graph leaves: the graph, no companion files, and its marker.
+    await writeClaim(graph, 'Half of a copy')
+    await writeFile(`${graph}.copying`, `${JSON.stringify({ from: jsonl })}\n`, 'utf8')
+
+    const refusal = await CognitiveSession.open({ filePath: graph }).catch(
+      (error: unknown) => error,
+    )
+    expect(refusal).toBeInstanceOf(UnfinishedGraphCopyError)
+    // Nor can it be copied onward as if it were whole.
+    await expect(copyGraph(graph, join(directory, 'onward.jsonl'))).rejects.toBeInstanceOf(
+      UnfinishedGraphCopyError,
+    )
+
+    await copyGraph(jsonl, graph)
+    expect(await exists(`${graph}.copying`)).toBe(false)
+    expect(await exists(`${graph}.threads.jsonl`)).toBe(true)
+    const finished = await CognitiveSession.open({ filePath: graph })
+    const ids = finished.listNodes().map((node) => node.nodeId)
+    expect(ids).toContain(nodeId)
+    expect(finished.listNodes().map((node) => node.label)).not.toContain('Half of a copy')
+    expect(ids.length).toBe(1)
+    await finished.close()
   })
 })

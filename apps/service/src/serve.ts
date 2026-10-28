@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { GraphLockedError, copyGraph, isSqliteGraph } from '@episteme/application'
+import {
+  GraphLockedError,
+  UnfinishedGraphCopyError,
+  copyGraph,
+  isSqliteGraph,
+} from '@episteme/application'
 import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
 import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
@@ -75,7 +80,19 @@ function optionValue(args: readonly string[], ...names: readonly string[]): stri
   return undefined
 }
 
-/** Why the graph could not be opened, in words a person can act on. */
+/** Why the graph could not be opened, in words a person can act on, or `undefined` for any other failure. */
+function refusalMessage(error: unknown): string | undefined {
+  if (error instanceof GraphLockedError) return lockedMessage(error)
+  if (error instanceof UnfinishedGraphCopyError) {
+    return (
+      `这个图谱是一次没有完成的复制的目标，可能缺少记录或附属文件，所以不会打开：\n  ${error.graphPath}\n` +
+      `请重新运行同一条 graph import / graph export 命令，它会清掉上次写了一半的文件再重来。原图谱不受影响。`
+    )
+  }
+  return undefined
+}
+
+/** Why the graph is locked, in words a person can act on. */
 function lockedMessage(error: GraphLockedError): string {
   if (error.holderRunning) {
     const holder = error.holderPid === undefined ? '' : `（PID ${error.holderPid}）`
@@ -94,9 +111,7 @@ if (argv[0] === 'graph') {
   try {
     await moveGraph(argv)
   } catch (error) {
-    process.stderr.write(
-      `${error instanceof GraphLockedError ? lockedMessage(error) : (error as Error).message}\n`,
-    )
+    process.stderr.write(`${refusalMessage(error) ?? (error as Error).message}\n`)
     process.exit(1)
   }
   process.exit(0)
@@ -213,9 +228,10 @@ try {
       : {}),
   })
 } catch (error) {
-  // Only the one failure a person can act on is translated. Anything else is a bug and keeps its stack.
-  if (!(error instanceof GraphLockedError)) throw error
-  process.stderr.write(`${lockedMessage(error)}\n`)
+  // Only the failures a person can act on are translated. Anything else is a bug and keeps its stack.
+  const message = refusalMessage(error)
+  if (message === undefined) throw error
+  process.stderr.write(`${message}\n`)
   process.exit(1)
 }
 

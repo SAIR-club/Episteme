@@ -34,9 +34,14 @@ Node release the project supports (Node 20 to 26, Windows x64 included), so inst
    JSONL, so the default graph and every existing one are untouched. The driver is loaded only for a SQLite
    graph.
 5. **Moving between them.** `copyGraph(from, to)` copies a graph into the backend the target path names, with its
-   companion files (drafts, sources, threads, scene records), and never into a graph that already has a history.
-   The service exposes it as `graph import` (JSONL to SQLite) and `graph export` (SQLite to JSONL), so a graph
-   stays readable as plain text whenever someone wants to inspect it.
+   companion files (drafts, sources, threads, scene records). The service exposes it as `graph import` (JSONL to
+   SQLite) and `graph export` (SQLite to JSONL), so a graph stays readable as plain text whenever someone wants to
+   inspect it.
+   - It never writes over anything: no file of the target, graph or companion, may exist yet.
+   - It is all or nothing across the files. SQLite's transaction covers the graph only, not the companion files,
+     so a marker (`<target>.copying`) is written first and removed last, and a graph with a marker is refused as
+     unfinished. A copy that fails removes what it wrote; a copy that is killed leaves the marker, and running
+     the same copy again removes what the killed one wrote and starts over.
 
 ## Not in this decision
 
