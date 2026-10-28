@@ -4,8 +4,8 @@ Durable local storage: one append-only JSONL file that implements both the graph
 event-log port.
 
 This is what makes a user's understanding outlive the process. See
-[ADR 0006](../../docs/decisions/0006-persistence-format.md) for why the format is JSONL rather than
-SQLite, and [state-events.md](../../docs/architecture/state-events.md) for what is being stored.
+[ADR 0006](../../docs/decisions/0006-persistence-format.md) for why the format is JSONL,
+[ADR 0017](../../docs/decisions/0017-sqlite-storage.md) for the SQLite backend beside it, and [state-events.md](../../docs/architecture/state-events.md) for what is being stored.
 
 ## Usage
 

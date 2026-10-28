@@ -17,6 +17,11 @@
     "@episteme/sdk": "workspace:*",
     "@episteme/service": "workspace:*",
     "@episteme/storage-local": "workspace:*",
-    "@episteme/storage-memory": "workspace:*"
+    "@episteme/storage-memory": "workspace:*",
+    "@episteme/storage-sqlite": "workspace:*",
+    "better-sqlite3": "12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
   }
 }

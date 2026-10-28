@@ -1,0 +1,30 @@
+{
+  "name": "@episteme/storage-sqlite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable storage for Episteme in one SQLite file (WAL, held exclusively): the same records as the JSONL backend, with crash safety and a lock the operating system releases.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/core": "workspace:*",
+    "@episteme/storage-local": "workspace:*",
+    "better-sqlite3": "12.11.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13"
+  }
+}

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access, copyFile } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import {
   DeterministicEmbeddingAdapter,
   InMemoryEmbeddingCache,
@@ -75,11 +75,11 @@ import {
   type HostItem,
 } from '@episteme/distillation'
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
-import { openLocalStorage } from '@episteme/storage-local'
 import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './scene-records.js'
 import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
 import { learnScene } from './learn-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
+import { companionPath, openGraphStorage } from './graph-files.js'
 
 const DIMENSION = {
   confidence: asId<DimensionId>('confidence'),
@@ -645,7 +645,7 @@ export class CognitiveSession {
       })
     }
 
-    const storage = await openLocalStorage(options.filePath)
+    const storage = await openGraphStorage(options.filePath)
     let episteme: Episteme
     let suggestions: SuggestionStore
     let sources: SourceStore
@@ -654,12 +654,12 @@ export class CognitiveSession {
     try {
       episteme = await openEpisteme(storage, { actors, actorId: HUMAN, packs })
       // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
-      suggestions = await SuggestionStore.open(suggestionsPathFor(options.filePath))
+      suggestions = await SuggestionStore.open(companionPath(options.filePath, 'suggestions'))
       // Material distilled into this graph, kept beside it like the drafts and owned with it.
-      sources = await SourceStore.open(`${options.filePath}.sources.jsonl`)
+      sources = await SourceStore.open(companionPath(options.filePath, 'sources'))
       // Conversations and a scene's own records, beside the graph and owned with it (ADR 0015).
-      threads = await ThreadStore.open(`${options.filePath}.threads.jsonl`)
-      records = await SceneRecordStore.open(`${options.filePath}.scene.jsonl`)
+      threads = await ThreadStore.open(companionPath(options.filePath, 'threads'))
+      records = await SceneRecordStore.open(companionPath(options.filePath, 'records'))
     } catch (error) {
       // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
       await storage.close()
@@ -1637,16 +1637,23 @@ export class CognitiveSession {
     }
   }
 
-  /** Copies the graph file aside once, before the first publication is written into it. */
+  /** Copies the graph aside once, before the first publication is written into it. */
   async #backUpBeforeFirstPublication(): Promise<void> {
     const file = this.#parts.filePath
-    if (file === undefined || this.#episteme.log.publications.all().length > 0) return
+    const store = this.#parts.store
+    if (
+      file === undefined ||
+      store === undefined ||
+      this.#episteme.log.publications.all().length > 0
+    ) {
+      return
+    }
     const backup = `${file}.before-sharing`
     const exists = await access(backup).then(
       () => true,
       () => false,
     )
-    if (!exists) await copyFile(file, backup)
+    if (!exists) await store.backUp(backup)
   }
 
   /** Opens a conversation thread for this person (ADR 0015). */
@@ -3293,15 +3300,12 @@ function normalized(proposal: Proposal): Proposal {
   return { ...proposal, about: [...new Set(proposal.about)] }
 }
 
-/** Drafts live beside the graph file they are about, and are owned with it. */
-function suggestionsPathFor(graphPath: string): string {
-  return `${graphPath}.suggestions.jsonl`
-}
-
 /** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
 interface Store {
   save(state?: unknown): Promise<void>
   close(): Promise<void>
+  /** Copies the graph as last saved, in its own format. */
+  backUp(target: string): Promise<void>
 }
 
 /** Turns the retrieval's recorded contributions into something a view can render. */
