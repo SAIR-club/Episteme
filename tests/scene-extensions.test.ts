@@ -577,3 +577,33 @@ describe('a profile that cannot be served', () => {
     await second.close()
   })
 })
+
+describe('a scene with custom evaluationPolicy', () => {
+  it('computes attention and progress from the scene policy', async () => {
+    const customPolicy = {
+      attentionLevels: ['disputed', 'aligned'],
+      isSettled: (dims: readonly { readonly id: string; readonly level: string }[]) =>
+        dims.some((d) => d.id === 'stance' && d.level === 'agree'),
+      evaluateAttention: (dims: readonly { readonly id: string; readonly level: string }[]) =>
+        dims.some((d) => d.id === 'stance' && d.level === 'agree') ? 'aligned' : 'disputed',
+      progressLine: (touched: number, settled: number) =>
+        `Custom: ${touched} touched, ${settled} aligned`,
+    }
+
+    const sceneWithPolicy: SessionScene = {
+      ...DEBATE_SCENE,
+      evaluationPolicy: customPolicy,
+    }
+
+    const session = await CognitiveSession.open({ scene: sceneWithPolicy })
+    const claim = await session.addNode({ kind: 'claim', label: 'Custom evaluation node' })
+    await session.record(claim.nodeId, { stance: 'agree' })
+
+    const progress = session.progress()
+    expect(progress.summary).toBe('Custom: 1 touched, 1 aligned')
+    expect(progress.settled).toBe(1)
+    expect(progress.items[0]?.attention).toBe('aligned')
+    expect(progress.items[0]?.settled).toBe(true)
+    await session.close()
+  })
+})

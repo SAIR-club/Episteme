@@ -9,7 +9,7 @@ import type {
   Suggestion,
 } from '@episteme/agent'
 import {
-  LearnSession,
+  CognitiveSession,
   defaultDistillationPolicy as learnDistillationPolicy,
 } from '@episteme/application'
 import { RuleBasedDistiller, distill, type Candidate } from '@episteme/distillation'
@@ -128,13 +128,13 @@ describe('the canonical text, and spans that point into it', () => {
     const sent = '学生：café 是什么意思？\r\n老师：Café 的 crème 来自法语。\r\n'.replace(/é/gu, 'é')
     const quote = 'crème 来自法语'
     const graph = join(directory, 'learn.jsonl')
-    let session = await LearnSession.open({ filePath: graph })
+    let session = await CognitiveSession.open({ filePath: graph })
     const outcome = await session.distill(
       { text: sent },
       { agent: reader({ structure: { 1: [claim('c1', 'Crème comes from French', quote)] } }) },
     )
     expect(outcome.ok).toBe(true)
-    const check = (current: LearnSession): void => {
+    const check = (current: CognitiveSession): void => {
       const [source] = current.sources()
       const [pending] = current.pendingSuggestions()
       expect(source?.text).toBe(sent.replace(/\r\n/gu, '\n').normalize('NFC'))
@@ -146,7 +146,7 @@ describe('the canonical text, and spans that point into it', () => {
     }
     check(session)
     await session.close()
-    session = await LearnSession.open({ filePath: graph })
+    session = await CognitiveSession.open({ filePath: graph })
     check(session)
     await session.close()
   })
@@ -352,11 +352,11 @@ describe('conflict, as distillation may suggest it', () => {
 describe('in the session', () => {
   let directory: string
   let graph: string
-  let session: LearnSession
+  let session: CognitiveSession
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-strict-session-'))
     graph = join(directory, 'learn.jsonl')
-    session = await LearnSession.open({ filePath: graph })
+    session = await CognitiveSession.open({ filePath: graph })
     await session.addNode({ label: '自注意力不区分顺序', kind: 'claim' })
     await session.flush()
   })

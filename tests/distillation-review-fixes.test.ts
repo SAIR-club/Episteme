@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, MAX_PENDING, type Suggestion } from '@episteme/application'
+import { CognitiveSession, MAX_PENDING, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -23,7 +23,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-async function distilled(session: LearnSession): Promise<readonly Suggestion[]> {
+async function distilled(session: CognitiveSession): Promise<readonly Suggestion[]> {
   const outcome = await session.distill({ text: MATERIAL })
   if (!outcome.ok) throw new Error(outcome.refusal.message)
   return outcome.suggestions
@@ -38,14 +38,14 @@ const questionOf = (suggestions: readonly Suggestion[]): Suggestion => {
   return question
 }
 
-const revokedClaims = (session: LearnSession) =>
+const revokedClaims = (session: CognitiveSession) =>
   Array.from({ length: 10 }, (_, index) =>
     session.graph.getNode(`claim_${index + 1}` as never),
   ).filter((node) => node?.revoked === true)
 
 describe('a claim about a candidate', () => {
   it('waits for the candidate, then is accepted about the node it became, leaving nothing revoked', async () => {
-    const session = await LearnSession.open()
+    const session = await CognitiveSession.open()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const proposed = await session.propose(
@@ -72,7 +72,7 @@ describe('a claim about a candidate', () => {
   })
 
   it('is refused, leaving nothing revoked, once the candidate was dismissed', async () => {
-    const session = await LearnSession.open()
+    const session = await CognitiveSession.open()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const proposed = await session.propose(
@@ -96,7 +96,7 @@ describe('a claim about a candidate', () => {
 
 describe('a distilled node put in the learner’s own words', () => {
   it('keeps its text with the label as decided', async () => {
-    const session = await LearnSession.open()
+    const session = await CognitiveSession.open()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const decided = await session.decide(
@@ -118,7 +118,7 @@ describe('a distilled node put in the learner’s own words', () => {
 
 describe('the pending limit', () => {
   it('refuses a run that would take the queue past it, keeping nothing', async () => {
-    const session = await LearnSession.open()
+    const session = await CognitiveSession.open()
     await seedTopic(session)
     for (let index = 0; index < MAX_PENDING - 1; index += 1) {
       const proposed = await session.propose({ kind: 'claim', label: `claim ${index}` }, agent)
@@ -146,7 +146,7 @@ describe('a distillation whose drafts fail to be written', () => {
 
   it('keeps no draft in memory that the file does not hold', async () => {
     const filePath = join(directory, 'learn.jsonl')
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await seedTopic(session)
     fsPromises.rename = async (from: string, to: string) => {
       if (to.endsWith('.suggestions.jsonl')) throw new Error('injected: no space left on device')
@@ -159,7 +159,7 @@ describe('a distillation whose drafts fail to be written', () => {
     fsPromises.rename = realRename
     syncBuiltinESMExports()
     await session.close()
-    const reopened = await LearnSession.open({ filePath })
+    const reopened = await CognitiveSession.open({ filePath })
     expect(reopened.pendingSuggestions()).toEqual([])
     await reopened.close()
   })

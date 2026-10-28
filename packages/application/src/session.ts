@@ -1221,6 +1221,7 @@ export class CognitiveSession {
    * relevance signal is built on, and the two would disagree about the same learner.
    */
   progress(): ProgressSummary {
+    const policy = this.#scene.evaluationPolicy
     const items: ProgressItem[] = []
 
     for (const node of this.listNodes()) {
@@ -1230,19 +1231,20 @@ export class CognitiveSession {
       const dimensions = [...state]
         .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
         .sort((left, right) => (left.id < right.id ? -1 : 1))
-      const levelOf = (id: string): string | undefined =>
-        dimensions.find((entry) => entry.id === id)?.level
 
       const openConflicts = dimensions
         .filter((entry) => entry.id === DIMENSION.conflict && isOpenConflict(entry.level))
         .map((entry) => entry.level)
 
-      // Same predicate as `retrieveWith`: a dimension in its settled band makes the item buildable.
-      const settled =
-        (['medium', 'high'] as const).includes(
-          levelOf(DIMENSION.confidence) as 'medium' | 'high',
-        ) &&
-        (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
+      const settled = policy?.isSettled
+        ? policy.isSettled(dimensions)
+        : defaultIsSettled(dimensions)
+
+      const attention = (
+        policy?.evaluateAttention
+          ? policy.evaluateAttention(dimensions, openConflicts)
+          : defaultAttentionFor(dimensions, settled, openConflicts)
+      ) as AttentionReason
 
       items.push({
         nodeId: node.nodeId,
@@ -1251,17 +1253,23 @@ export class CognitiveSession {
         dimensions,
         settled,
         openConflicts,
-        attention: attentionFor(dimensions, settled, openConflicts),
+        attention,
       })
     }
 
-    // Most in need of attention first, so the panel opens on something worth doing rather than on whatever
-    // happened to be recorded first. `shaky` precedes `unexplained`: an item with no ground under it is the
-    // more urgent of the two, since there is nothing to build on at all.
-    const order = { conflict: 0, shaky: 1, unexplained: 2, settled: 3 } as const
+    // Most in need of attention first
+    const attentionLevels = policy?.attentionLevels ?? [
+      'conflict',
+      'shaky',
+      'unexplained',
+      'settled',
+    ]
+    const order = new Map(attentionLevels.map((level, idx) => [level, idx]))
     items.sort((left, right) => {
-      if (order[left.attention] !== order[right.attention]) {
-        return order[left.attention] - order[right.attention]
+      const leftOrder = order.get(left.attention) ?? 999
+      const rightOrder = order.get(right.attention) ?? 999
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder
       }
       return left.label < right.label ? -1 : 1
     })
@@ -1273,7 +1281,9 @@ export class CognitiveSession {
       withOpenConflict: items.filter((item) => item.openConflicts.length > 0).length,
       totalNodes: this.listNodes().length,
       items,
-      summary: progressLine(items.length, settledCount),
+      summary: policy?.progressLine
+        ? policy.progressLine(items.length, settledCount)
+        : progressLine(items.length, settledCount),
     }
   }
 
@@ -3406,6 +3416,17 @@ function explainSignalZh(signal: string, value: number, matchedTerms: readonly s
   }
 }
 
+function defaultIsSettled(
+  dimensions: readonly { readonly id: string; readonly level: string }[],
+): boolean {
+  const levelOf = (id: string): string | undefined =>
+    dimensions.find((entry) => entry.id === id)?.level
+  return (
+    (['medium', 'high'] as const).includes(levelOf(DIMENSION.confidence) as 'medium' | 'high') &&
+    (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
+  )
+}
+
 /**
  * Classifies one recorded item by what would help the learner next.
  *
@@ -3413,7 +3434,7 @@ function explainSignalZh(signal: string, value: number, matchedTerms: readonly s
  * refuses to build on. Surfacing a settled item by mistake is a smaller failure than ignoring a conflict the
  * learner took the trouble to mark.
  */
-function attentionFor(
+function defaultAttentionFor(
   dimensions: readonly { readonly id: string; readonly level: string }[],
   settled: boolean,
   openConflicts: readonly string[],
@@ -3444,8 +3465,3 @@ function progressLine(touched: number, settled: number): string {
   if (touched === 0) return '你还没有记录过任何理解'
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }
-
-/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3); the alias is removed one release later. */
-export const LearnSession = CognitiveSession
-/** @deprecated Renamed to `CognitiveSession` (ADR 0013, step M3). */
-export type LearnSession = CognitiveSession

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startService, type EpistemeService } from '@episteme/service'
-import { LearnSession, type DecisionResult, type Suggestion } from '@episteme/application'
+import { CognitiveSession, type DecisionResult, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -33,13 +33,13 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-async function openSeeded(): Promise<LearnSession> {
-  const session = await LearnSession.open({ filePath: join(directory, 'learn.jsonl') })
+async function openSeeded(): Promise<CognitiveSession> {
+  const session = await CognitiveSession.open({ filePath: join(directory, 'learn.jsonl') })
   await seedTopic(session)
   return session
 }
 
-async function pending(session: LearnSession): Promise<Suggestion> {
+async function pending(session: CognitiveSession): Promise<Suggestion> {
   const result = await session.propose(STATE, {
     proposedBy: 'actor_agent_race',
     rationale: 'r',
@@ -48,7 +48,7 @@ async function pending(session: LearnSession): Promise<Suggestion> {
   return result.suggestion
 }
 
-function eventsOn(session: LearnSession, target: string): number {
+function eventsOn(session: CognitiveSession, target: string): number {
   return session.log.history({ target: asId<NodeId>(target), actorId: session.actorId }).length
 }
 
@@ -208,7 +208,7 @@ describe('the queue itself', () => {
     const closing = session.close()
     await Promise.all([recording, closing])
 
-    const reopened = await LearnSession.open({ filePath: join(directory, 'learn.jsonl') })
+    const reopened = await CognitiveSession.open({ filePath: join(directory, 'learn.jsonl') })
     expect(reopened.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'high' }])
     await reopened.close()
   })

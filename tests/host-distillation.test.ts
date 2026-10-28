@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  LearnSession,
+  CognitiveSession,
   SourceStore,
   SuggestionStore,
   payloadDigest,
@@ -81,12 +81,12 @@ const CORRECTION: readonly HostItem[] = [
 
 let directory: string
 let graph: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-host-'))
   graph = join(directory, 'learn.jsonl')
-  session = await LearnSession.open({ filePath: graph })
+  session = await CognitiveSession.open({ filePath: graph })
 })
 
 afterEach(async () => {
@@ -447,7 +447,7 @@ describe('drafts that failed to land (fault injection)', () => {
   const unblock = () => rm(blocked(), { recursive: true, force: true })
   const restart = async () => {
     await session.close()
-    session = await LearnSession.open({ filePath: graph })
+    session = await CognitiveSession.open({ filePath: graph })
   }
   const landingRecords = async () =>
     (await readFile(`${graph}.suggestions.jsonl`, 'utf8').catch(() => ''))

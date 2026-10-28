@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  LearnSession,
+  CognitiveSession,
   MAX_MATERIAL,
   type DistillOutcome,
   type Suggestion,
@@ -24,12 +24,12 @@ const DIALOGUE = [
 
 let directory: string
 let filePath: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-distil-'))
   filePath = join(directory, 'learn.jsonl')
-  session = await LearnSession.open({ filePath })
+  session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
 })
 
@@ -272,7 +272,7 @@ describe('deciding what was distilled', () => {
     )
     await session.close()
 
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(session.sources().map((source) => source.id)).toEqual([outcome.sourceId])
     expect(session.pendingSuggestions()).toHaveLength(8)
     const state = find({ suggestions: session.pendingSuggestions() }, stateChange)
