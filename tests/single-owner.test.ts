@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GraphLockedError, LearnSession } from '@episteme/application'
 import { startService } from '@episteme/service'
@@ -83,19 +83,95 @@ describe('the storage adapter', () => {
     await first.close()
   })
 
-  it('does not reclaim a lock left by a process that is gone, and says how to remove it', async () => {
+  it('reclaims a lock left on this machine by a process that is gone', async () => {
     const pid = exitedPid()
-    await writeFile(`${filePath}.lock`, `${JSON.stringify({ pid })}\n`, 'utf8')
+    await writeFile(
+      `${filePath}.lock`,
+      `${JSON.stringify({ pid, host: hostname() })}
+`,
+      'utf8',
+    )
 
-    const refusal = await openLocalStorage(filePath).catch((error: unknown) => error)
-    expect(refusal).toBeInstanceOf(GraphLockedError)
-    const locked = refusal as GraphLockedError
-    expect(locked.holderPid).toBe(pid)
-    expect(locked.holderRunning).toBe(false)
-    expect(locked.message).toContain(locked.lockPath)
+    const storage = await openLocalStorage(filePath)
+    expect(JSON.parse(await readFile(storage.lockPath, 'utf8'))).toEqual({
+      pid: process.pid,
+      host: hostname(),
+    })
+    expect(await exists(`${filePath}.lock.reclaim`)).toBe(false)
+    await storage.close()
+    expect(await exists(storage.lockPath)).toBe(false)
+  })
 
-    // Still there: removing it is the learner's decision, because only they know nothing else uses the file.
+  it('lets only one of many openers reclaim the same stale lock', async () => {
+    await writeFile(
+      `${filePath}.lock`,
+      `${JSON.stringify({ pid: exitedPid(), host: hostname() })}
+`,
+      'utf8',
+    )
+
+    // Started together, every opener finds the same stale lock before any of them has replaced it.
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, () => openLocalStorage(filePath)),
+    )
+    const opened = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    )
+    const refused = results.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason as unknown] : [],
+    )
+    expect(opened).toHaveLength(1)
+    expect(refused).toHaveLength(7)
+    for (const reason of refused) expect(reason).toBeInstanceOf(GraphLockedError)
+    expect(JSON.parse(await readFile(`${filePath}.lock`, 'utf8'))).toMatchObject({
+      pid: process.pid,
+    })
+    await Promise.all(opened.map((storage) => storage.close()))
+  })
+
+  for (const [why, holder] of [
+    ['another machine', { host: 'some-other-machine' }],
+    ['no machine, as locks written before this release do', {}],
+  ] as const) {
+    it(`does not reclaim a lock from ${why}, and says how to remove it`, async () => {
+      const pid = exitedPid()
+      await writeFile(
+        `${filePath}.lock`,
+        `${JSON.stringify({ pid, ...holder })}
+`,
+        'utf8',
+      )
+
+      const refusal = await openLocalStorage(filePath).catch((error: unknown) => error)
+      expect(refusal).toBeInstanceOf(GraphLockedError)
+      const locked = refusal as GraphLockedError
+      expect(locked.holderPid).toBe(pid)
+      expect(locked.holderRunning).toBe(false)
+      expect(locked.message).toContain(locked.lockPath)
+
+      // Whether that process still runs cannot be told from here, so removing it stays the learner's decision.
+      expect(await exists(`${filePath}.lock`)).toBe(true)
+    })
+  }
+
+  it('does not reclaim while another process is reclaiming', async () => {
+    await writeFile(
+      `${filePath}.lock`,
+      `${JSON.stringify({ pid: exitedPid(), host: hostname() })}
+`,
+      'utf8',
+    )
+    await writeFile(
+      `${filePath}.lock.reclaim`,
+      `${JSON.stringify({ pid: process.pid })}
+`,
+      'utf8',
+    )
+
+    await expect(openLocalStorage(filePath)).rejects.toBeInstanceOf(GraphLockedError)
     expect(await exists(`${filePath}.lock`)).toBe(true)
+    // The other reclaim's file is its own to remove.
+    expect(await exists(`${filePath}.lock.reclaim`)).toBe(true)
   })
 
   it('treats an unreadable lock as held rather than as absent', async () => {

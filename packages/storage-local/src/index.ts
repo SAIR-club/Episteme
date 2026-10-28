@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs'
+import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 import { EpistemeError, asId, fromSerializedEvent, toSerializedEvent } from '@episteme/core'
 import type {
@@ -115,8 +116,9 @@ function isKnownKind(value: unknown): value is PersistedRecordKind {
  * only safe answer. Waiting would hang a second surface indefinitely, and a private copy is that same silent
  * divergence.
  *
- * A lock whose holder is no longer running is **not** reclaimed automatically. Two processes that both found
- * it stale could both reclaim it, so the error says how to remove it instead.
+ * A lock left on this machine by a process that is no longer running is reclaimed when the graph is next opened
+ * (see `LocalStorageAdapter.open`), so this error is about a lock that could not be: its holder is running, it
+ * names another machine or none, or it cannot be read.
  */
 export class GraphLockedError extends Error {
   readonly lockPath: string
@@ -159,8 +161,8 @@ let releaseOnExitRegistered = false
  *
  * One listener for the whole process rather than one per adapter, so a process that opens many graphs does
  * not accumulate listeners. Release is synchronous, because nothing asynchronous runs during `exit`. A
- * process killed outright still leaves its lock behind, and `GraphLockedError` then says so. That is the only
- * way a stale lock arises.
+ * process killed outright still leaves its lock behind; that is the only way a stale lock arises, and the next
+ * open on the same machine reclaims it.
  */
 function holdLock(lockPath: string): void {
   HELD_LOCKS.add(lockPath)
@@ -169,6 +171,21 @@ function holdLock(lockPath: string): void {
   process.once('exit', () => {
     for (const held of HELD_LOCKS) rmSync(held, { force: true })
   })
+}
+
+/** What a lock file records about its owner. `host` is missing from a lock written before it was recorded. */
+interface LockHolder {
+  readonly pid: number
+  readonly host: string | undefined
+}
+
+/**
+ * Whether a lock can be reclaimed: written on this machine by a process that is no longer running. Whether a
+ * process runs can only be told for this machine's processes, so a lock from another machine, or one that does
+ * not say which machine, is never stale.
+ */
+function isStale(holder: LockHolder): boolean {
+  return holder.host === hostname() && !isRunning(holder.pid)
 }
 
 /** What a load produced, grouped by kind. */
@@ -230,7 +247,8 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
    *
    * Ownership is taken before reading, so what is read cannot be changed underneath by another owner. It is
    * released again if the read fails, so a corrupt file does not also leave an orphaned lock behind.
-   * Throws `GraphLockedError` when another adapter owns the file.
+   * A lock left on this machine by a process that is no longer running is reclaimed. Throws `GraphLockedError`
+   * when another adapter owns the file, or when its lock cannot be reclaimed.
    */
   async open(): Promise<LoadedState> {
     await this.#acquireLock()
@@ -258,30 +276,90 @@ export class LocalStorageAdapter implements GraphStorageAdapter, PersistentEvent
   }
 
   async #acquireLock(): Promise<void> {
-    const { mkdir, readFile, writeFile } = await import('node:fs/promises')
+    const { mkdir } = await import('node:fs/promises')
 
     // The directory has to exist for the lock to be created in it, and it would have had to exist for the
     // first save anyway. Without this, a fresh default path failed on the first write rather than up front.
     await mkdir(dirname(this.#filePath), { recursive: true })
 
+    if (await this.#createLock()) return
+    const holder = await this.#readLock()
+    if (holder !== undefined && isStale(holder) && (await this.#reclaim(holder))) return
+    throw new GraphLockedError(this.#filePath, this.lockPath, (await this.#readLock())?.pid)
+  }
+
+  /** Takes the lock if nobody holds it. `wx` fails if the file exists, so this is one atomic step. */
+  async #createLock(): Promise<boolean> {
+    const { writeFile } = await import('node:fs/promises')
     try {
-      // `wx` fails if the file exists, so taking the lock is one atomic step rather than a check and a write.
-      await writeFile(this.lockPath, `${JSON.stringify({ pid: process.pid })}\n`, {
-        encoding: 'utf8',
-        flag: 'wx',
-      })
-      this.#ownsLock = true
-      holdLock(this.lockPath)
+      await writeFile(
+        this.lockPath,
+        `${JSON.stringify({ pid: process.pid, host: hostname() })}
+`,
+        { encoding: 'utf8', flag: 'wx' },
+      )
     } catch (error) {
-      if ((error as { code?: string }).code !== 'EEXIST') throw error
-      let holderPid: number | undefined
-      try {
-        const recorded = JSON.parse(await readFile(this.lockPath, 'utf8')) as { pid?: unknown }
-        if (typeof recorded.pid === 'number') holderPid = recorded.pid
-      } catch {
-        // An unreadable lock still holds the graph. The error reports it as unreadable.
+      if ((error as { code?: string }).code === 'EEXIST') return false
+      throw error
+    }
+    this.#ownsLock = true
+    holdLock(this.lockPath)
+    return true
+  }
+
+  /** Who the lock names, or `undefined` when it is gone or cannot be read. An unreadable lock still holds the graph. */
+  async #readLock(): Promise<LockHolder | undefined> {
+    const { readFile } = await import('node:fs/promises')
+    try {
+      const recorded = JSON.parse(await readFile(this.lockPath, 'utf8')) as {
+        pid?: unknown
+        host?: unknown
       }
-      throw new GraphLockedError(this.#filePath, this.lockPath, holderPid)
+      if (typeof recorded.pid !== 'number') return undefined
+      return {
+        pid: recorded.pid,
+        host: typeof recorded.host === 'string' ? recorded.host : undefined,
+      }
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Replaces a stale lock with this adapter's own, unless another process is doing the same.
+   *
+   * Two processes that both found the lock stale must not both take it. Reclaiming is serialized by a second
+   * file, created with `wx` like the lock: only the process that creates it may remove the stale lock. Under
+   * it the lock is read again, and it still names the same dead process only if nobody has taken it since,
+   * because only a reclaimer removes a stale lock and an opener cannot create one while it exists. A process
+   * that finds a reclaim already under way gives up rather than waits. A process killed in this short window
+   * leaves the second file behind; the graph still opens once the lock itself is gone, as before.
+   */
+  async #reclaim(stale: LockHolder): Promise<boolean> {
+    const { rm, writeFile } = await import('node:fs/promises')
+    const guard = `${this.lockPath}.reclaim`
+    try {
+      await writeFile(
+        guard,
+        `${JSON.stringify({ pid: process.pid, host: hostname() })}
+`,
+        {
+          encoding: 'utf8',
+          flag: 'wx',
+        },
+      )
+    } catch (error) {
+      if ((error as { code?: string }).code === 'EEXIST') return false
+      throw error
+    }
+    try {
+      const current = await this.#readLock()
+      if (current?.pid !== stale.pid || current.host !== stale.host || !isStale(current))
+        return false
+      await rm(this.lockPath, { force: true })
+      return await this.#createLock()
+    } finally {
+      await rm(guard, { force: true })
     }
   }
 
