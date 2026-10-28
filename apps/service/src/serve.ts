@@ -2,6 +2,7 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
+  GraphCopyInProgressError,
   GraphLockedError,
   UnfinishedGraphCopyError,
   copyGraph,
@@ -83,10 +84,13 @@ function optionValue(args: readonly string[], ...names: readonly string[]): stri
 /** Why the graph could not be opened, in words a person can act on, or `undefined` for any other failure. */
 function refusalMessage(error: unknown): string | undefined {
   if (error instanceof GraphLockedError) return lockedMessage(error)
+  if (error instanceof GraphCopyInProgressError) {
+    return `正在有一次复制写入这个图谱，等它结束后再试：\n  ${error.graphPath}`
+  }
   if (error instanceof UnfinishedGraphCopyError) {
     return (
       `这个图谱是一次没有完成的复制的目标，可能缺少记录或附属文件，所以不会打开：\n  ${error.graphPath}\n` +
-      `请重新运行同一条 graph import / graph export 命令，它会清掉上次写了一半的文件再重来。原图谱不受影响。`
+      `请重新运行 graph import / graph export 复制到这里，它会先清掉上次写了一半的文件再重来。原图谱不受影响。`
     )
   }
   return undefined

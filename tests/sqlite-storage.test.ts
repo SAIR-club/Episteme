@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
 import { access, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   CognitiveSession,
+  GraphCopyInProgressError,
   GraphLockedError,
   UnfinishedGraphCopyError,
   copyGraph,
@@ -197,22 +198,19 @@ describe('moving a graph between JSONL and SQLite', () => {
     await expect(copyGraph(graph, graph)).rejects.toThrow(/same graph/)
   })
 
-  it('will not copy a graph another process holds', async () => {
+  it('will not copy a graph another process holds, and leaves the target as if it had not tried', async () => {
     const jsonl = join(directory, 'learn.jsonl')
     await writeClaim(jsonl, 'Held')
     const holder = await CognitiveSession.open({ filePath: jsonl })
     await expect(copyGraph(jsonl, graph)).rejects.toBeInstanceOf(GraphLockedError)
     await holder.close()
     expect(await exists(graph)).toBe(false)
-    expect(await exists(`${graph}.copying`)).toBe(false)
+    expect((await copyGraph(jsonl, graph)).records).toBeGreaterThan(0)
   })
 
-  it('removes everything it wrote when copying a companion file fails, so the copy can simply be run again', async () => {
+  it('removes only what it wrote when copying a companion file fails, so the copy can simply be run again', async () => {
     const jsonl = join(directory, 'learn.jsonl')
-    const nodeId = await writeClaim(jsonl, 'Order matters to attention')
-    const session = await CognitiveSession.open({ filePath: jsonl })
-    await session.openThread({ title: 'Position encoding' })
-    await session.close()
+    const nodeId = await sourceWithThread(jsonl)
 
     // The threads file cannot be copied: a directory stands where it should be, so copying it is an I/O error
     // raised after the graph itself has been saved into the target.
@@ -221,7 +219,7 @@ describe('moving a graph between JSONL and SQLite', () => {
     await mkdir(threads)
     await expect(copyGraph(jsonl, graph)).rejects.toThrow()
 
-    for (const path of [graph, `${graph}-wal`, `${graph}.copying`, `${graph}.threads.jsonl`]) {
+    for (const path of [graph, `${graph}-wal`, `${graph}.threads.jsonl`]) {
       expect(await exists(path)).toBe(false)
     }
     await rm(threads, { recursive: true })
@@ -230,38 +228,190 @@ describe('moving a graph between JSONL and SQLite', () => {
     const reopened = await CognitiveSession.open({ filePath: jsonl })
     await reopened.close()
     await copyGraph(jsonl, graph)
-    const copied = await CognitiveSession.open({ filePath: graph })
-    expect(copied.listNodes().map((node) => node.nodeId)).toContain(nodeId)
-    expect(copied.threads().map((thread) => thread.title)).toEqual(['Position encoding'])
-    await copied.close()
+    await expectCopyOf(graph, nodeId)
   })
 
-  it('refuses the target of a copy that was killed part way, and starts over when the copy is run again', async () => {
+  for (const [which, otherSource] of [
+    ['the same source', false],
+    ['another source', true],
+  ] as const) {
+    it(`refuses a second copy into a target a copy is writing now, from ${which}, and touches nothing`, async () => {
+      const jsonl = join(directory, 'learn.jsonl')
+      const nodeId = await sourceWithThread(jsonl)
+      const other = join(directory, 'other.jsonl')
+      if (otherSource) await writeClaim(other, 'From the other source')
+
+      let resume = (): void => undefined
+      let paused = (): void => undefined
+      const pause = new Promise<void>((resolve) => (paused = resolve))
+      const first = copyGraph(jsonl, graph, {
+        afterGraph: () => {
+          paused()
+          return new Promise<void>((resolve) => (resume = resolve))
+        },
+      })
+      await pause
+
+      // Halfway through the first copy: the graph is saved, its companion files are not yet copied.
+      await expect(copyGraph(otherSource ? other : jsonl, graph)).rejects.toBeInstanceOf(
+        GraphCopyInProgressError,
+      )
+      await expect(CognitiveSession.open({ filePath: graph })).rejects.toBeInstanceOf(
+        GraphCopyInProgressError,
+      )
+      expect(await exists(graph)).toBe(true)
+
+      resume()
+      await first
+      await expectCopyOf(graph, nodeId)
+      await expect(copyGraph(otherSource ? other : jsonl, graph)).rejects.toThrow(/already exists/)
+      await expectCopyOf(graph, nodeId)
+    })
+  }
+
+  it('lets a failing copy remove only its own files, after the other copy was refused', async () => {
     const jsonl = join(directory, 'learn.jsonl')
-    const nodeId = await writeClaim(jsonl, 'From the source')
-    await writeFile(`${jsonl}.threads.jsonl`, '', 'utf8')
+    const nodeId = await sourceWithThread(jsonl)
+    let fail = (): void => undefined
+    let paused = (): void => undefined
+    const pause = new Promise<void>((resolve) => (paused = resolve))
+    const first = copyGraph(jsonl, graph, {
+      afterGraph: () => {
+        paused()
+        return new Promise<void>((_, reject) => (fail = () => reject(new Error('disk full'))))
+      },
+    })
+    await pause
+    await expect(copyGraph(jsonl, graph)).rejects.toBeInstanceOf(GraphCopyInProgressError)
 
-    // What a copy killed after saving the graph leaves: the graph, no companion files, and its marker.
-    await writeClaim(graph, 'Half of a copy')
-    await writeFile(`${graph}.copying`, `${JSON.stringify({ from: jsonl })}\n`, 'utf8')
+    fail()
+    await expect(first).rejects.toThrow('disk full')
+    expect(await exists(graph)).toBe(false)
+    // Free again: a new copy runs to the end.
+    await copyGraph(jsonl, graph)
+    await expectCopyOf(graph, nodeId)
+  })
 
-    const refusal = await CognitiveSession.open({ filePath: graph }).catch(
-      (error: unknown) => error,
+  it('recovers from an export whose process was killed part way: refused until rerun, then started over', async () => {
+    const nodeId = await sourceWithThread(graph)
+    const out = join(directory, 'out.jsonl')
+    await killCopyAfterGraph(graph, out)
+
+    // The graph is saved, the companion files are not: refused as unfinished, not opened as whole. The killed
+    // copy also left the target's own lock file, which is on its record.
+    expect(await exists(out)).toBe(true)
+    expect(await exists(`${out}.lock`)).toBe(true)
+    expect(await exists(`${out}.threads.jsonl`)).toBe(false)
+    await expect(CognitiveSession.open({ filePath: out })).rejects.toBeInstanceOf(
+      UnfinishedGraphCopyError,
     )
-    expect(refusal).toBeInstanceOf(UnfinishedGraphCopyError)
-    // Nor can it be copied onward as if it were whole.
-    await expect(copyGraph(graph, join(directory, 'onward.jsonl'))).rejects.toBeInstanceOf(
+    await expect(copyGraph(out, join(directory, 'onward.db'))).rejects.toBeInstanceOf(
       UnfinishedGraphCopyError,
     )
 
+    const rerun = await copyGraph(graph, out)
+    expect(rerun.recoveredFrom).toBe(resolve(graph))
+    await expectCopyOf(out, nodeId)
+  })
+
+  it('recovers from an import killed part way once the JSONL source’s own stale lock is removed by hand', async () => {
+    const jsonl = join(directory, 'learn.jsonl')
+    const nodeId = await sourceWithThread(jsonl)
+    await killCopyAfterGraph(jsonl, graph)
+    await expect(CognitiveSession.open({ filePath: graph })).rejects.toBeInstanceOf(
+      UnfinishedGraphCopyError,
+    )
+
+    // A JSONL graph's lock is a file, so the killed copy left the source locked, as any killed JSONL owner does.
+    // The rerun still clears what the killed copy wrote into the target before it reaches the locked source.
+    await expect(copyGraph(jsonl, graph)).rejects.toBeInstanceOf(GraphLockedError)
+    expect(await exists(graph)).toBe(false)
+    await rm(`${jsonl}.lock`)
+
     await copyGraph(jsonl, graph)
-    expect(await exists(`${graph}.copying`)).toBe(false)
-    expect(await exists(`${graph}.threads.jsonl`)).toBe(true)
-    const finished = await CognitiveSession.open({ filePath: graph })
-    const ids = finished.listNodes().map((node) => node.nodeId)
-    expect(ids).toContain(nodeId)
-    expect(finished.listNodes().map((node) => node.label)).not.toContain('Half of a copy')
-    expect(ids.length).toBe(1)
-    await finished.close()
+    await expectCopyOf(graph, nodeId)
+  })
+
+  it('starts over from another source after a killed copy, removing only what the killed copy wrote', async () => {
+    await sourceWithThread(graph)
+    const out = join(directory, 'out.jsonl')
+    const other = join(directory, 'other.db')
+    const otherId = await writeClaim(other, 'From the other source')
+    await killCopyAfterGraph(graph, out)
+
+    const rerun = await copyGraph(other, out)
+    expect(rerun.recoveredFrom).toBe(resolve(graph))
+    const session = await CognitiveSession.open({ filePath: out })
+    expect(session.listNodes().map((node) => node.nodeId)).toEqual([otherId])
+    expect(session.threads()).toEqual([])
+    await session.close()
+  })
+
+  it('removes nothing when the record of a killed copy names a file outside its target', async () => {
+    await sourceWithThread(graph)
+    const out = join(directory, 'out.jsonl')
+    await killCopyAfterGraph(graph, out)
+    const bystander = join(directory, 'bystander.txt')
+    await writeFile(bystander, 'not the copy’s', 'utf8')
+
+    const record = new Database(`${out}.copying`)
+    const value = JSON.parse(
+      (record.prepare('SELECT value FROM record WHERE id = 1').get() as { value: string }).value,
+    ) as { files: string[] }
+    value.files.push(resolve(bystander))
+    record.prepare('UPDATE record SET value = ? WHERE id = 1').run(JSON.stringify(value))
+    record.close()
+
+    await expect(copyGraph(graph, out)).rejects.toThrow(/cannot be checked/)
+    expect(await exists(bystander)).toBe(true)
+    expect(await exists(out)).toBe(true)
   })
 })
+
+/** A graph with one claim and one thread, so it has a companion file. Returns the claim’s id. */
+async function sourceWithThread(path: string): Promise<string> {
+  const nodeId = await writeClaim(path, 'Order matters to attention')
+  const session = await CognitiveSession.open({ filePath: path })
+  await session.openThread({ title: 'Position encoding' })
+  await session.close()
+  return nodeId
+}
+
+/** Opens the copy and checks it is the whole source: its claim, its thread, and nothing it should not have. */
+async function expectCopyOf(path: string, nodeId: string): Promise<void> {
+  const session = await CognitiveSession.open({ filePath: path })
+  expect(session.listNodes().map((node) => node.nodeId)).toEqual([nodeId])
+  expect(session.threads().map((thread) => thread.title)).toEqual(['Position encoding'])
+  await session.close()
+}
+
+/**
+ * Runs a real copy in a child process and kills it outright (`SIGKILL`) once the graph is saved into the target
+ * and before the companion files are copied.
+ */
+async function killCopyAfterGraph(from: string, to: string): Promise<void> {
+  const tests = fileURLToPath(new URL('.', import.meta.url))
+  const script = [
+    "import { copyGraph } from '@episteme/application'",
+    // A pending promise alone would let the child exit; this keeps it running until it is killed.
+    'setInterval(() => {}, 1000)',
+    `await copyGraph(${JSON.stringify(from)}, ${JSON.stringify(to)}, {`,
+    "  afterGraph: () => { process.stdout.write('paused\\n'); return new Promise(() => {}) },",
+    '})',
+  ].join('\n')
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: tests,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (chunk.toString().includes('paused')) resolve()
+    })
+    child.on('exit', (code) => reject(new Error(`the copy exited early with ${String(code)}`)))
+  })
+  // While it runs, the target is a copy in progress.
+  await expect(copyGraph(from, to)).rejects.toBeInstanceOf(GraphCopyInProgressError)
+  const exited = new Promise((resolve) => child.once('exit', resolve))
+  child.kill('SIGKILL')
+  await exited
+}

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EpistemeError, type EventLogState } from '@episteme/core'
 import {
@@ -174,4 +174,100 @@ export async function openSqliteStorage(filePath: string): Promise<SqliteStorage
   const storage = new SqliteStorageAdapter(filePath)
   await storage.open()
   return storage
+}
+
+/** Refused because another connection holds the record. */
+export class RecordHeldError extends Error {
+  readonly path: string
+
+  constructor(path: string) {
+    super(`"${path}" is held by another connection, in this process or another`)
+    this.name = 'RecordHeldError'
+    this.path = path
+  }
+}
+
+/**
+ * One small value in a SQLite file, held by one connection for as long as it is open: the same exclusive,
+ * operating-system lock as a graph's (ADR 0017), so it is never held by a process that has exited.
+ *
+ * It answers two questions about work that must not run twice at once, such as copying a graph: _is someone doing
+ * it now_ (the file is held) and _did someone start it and not finish_ (the file holds a value nobody holds).
+ */
+export class HeldRecord {
+  readonly #db: Database.Database
+
+  private constructor(db: Database.Database) {
+    this.#db = db
+  }
+
+  /**
+   * Takes the file, creating it if needed, and keeps it until `close()`. Throws `RecordHeldError` when another
+   * connection holds it. Waits a moment first, so a reader that only looks in (`peek`) does not make it fail.
+   */
+  static take(path: string): HeldRecord {
+    mkdirSync(dirname(path), { recursive: true })
+    const db = new Database(path, { timeout: 1000 })
+    try {
+      db.pragma('locking_mode = EXCLUSIVE')
+      db.pragma('journal_mode = WAL')
+      db.pragma('synchronous = FULL')
+      db.exec('BEGIN EXCLUSIVE')
+      db.exec(
+        'CREATE TABLE IF NOT EXISTS record (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL)',
+      )
+      db.exec('COMMIT')
+      return new HeldRecord(db)
+    } catch (error) {
+      if (db.inTransaction) db.exec('ROLLBACK')
+      db.close()
+      if (isBusy(error)) throw new RecordHeldError(path)
+      throw error
+    }
+  }
+
+  /**
+   * What the file holds, without taking it: `held` while another connection has it, otherwise its value, or
+   * `undefined` for a file that holds none or does not exist.
+   */
+  static peek(
+    path: string,
+  ): { readonly held: true } | { readonly held: false; readonly value: string | undefined } {
+    if (!existsSync(path)) return { held: false, value: undefined }
+    const db = new Database(path, { timeout: 0 })
+    try {
+      const table = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'record'")
+        .get()
+      if (table === undefined) return { held: false, value: undefined }
+      const row = db.prepare('SELECT value FROM record WHERE id = 1').get() as
+        | { value: string }
+        | undefined
+      return { held: false, value: row?.value }
+    } catch (error) {
+      if (isBusy(error)) return { held: true }
+      throw error
+    } finally {
+      db.close()
+    }
+  }
+
+  /** The value, or `undefined` when it holds none. */
+  read(): string | undefined {
+    const row = this.#db.prepare('SELECT value FROM record WHERE id = 1').get() as
+      | { value: string }
+      | undefined
+    return row?.value
+  }
+
+  /** Replaces the value, or clears it with `undefined`. Durable when this returns. */
+  write(value: string | undefined): void {
+    if (value === undefined) this.#db.prepare('DELETE FROM record WHERE id = 1').run()
+    else this.#db.prepare('INSERT OR REPLACE INTO record (id, value) VALUES (1, ?)').run(value)
+  }
+
+  /** Lets the file go. The value stays in it. */
+  close(): void {
+    this.#db.close()
+  }
 }

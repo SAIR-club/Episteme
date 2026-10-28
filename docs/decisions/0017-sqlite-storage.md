@@ -37,11 +37,18 @@ Node release the project supports (Node 20 to 26, Windows x64 included), so inst
    companion files (drafts, sources, threads, scene records). The service exposes it as `graph import` (JSONL to
    SQLite) and `graph export` (SQLite to JSONL), so a graph stays readable as plain text whenever someone wants to
    inspect it.
-   - It never writes over anything: no file of the target, graph or companion, may exist yet.
-   - It is all or nothing across the files. SQLite's transaction covers the graph only, not the companion files,
-     so a marker (`<target>.copying`) is written first and removed last, and a graph with a marker is refused as
-     unfinished. A copy that fails removes what it wrote; a copy that is killed leaves the marker, and running
-     the same copy again removes what the killed one wrote and starts over.
+   - It never writes over anything: no file the copy would write may exist yet, so every file it writes is its own.
+   - One copy into a target at a time. The copy holds a record beside the target (`<target>.copying`, a small
+     SQLite file) with the same operating-system lock as a graph, for its whole run. A second copy into the target,
+     from any source, is refused and touches nothing; so is opening the target. SQLite's transaction covers the
+     graph only, not the companion files, which is why this record exists.
+   - Only its own files are removed. Before writing a file the copy adds it to the record, and clears the record
+     when it finishes. A copy that fails removes the files on its record. A copy whose process is gone leaves the
+     record unheld but not empty: the target is refused as unfinished, and the next copy into it takes the record,
+     checks that it names this target and only this target's files, removes exactly those and starts over. A
+     record that cannot be checked is refused with nothing removed.
+   - A killed import also leaves its JSONL source locked, as any killed JSONL owner does; that lock is removed by
+     hand as before.
 
 ## Not in this decision
 
