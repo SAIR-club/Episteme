@@ -40,7 +40,7 @@ interface Thread {
   readonly id: ThreadId
   readonly owner: ActorId // the person whose conversation it is
   readonly title: string
-  readonly scope?: string // the partition scope it belongs to (decision 6)
+  readonly scope?: string // the application-defined scope it belongs to (decision 6)
   readonly parent?: { readonly thread: ThreadId; readonly turn: TurnId } // set on a fork
   readonly hostSession?: string // the host's own id for the conversation, provenance only
   readonly createdAt: EpochMillis
@@ -118,7 +118,7 @@ path, exactly as for any other distillation (ADR 0009, 0011).
 
 ### 6. Scope: which project a node belongs to
 
-A node may carry a tag in the `scope` namespace, `scope:<partition scope id>`, registered by the application
+A node may carry a tag in the `scope` namespace, `scope:<application-defined scope id>`, registered by the application
 itself so that every scene has it. `addNode`, `record` and the decision path accept an optional scope and tag
 what they create. Recall may prefer a scope (#44); a scope is a preference, not a wall, because a person's
 subjects are linked.

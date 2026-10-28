@@ -423,7 +423,7 @@ export const SCOPE_BOOST = 0.15
 export const DEFAULT_RECALL_BUDGET = 2000
 
 export interface RecallOptions {
-  /** A partition scope or domain namespace to prefer, not to filter by (ADR 0015, decision 6). */
+  /** An application-defined scope or domain namespace to prefer, not to filter by (ADR 0015, decision 6). */
   readonly scope?: string
   /** For `recallSummary`: the characters it may use. */
   readonly budget?: number
@@ -1002,7 +1002,7 @@ export class CognitiveSession {
     readonly kind: 'claim' | 'concept' | 'question'
     readonly topic?: string
     readonly source?: string
-    /** The partition scope the node belongs to (ADR 0015, decision 6). */
+    /** The application-defined scope the node belongs to (ADR 0015, decision 6). */
     readonly scope?: string
     /** Supplied when the caller needs a stable id, such as a topic seeder that must be idempotent. */
     readonly id?: string
@@ -2433,7 +2433,7 @@ export class CognitiveSession {
       readonly agent?: CognitiveAgent
       readonly policy?: DistillationPolicy
       readonly learner?: string
-      /** The partition scope every suggestion is made in; nodes accepted from them carry it. */
+      /** The application-defined scope every suggestion is made in; nodes accepted from them carry it. */
       readonly scope?: string
       readonly host?: {
         readonly candidates: readonly HostItem[]

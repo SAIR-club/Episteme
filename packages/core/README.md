@@ -4,7 +4,7 @@ Episteme Core — the graph itself, and nothing else.
 
 Core contains no application-specific ranking, scenario algorithms, agent workflow orchestration,
 UI state, or domain policies. Those belong to a Domain Extension or an Application; putting them
-here would stop the graph from serving upstream applications as a single shared substrate. The
+here would stop the graph from serving applications built on Episteme as a single shared substrate. The
 decision is recorded in [ADR 0001](../../docs/decisions/0001-core-boundary.md).
 
 Everything below runs with **no frontend, no LLM and no database**. That is a design constraint, not

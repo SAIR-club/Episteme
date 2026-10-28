@@ -4,7 +4,7 @@
  * Core does exactly one job: it is the graph itself. It contains no application-specific
  * ranking, scenario algorithms, agent workflow orchestration, UI state, or domain policies.
  * Those belong to a Domain Extension or an Application, preserving Core as a generic
- * substrate for any upstream application surface.
+ * substrate for applications built on Episteme.
  *
  * Everything exported below must be usable with no frontend, no LLM and no database.
  */

@@ -39,7 +39,6 @@ Note: Vitest resolves `@episteme/*` through each package's `dist/`, so **run `pn
 ## Engineering Principles
 
 - Make the smallest precise change that solves the problem; avoid unrelated refactoring.
-- Keep Episteme strictly an infrastructure layer without concrete business logic.
 - Identify business invariants and express each invariant in one authoritative place.
 - Centralize shared validation, configuration, authorization, caching, and API contracts.
 - Do not use broad `try/catch` blocks to swallow errors.
@@ -182,8 +181,8 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 
 These are the constraints the project is built around. Changing one is an architecture decision requiring an ADR in `docs/decisions/`, not an implementation detail.
 
-- **Infrastructure layer without concrete business logic.** Episteme is domain-agnostic cognitive infrastructure. Keep the repository free of concrete business or application logic. Domain rules, scenario-specific workflows, and application features belong strictly in upper-layer applications or domain extensions.
-- **Core only does what the graph itself must do.** Domain-specific ranking, scenario algorithms, agent workflow orchestration, UI state, and application policies belong to a Domain Extension or an Application. Before adding a feature ask, in order: graph primitive → Core; cross-application domain rule → Domain Extension; otherwise → Application.
+- **Infrastructure layer without concrete business logic.** Episteme is domain-agnostic cognitive infrastructure. Keep the repository free of concrete business or application logic. Specific scenario workflows, user-facing features, and domain-specific rules belong strictly to applications built on Episteme or to domain extensions. (Transitional exception: the legacy `learn-scene.ts` and `LearnSession` in `packages/application` are temporary compatibility shims retained under [ADR 0013](docs/decisions/0013-repository-boundary.md) and scheduled for removal in milestone M6.)
+- **Core only does what the graph itself must do.** Ranking, voting, moderation, agent workflow orchestration, UI state, and application policies (such as recommendations, problem sets, or teaching strategies) belong to a Domain Extension or an Application. Before adding a feature ask, in order: graph primitive → Core; cross-application domain rule → Domain Extension; otherwise → Application.
 - **Vocabulary must be registered before use.** Node types, edge types, state dimensions and tag namespaces go through their registries. Business code must never invent a type string — an unregistered type is invisible to validation, projection and every migration. Re-registering an existing id is an error, never an overwrite; use `registerIfAbsent` to share a vocabulary between packs.
 - **History is append-only and is the source of truth.** A `StateEvent` is never edited or deleted. Current state is always `reduce(events)` (`foldEvents`). A change of mind is a new event; a change of direction is a new branch (`fork`). Removal is a `revoke`, not a delete; physical deletion is reserved for privacy and legal compliance.
 - **Understanding is not a scalar.** State is multi-dimensional (`exposure`, `confidence`, `evidence`, `articulation`, `transfer`, `conflict`, `source`), each axis declared by a registered dimension definition. Never introduce a single `mastery` score.

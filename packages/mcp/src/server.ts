@@ -69,7 +69,8 @@ const RECALL_INPUT = fromJsonSchema<{
     },
     scope: {
       type: 'string',
-      description: 'A partition scope to prefer. Related items outside it can still appear.',
+      description:
+        'An application-defined scope to prefer. Related items outside it can still appear.',
     },
     depth: {
       type: 'string',
@@ -127,7 +128,7 @@ function proposeInput(dimensions: readonly RecordableDimension[]) {
       scope: {
         type: 'string',
         description:
-          'The partition scope or domain namespace this is about. A claim accepted from it is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
+          'The application-defined scope or domain namespace this is about. A claim accepted from it is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
       },
       target: { type: 'string', description: 'state: the id of the node the change is about.' },
       dimension: {
@@ -237,7 +238,7 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
     scope: {
       type: 'string',
       description:
-        'The partition scope or domain namespace this material belongs to. Every node accepted from it is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
+        'The application-defined scope or domain namespace this material belongs to. Every node accepted from it is tagged scope:<scope>, so recall with that scope prefers it; it also selects a delegation limited to that scope.',
     },
     learner: {
       ...SHORT_TEXT,
@@ -682,7 +683,7 @@ const THREAD_OPEN_INPUT = fromJsonSchema<{ title: string; scope?: string; hostSe
     title: { type: 'string', minLength: 1, description: 'What the conversation is about.' },
     scope: {
       type: 'string',
-      description: 'The partition scope or domain namespace it belongs to.',
+      description: 'The application-defined scope or domain namespace it belongs to.',
     },
     hostSession: { type: 'string', description: 'Your own id for this conversation.' },
   },
