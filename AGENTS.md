@@ -6,7 +6,8 @@ Keep this file limited to durable, cross-session guidance. Current progress, tem
 
 ## Project
 
-- Purpose: Episteme turns inquiry into persistent, evolving understanding. It is open cognitive infrastructure for carrying, organising and evolving human understanding: one graph that Learn, Forum and Research project views over, rather than separate knowledge stores. The most valuable asset is not chat history or course content but the cognitive graph that keeps evolving. See `README.md`.
+- Purpose: Episteme turns inquiry into persistent, evolving understanding. It is open cognitive infrastructure for carrying, organising and evolving human understanding: a shared cognitive graph that applications built on Episteme project views over. The persistent cognitive graph is the core asset. See `README.md`.
+- Layer: Infrastructure. Episteme is domain-agnostic cognitive infrastructure without application business logic. See [Project Invariants](#project-invariants).
 - Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. No framework or model provider is wired in yet, and the only database is the optional SQLite storage backend (`@episteme/storage-sqlite`, ADR 0017) — Core must run and be tested with no frontend, no LLM and no database.
 - Package manager: pnpm, pinned by `packageManager` in `package.json` (see `pnpm-workspace.yaml`). The project supports Node >= 20.11 (`engines`). pnpm 11 itself needs Node >= 22.13 to run, so develop on Node 22.13 or later, or use a standalone pnpm. The two floors differ on purpose; see [Continuous Integration](#continuous-integration).
 
@@ -180,7 +181,8 @@ Single track: the release tooling opens a Release PR whenever a versionable comm
 
 These are the constraints the project is built around. Changing one is an architecture decision requiring an ADR in `docs/decisions/`, not an implementation detail.
 
-- **Core only does what the graph itself must do.** Recommendation, voting, hot-ranking, course generation, quizzes, reputation, leaderboards, moderation, agent workflows, UI state and teaching strategy belong to a Domain Extension or an Application. Before adding a feature ask, in order: graph primitive → Core; cross-application domain rule → Domain Extension; otherwise → Application.
+- **Infrastructure layer without concrete business logic.** Episteme is domain-agnostic cognitive infrastructure. Keep the repository free of concrete business or application logic. Specific scenario workflows, user-facing features, and domain-specific rules belong strictly to applications built on Episteme or to domain extensions. (Transitional exception: the legacy `learn-scene.ts` and `LearnSession` in `packages/application` are temporary compatibility shims retained under [ADR 0013](docs/decisions/0013-repository-boundary.md) and scheduled for removal in milestone M6.)
+- **Core only does what the graph itself must do.** Ranking, voting, moderation, agent workflow orchestration, UI state, and application policies (such as recommendations, problem sets, or teaching strategies) belong to a Domain Extension or an Application. Before adding a feature ask, in order: graph primitive → Core; cross-application domain rule → Domain Extension; otherwise → Application.
 - **Vocabulary must be registered before use.** Node types, edge types, state dimensions and tag namespaces go through their registries. Business code must never invent a type string — an unregistered type is invisible to validation, projection and every migration. Re-registering an existing id is an error, never an overwrite; use `registerIfAbsent` to share a vocabulary between packs.
 - **History is append-only and is the source of truth.** A `StateEvent` is never edited or deleted. Current state is always `reduce(events)` (`foldEvents`). A change of mind is a new event; a change of direction is a new branch (`fork`). Removal is a `revoke`, not a delete; physical deletion is reserved for privacy and legal compliance.
 - **Understanding is not a scalar.** State is multi-dimensional (`exposure`, `confidence`, `evidence`, `articulation`, `transfer`, `conflict`, `source`), each axis declared by a registered dimension definition. Never introduce a single `mastery` score.
@@ -191,7 +193,7 @@ These are the constraints the project is built around. Changing one is an archit
 - **Private by default, contributed deliberately.** Personal state events and claims are private; concepts and references are public or controlled. Contribution is an explicit opt-in.
 - **Every mutation goes through one validation path.** `validateMutation` runs structural checks and then registered guards. Adapters store entities and must not enforce rules of their own — a second authority would diverge. Refusals are first-class values (`previewNode`/`previewEdge` return a `MutationRefusal`) so a suggestion can be shown and dismissed without exception control flow.
 - **Core invents no identity and reads no wall clock.** Time comes from a `Clock`, ids from an `IdFactory` or from the caller-supplied draft, so histories are replayable and output is byte-stable. Ids are branded; `asId` is the only sanctioned cast.
-- **One graph, many views.** Learn, Forum and Research differ by projection rule (scope, actor, topic, state, depth), never by data model. Never create a second graph for a new scene.
+- **One graph, many views.** Application surfaces and scene views differ by projection rule (scope, actor, topic, state, depth), never by data model. Never create a second graph for a new scene.
 
 ## Durable Handoff
 

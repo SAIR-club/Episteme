@@ -44,8 +44,8 @@ export function createRegistries(): Registries {
  * What a domain extension contributes to Core.
  *
  * A pack is the only sanctioned way to add vocabulary — node types, edge types, state
- * dimensions, tag namespaces and guards — which is what keeps `Forum`, `Course` and
- * `Quiz` out of Core while still letting them share one graph.
+ * dimensions, tag namespaces and guards — keeping domain-specific application semantics
+ * out of Core while still letting them share one graph.
  */
 export interface DomainPack {
   readonly name: string
