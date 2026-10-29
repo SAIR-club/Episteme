@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, type Proposal, type Suggestion } from '@episteme/application'
+import { CognitiveSession, type Proposal, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -19,12 +19,12 @@ const CONFIDENCE = asId<DimensionId>('confidence')
 
 let directory: string
 let filePath: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-confirm-'))
   filePath = join(directory, 'learn.jsonl')
-  session = await LearnSession.open({ filePath })
+  session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
 })
 
@@ -60,7 +60,7 @@ function lastEventOn(target: string) {
 describe('accept', () => {
   it('commits the agent’s value as confirmed by this session’s human, and names where it came from', async () => {
     const suggestion = await pending(STATE)
-    const result = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const result = await session.decide(suggestion.id, { action: 'accept' }, 'review')
 
     expect(result).toMatchObject({ ok: true, outcome: 'accepted', committed: { kind: 'event' } })
     const event = lastEventOn('q_why_order')
@@ -73,7 +73,7 @@ describe('accept', () => {
     expect(event?.actorId).toBe(session.actorId)
     expect(event?.source).toContain(suggestion.id)
     expect(event?.source).toContain(AGENT)
-    expect(event?.source).toContain('learn-review')
+    expect(event?.source).toContain('review')
     expect(session.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'medium' }])
     expect(session.pendingSuggestions()).toHaveLength(0)
   })
@@ -104,7 +104,7 @@ describe('accept', () => {
       to: 'c_permutation_invariance',
       relation: 'refers_to',
     })
-    const result = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const result = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     if (!result.ok || result.outcome === 'dismissed') throw new Error('expected a committed edge')
 
     const edge = session.graph.listEdges().find((candidate) => candidate.id === result.committed.id)
@@ -120,7 +120,7 @@ describe('accept', () => {
       about: [other.nodeId],
     })
 
-    const result = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const result = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     expect(result.ok).toBe(false)
     expect(session.listNodes().map((node) => node.label)).not.toContain('about a claim')
     expect(session.pendingSuggestions().map((pendingOne) => pendingOne.id)).toEqual([suggestion.id])
@@ -133,7 +133,7 @@ describe('modify', () => {
     const result = await session.decide(
       suggestion.id,
       { action: 'modify', proposal: { ...STATE, level: 'low' } },
-      'learn-review',
+      'review',
     )
 
     expect(result).toMatchObject({ ok: true, outcome: 'modified' })
@@ -141,7 +141,7 @@ describe('modify', () => {
     expect(value?.level).toBe('low')
     expect(value?.authority).toBeUndefined()
     expect(value?.confirmedBy).toBeUndefined()
-    expect(lastEventOn('q_why_order')?.source).toContain('modified via learn-review')
+    expect(lastEventOn('q_why_order')?.source).toContain('modified via review')
   })
 
   it('holds the human’s value to the same checks as the agent’s, and keeps the draft on refusal', async () => {
@@ -149,12 +149,12 @@ describe('modify', () => {
     const invalid = await session.decide(
       suggestion.id,
       { action: 'modify', proposal: { ...STATE, level: 'total' } },
-      'learn-review',
+      'review',
     )
     const otherKind = await session.decide(
       suggestion.id,
       { action: 'modify', proposal: { kind: 'claim', label: 'something else' } },
-      'learn-review',
+      'review',
     )
 
     expect(invalid).toMatchObject({ ok: false, refusal: { code: 'invalid_dimension_value' } })
@@ -170,7 +170,7 @@ describe('dismiss', () => {
     const events = session.eventCount
     const nodes = session.listNodes().length
 
-    const result = await session.decide(suggestion.id, { action: 'dismiss' }, 'learn-review')
+    const result = await session.decide(suggestion.id, { action: 'dismiss' }, 'review')
 
     expect(result).toMatchObject({ ok: true, outcome: 'dismissed' })
     expect(session.eventCount).toBe(events)
@@ -182,7 +182,7 @@ describe('dismiss', () => {
 describe('a decision', () => {
   it('is made once: a decided suggestion cannot be decided again', async () => {
     const suggestion = await pending(STATE)
-    await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    await session.decide(suggestion.id, { action: 'accept' }, 'review')
     const again = await session.decide(suggestion.id, { action: 'accept' }, 'mcp-elicitation')
     expect(again).toMatchObject({ ok: false, refusal: { code: 'unknown_suggestion' } })
     expect(
@@ -192,10 +192,10 @@ describe('a decision', () => {
 
   it('survives a restart, with the draft gone', async () => {
     const suggestion = await pending(STATE)
-    await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    await session.decide(suggestion.id, { action: 'accept' }, 'review')
     await session.close()
 
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(session.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'medium' }])
     expect(session.pendingSuggestions()).toHaveLength(0)
   })

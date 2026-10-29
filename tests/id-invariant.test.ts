@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, type Proposal } from '@episteme/application'
+import { CognitiveSession, type Proposal } from '@episteme/application'
 import { asId, isEpistemeError, type EdgeId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -99,12 +99,12 @@ describe('Core', () => {
 describe('the application', () => {
   let directory: string
   let filePath: string
-  let session: LearnSession
+  let session: CognitiveSession
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-ids-'))
     filePath = join(directory, 'learn.jsonl')
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     await seedTopic(session)
   })
 
@@ -119,7 +119,7 @@ describe('the application', () => {
       rationale: 'r',
     })
     if (!proposed.ok) throw new Error(proposed.refusal.message)
-    return session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review')
+    return session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
   }
 
   const between = (from: string, to: string) =>
@@ -135,7 +135,7 @@ describe('the application', () => {
 
     // And both survive a save and a reload: nothing was replaced in place.
     await session.close()
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(between('c_rope', 'c_transformer')).toHaveLength(2)
   })
 
@@ -159,8 +159,8 @@ describe('the application', () => {
     const second = await session.propose(link, { proposedBy: 'actor_agent_b', rationale: 'r' })
     if (!first.ok || !second.ok) throw new Error('both drafts should be kept')
 
-    await session.decide(first.suggestion.id, { action: 'accept' }, 'learn-review')
-    const late = await session.decide(second.suggestion.id, { action: 'accept' }, 'learn-review')
+    await session.decide(first.suggestion.id, { action: 'accept' }, 'review')
+    const late = await session.decide(second.suggestion.id, { action: 'accept' }, 'review')
 
     expect(late).toMatchObject({ ok: false, refusal: { code: 'duplicate_edge' } })
     expect(between('c_rope', 'c_transformer')).toHaveLength(1)

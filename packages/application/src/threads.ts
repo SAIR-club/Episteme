@@ -27,7 +27,7 @@ export interface Turn {
   readonly thread: string
   /** 1, 2, 3 … among the thread's own turns. */
   readonly seq: number
-  readonly speaker: 'learner' | 'agent'
+  readonly speaker: 'learner' | 'user' | 'human' | 'agent'
   /** The raw words, canonical. The archive. */
   readonly text: string
   /** Who sent it: the agent that relayed the turn, or the person. */

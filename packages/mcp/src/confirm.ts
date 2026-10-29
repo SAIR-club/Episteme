@@ -284,7 +284,7 @@ function describeForLearner(session: CognitiveSession, suggestion: Suggestion): 
   }
   return (
     `一个 agent 建议：${what}。\n理由：${suggestion.rationale}\n\n` +
-    `在你决定之前，它不会改变你的理解。你也可以稍后在 Learn 页面的建议队列里处理。`
+    `在你决定之前，它不会改变你的理解。你也可以稍后在建议审阅队列里处理。`
   )
 }
 

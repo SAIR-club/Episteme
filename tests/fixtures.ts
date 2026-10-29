@@ -36,7 +36,7 @@ import {
   openEpisteme as openViaSdk,
   type Episteme,
 } from '@episteme/sdk'
-import type { LearnSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { MockCognitiveAgent, type AgentResponse } from '@episteme/agent'
 
 /**
@@ -547,7 +547,7 @@ export const BLANK_TOPIC: SeedTopic = {
 }
 
 export async function seedTopic(
-  session: LearnSession,
+  session: CognitiveSession,
   topic: SeedTopic = TRANSFORMERS,
 ): Promise<{ readonly seeded: boolean; readonly nodeCount: number; readonly edgeCount: number }> {
   return session.batch((writer) => {

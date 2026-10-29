@@ -32,7 +32,7 @@ afterEach(async () => {
 const tagsOf = (nodeId: string): readonly string[] => session.graph.getNode(nodeId)?.tags ?? []
 
 async function nodeOf(suggestion: Suggestion, decision: Parameters<typeof session.decide>[1]) {
-  const decided = await session.decide(suggestion.id, decision, 'learn-review')
+  const decided = await session.decide(suggestion.id, decision, 'review')
   if (!decided.ok || decided.outcome === 'dismissed') throw new Error('not decided')
   if (decided.committed.kind !== 'node') throw new Error('not a node')
   return decided.committed.id
@@ -138,7 +138,7 @@ describe('distill with a scope', () => {
     let nodes = 0
     for (const suggestion of outcome.suggestions) {
       if (suggestion.proposal.kind !== 'node' && suggestion.proposal.kind !== 'claim') continue
-      const decided = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+      const decided = await session.decide(suggestion.id, { action: 'accept' }, 'review')
       if (!decided.ok || decided.outcome === 'dismissed' || decided.committed.kind !== 'node')
         continue
       expect(tagsOf(decided.committed.id)).toContain('scope:ml-2026')
