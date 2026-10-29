@@ -138,7 +138,7 @@ export class GraphLockedError extends Error {
     const holderRunning = holder?.running ?? (holderPid !== undefined && isRunning(holderPid))
     super(
       holderRunning
-        ? `the graph "${graphPath}" is already open in ${holderPid === undefined ? 'another connection, in this process or another' : `process ${holderPid}`}. Use that process (for example the running Learn surface) or stop it first.`
+        ? `the graph "${graphPath}" is already open in ${holderPid === undefined ? 'another connection, in this process or another' : `process ${holderPid}`}. Use that process (for example the running service surface) or stop it first.`
         : `the graph "${graphPath}" is locked by ${holderPid === undefined ? 'an unreadable lock' : `process ${holderPid}, which is no longer running`}. If nothing else is using this graph, delete "${lockPath}" and try again.`,
     )
     this.name = 'GraphLockedError'

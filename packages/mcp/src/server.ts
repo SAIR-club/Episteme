@@ -29,13 +29,13 @@ import {
  *
  * There is deliberately no tool that confirms a suggestion and none that writes a node, an edge or a state
  * event. An agent that could confirm would be confirming itself. Everything it wants to change is proposed,
- * and becomes the learner's only through the one human-decision path: the Learn review queue, which Episteme
+ * and becomes the person's only through the one human-decision path: the review queue, which Episteme
  * controls, or a form the host shows its user, which Episteme can validate but cannot prove a person answered
  * (ADR 0008, Trust boundaries). The decision never comes from the tool's arguments, and nothing a client sends
  * names who confirmed.
  *
  * Text is addressed to the agent, in English, with the same data as `structuredContent` so a host can use
- * either. The learner-facing Chinese of the Learn surface stays there.
+ * either. The person-facing Chinese of the web surface stays there.
  */
 
 /** Who an agent is, as far as anyone can tell: its self-declared client name. Provenance, not authentication. */
@@ -693,13 +693,13 @@ const THREAD_OPEN_INPUT = fromJsonSchema<{ title: string; scope?: string; hostSe
 
 const THREAD_APPEND_INPUT = fromJsonSchema<{
   thread: string
-  speaker: 'learner' | 'agent'
+  speaker: 'learner' | 'user' | 'human' | 'agent'
   text: string
 }>({
   type: 'object',
   properties: {
     thread: { type: 'string', minLength: 1 },
-    speaker: { type: 'string', enum: ['learner', 'agent'] },
+    speaker: { type: 'string', enum: ['learner', 'user', 'human', 'agent'] },
     text: { type: 'string', minLength: 1, description: 'The words of the turn, exactly as said.' },
   },
   required: ['thread', 'speaker', 'text'],

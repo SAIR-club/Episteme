@@ -157,10 +157,10 @@ function defaultResponder(
 }
 
 /**
- * The Learn interaction session.
+ * The cognitive interaction session.
  *
  * This is the smallest surface on which the project's claim can actually be used rather than asserted:
- * a learner asks, sees which of their own prior understanding was retrieved **and why**, records what
+ * a person asks, sees which of their own prior understanding was retrieved **and why**, records what
  * they now understand, and the next answer is built on it.
  *
  * Three deliberate properties:
@@ -357,7 +357,7 @@ export interface PublishedThread {
   readonly turns: readonly {
     readonly turn: string
     readonly seq: number
-    readonly speaker: 'learner' | 'agent'
+    readonly speaker: 'learner' | 'user' | 'human' | 'agent'
     readonly summary: string
   }[]
 }
@@ -795,7 +795,7 @@ export class CognitiveSession {
    * an answer.
    *
    * For a surface whose own agent writes the answer, such as an MCP host. It is the same retrieval `ask`
-   * uses, so an agent recalling a question sees exactly the evidence the Learn surface would show for it.
+   * uses, so an agent recalling a question sees exactly the evidence the web surface would show for it.
    */
   async recall(question: string, options: RecallOptions = {}): Promise<RecallResult> {
     if (options.scope === undefined)
@@ -980,7 +980,7 @@ export class CognitiveSession {
           ]),
         ),
         ...(options.reason === undefined ? {} : { reason: options.reason }),
-        source: options.source ?? 'learn-surface',
+        source: options.source ?? 'session',
       })
       await this.#persist()
       return {
@@ -1692,7 +1692,11 @@ export class CognitiveSession {
   /** Records one turn of a thread of this person's, raw. */
   appendTurn(
     threadId: string,
-    input: { readonly speaker: 'learner' | 'agent'; readonly text: string; readonly by?: string },
+    input: {
+      readonly speaker: 'learner' | 'user' | 'human' | 'agent'
+      readonly text: string
+      readonly by?: string
+    },
   ): Promise<Turn> {
     return this.#exclusive(async () => {
       this.#ownThread(threadId)
@@ -1734,10 +1738,12 @@ export class CognitiveSession {
       const text = input.text.trim()
       if (text === '') throw new SessionRefusal('missing_property', 'a summary needs words')
       const quotes = (input.quotes ?? []).map((quote) => canonicalText(quote))
-      if (turn.speaker === 'learner' && quotes.length === 0) {
+      const isHuman =
+        turn.speaker === 'learner' || turn.speaker === 'user' || turn.speaker === 'human'
+      if (isHuman && quotes.length === 0) {
         throw new SessionRefusal(
           'missing_quote',
-          'a summary of the learner’s turn must quote at least some of their own words',
+          'a summary of the human turn must quote at least some of their own words',
         )
       }
       for (const quote of quotes) {
@@ -1826,7 +1832,9 @@ export class CognitiveSession {
     let text = ''
     const ranges: { id: string; start: number; end: number }[] = []
     for (const turn of chosen) {
-      const line = `${turn.speaker === 'learner' ? LEARNER_LABEL : AGENT_LABEL}: ${turn.text}`
+      const isHuman =
+        turn.speaker === 'learner' || turn.speaker === 'user' || turn.speaker === 'human'
+      const line = `${isHuman ? LEARNER_LABEL : AGENT_LABEL}: ${turn.text}`
       const start = text.length
       text += `${line}\n`
       ranges.push({ id: turn.id, start, end: start + line.length })
@@ -3035,7 +3043,7 @@ export class CognitiveSession {
 }
 
 /** Where a human made a decision, recorded with whatever it committed. */
-export type DecisionChannel = 'learn-review' | 'mcp-elicitation' | 'delegation'
+export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation' | 'learn-review'
 
 /** What a human decided about a pending suggestion. */
 export type Decision =

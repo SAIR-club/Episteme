@@ -83,7 +83,7 @@ export class RuleBasedDistiller implements CognitiveAgent {
           'question',
           sentence.text,
           at(sentence.text, sentence.offset),
-          say(sentence.text, '学习中被提出的问题', 'A question raised while learning'),
+          say(sentence.text, '被提出的问题', 'A question raised in the text'),
         )
       } else if (EVIDENCE.test(sentence.text)) {
         add(
