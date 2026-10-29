@@ -63,7 +63,7 @@ describe('the session revision', () => {
 
   it('starts again after a restart, in a new epoch, so the same number cannot pass for the same state', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'episteme-epoch-'))
-    const filePath = join(directory, 'learn.jsonl')
+    const filePath = join(directory, 'learn.db')
     try {
       const first = await LearnSession.open({ filePath })
       await seedTopic(first)

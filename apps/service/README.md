@@ -9,12 +9,12 @@ page included, is a client of it.
 ## Starting it
 
 ```bash
-pnpm --filter @episteme/service serve -- --graph ~/.episteme/learn.jsonl
+pnpm --filter @episteme/service serve -- --graph ~/.episteme/learn.db
 ```
 
 | option                  | meaning                                                                                            |
 | ----------------------- | -------------------------------------------------------------------------------------------------- |
-| `-g, --graph <path>`    | the graph to own (`--file`, `-f` and `EPISTEME_FILE` also work); default `~/.episteme/learn.jsonl` |
+| `-g, --graph <path>`    | the graph to own, a SQLite file (`--file`, `-f` and `EPISTEME_FILE` also work); default `~/.episteme/learn.db` |
 | `-p, --port <port>`     | the port on `127.0.0.1` (`PORT` also works); default `4321`                                        |
 | `-t, --topic <path>`    | a topic file to seed on first start, instead of the demonstration topic                            |
 | `--blank`               | seed nothing                                                                                       |

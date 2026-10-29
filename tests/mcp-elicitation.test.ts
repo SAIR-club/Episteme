@@ -27,7 +27,7 @@ const silent = mcpWire(() => server.mcpUrl, { name: 'Plain Host', version: '1' }
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-elicit-'))
-  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

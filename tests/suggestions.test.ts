@@ -1,8 +1,9 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, SuggestionStore, type Proposal } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
+import { storedRecords, storedText, withCompanion, writeStoredRecords } from './stored.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -22,7 +23,7 @@ let session: LearnSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-suggest-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   session = await LearnSession.open({ filePath })
   await seedTopic(session)
 })
@@ -84,8 +85,10 @@ describe('proposing', () => {
   })
 
   it('keeps drafts across a restart, beside the graph rather than in it', async () => {
+    await session.close()
+    const graphBefore = storedRecords(filePath)
+    session = await LearnSession.open({ filePath })
     await propose({ kind: 'state', target: 'c_rope', dimension: 'articulation', level: 'low' })
-    const graphBefore = await readFile(filePath, 'utf8')
     await session.close()
 
     session = await LearnSession.open({ filePath })
@@ -96,9 +99,12 @@ describe('proposing', () => {
       dimension: 'articulation',
       level: 'low',
     })
-    // The graph file is untouched by proposing; the draft is in its own file.
-    expect(await readFile(filePath, 'utf8')).toBe(graphBefore)
-    expect(await readFile(`${filePath}.suggestions.jsonl`, 'utf8')).toContain('"articulation"')
+    // The graph's history is untouched by proposing; the draft is in its own log.
+    await session.close()
+    expect(storedRecords(filePath)).toEqual(graphBefore)
+    expect(storedText(filePath)).not.toContain('"articulation"')
+    expect(storedText(filePath, 'suggestions')).toContain('"articulation"')
+    session = await LearnSession.open({ filePath })
   })
 })
 
@@ -166,35 +172,32 @@ describe('refusing what could never be accepted', () => {
   })
 })
 
-describe('the draft file', () => {
+describe('the draft log', () => {
   it('is disposable: removing a draft leaves nothing behind', async () => {
     const result = await propose({ kind: 'claim', label: 'to be dropped' })
     if (!result.ok) throw new Error(result.refusal.message)
     await session.close()
 
-    const store = await SuggestionStore.open(`${filePath}.suggestions.jsonl`)
-    expect(await store.remove(result.suggestion.id)).toBe(true)
-    expect(await store.remove(result.suggestion.id)).toBe(false)
-    expect(await readFile(`${filePath}.suggestions.jsonl`, 'utf8')).toBe('')
+    await withCompanion(filePath, 'suggestions', async (log) => {
+      const store = await SuggestionStore.open(log)
+      expect(await store.remove(result.suggestion.id)).toBe(true)
+      expect(await store.remove(result.suggestion.id)).toBe(false)
+    })
+    expect(storedRecords(filePath, 'suggestions')).toEqual([])
 
     session = await LearnSession.open({ filePath })
     expect(session.pendingSuggestions()).toHaveLength(0)
   })
 
-  it('fails loudly on a line it cannot read, and does not keep the graph locked', async () => {
+  it('fails loudly on a record it cannot read, and does not keep the graph locked', async () => {
     await session.close()
-    await writeFile(`${filePath}.suggestions.jsonl`, '{"schemaVersion":99}\n', 'utf8')
+    await writeStoredRecords(filePath, { logs: { suggestions: ['{"schemaVersion":99}'] } })
 
     await expect(LearnSession.open({ filePath })).rejects.toThrow(
       /not a suggestions record this build reads/,
     )
-    const lockLeft = await access(`${filePath}.lock`).then(
-      () => true,
-      () => false,
-    )
-    expect(lockLeft).toBe(false)
-
-    await rm(`${filePath}.suggestions.jsonl`)
+    // Opening the graph again, to clear the damaged log, shows the failed open let go of it.
+    await writeStoredRecords(filePath, { logs: { suggestions: [] } })
     session = await LearnSession.open({ filePath })
   })
 

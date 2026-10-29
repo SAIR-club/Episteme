@@ -20,7 +20,7 @@ Security issues: do not open a public issue. Report privately via GitHub Securit
 ### Development setup
 
 Requirements:
-- Node >= 20.11 (tested on Node 20 and Node 24)
+- Node >= 22 (tested on Node 22 and Node 24)
 - pnpm >= 11 (see `package.json` packageManager)
 
 ```bash
@@ -33,7 +33,7 @@ pnpm test
 
 ### Local checks (same as CI)
 
-PR CI runs on GitHub Actions on both Node 20 and Node 24. Before opening a PR:
+PR CI runs on GitHub Actions on both Node 22 and Node 24. Before opening a PR:
 
 ```bash
 pnpm check
@@ -76,7 +76,7 @@ Episteme is built around strict engineering invariants (see `AGENTS.md` for full
 ### 开发环境搭建
 
 环境要求：
-- Node >= 20.11（CI 矩阵覆盖 Node 20 与 Node 24）
+- Node >= 22（CI 矩阵覆盖 Node 22 与 Node 24）
 - pnpm >= 11（查看 `package.json` 中的 packageManager）
 
 ```bash

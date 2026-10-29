@@ -73,7 +73,7 @@ own words, sees which of their own prior understanding was retrieved **and why**
 understand, reviews what agents suggested, and watches what is recalled next change because of it. Agents
 reach the same graph over MCP: they can recall, propose and submit readings of material, and MCP gives them no
 way to confirm anything (the REST review API is not yet protected; see [Limitations](#limitations-in-v010)).
-Everything is written to plain JSONL files and survives closing the process.
+Everything is written to one SQLite file per graph and survives closing the process.
 
 ![The Learn surface](docs/images/learn-surface.png)
 
@@ -102,11 +102,11 @@ pnpm demo && pnpm demo:persistent && pnpm demo:semantic && pnpm demo:distill
 
 `pnpm learn --help` and `pnpm serve --help` list the options, including `--file` and `--graph` to choose the
 graph.
-The default is `~/.episteme/learn.jsonl`, seeded with a demonstration topic. For your own learning, keep a graph
+The default is `~/.episteme/learn.db`, seeded with a demonstration topic. For your own learning, keep a graph
 of its own outside the repository and start it empty:
 
 ```bash
-pnpm serve --graph "$HOME/.episteme/my-topic.jsonl" --blank
+pnpm serve --graph "$HOME/.episteme/my-topic.db" --blank
 ```
 
 ## Connecting an agent
@@ -163,8 +163,7 @@ episteme/
 │   ├── core/               Episteme Core — ontology, graph, state, events, guards, projection, embedding port
 │   ├── domain-learn/       Learn domain pack: vocabulary, rules and the retrievers
 │   ├── storage-memory/     In-memory GraphStorageAdapter
-│   ├── storage-local/      Durable GraphStorageAdapter + event store (append-only JSONL)
-│   ├── storage-sqlite/     The same records in one SQLite file, held by an OS lock (ADR 0017)
+│   ├── storage-sqlite/     Durable storage: one SQLite file per graph, held by an OS lock (ADR 0018)
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
 │   ├── application/        The use-case layer every surface drives (LearnSession)
@@ -294,8 +293,8 @@ opt-in.
   recorded may not reach it.
 - **`not_pending` in a retry receipt is not "dismissed".** Dismissals leave no record
   ([#25](https://github.com/SAIR-club/Episteme/issues/25)).
-- **Plain-text local storage.** Graphs, drafts and sources are plain JSONL on disk, with no encryption and no
-  authentication. Do not expose the service to a network.
+- **Unencrypted local storage.** A graph, with its drafts and sources, is a SQLite file on disk, with no
+  encryption and no authentication. Do not expose the service to a network.
 
 Scope creep is the main risk to this project, so the following are explicitly out of scope for
 now: multi-agent systems, recommendation engines, automatic curriculum generation, reputation,

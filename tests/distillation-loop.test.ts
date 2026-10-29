@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
+import { storedText } from './stored.js'
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -30,7 +31,7 @@ let filePath: string
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-distil-loop-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
 })
 
 afterEach(async () => {
@@ -169,8 +170,8 @@ describe('the distillation loop', () => {
     // The undecided still wait, and the material is still beside the graph, never in it.
     expect(session.pendingSuggestions().length).toBe(outcome.suggestions.length - 5)
     expect(session.sources().map((source) => source.id)).toEqual([outcome.sourceId])
-    expect(await readFile(filePath, 'utf8')).not.toContain('老师：')
     await session.close()
+    expect(storedText(filePath)).not.toContain('老师：')
   })
 
   it('records an accepted change of understanding as the learner’s, confirmed by them', async () => {

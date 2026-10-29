@@ -27,7 +27,7 @@ second scene exists would be an abstraction without a second case to fit.
 - **One owner.** A session owns its graph file from `open()` until `close()`, and a second session over the
   same file is refused with `GraphLockedError`.
 - **An agent only proposes.** `propose()` keeps an agent's claim, link or state change as a pending draft in
-  `<graph>.suggestions.jsonl`, beside the graph and outside it. It never changes the graph or the history.
+  the graph's database (its `suggestions` log), beside the graph and outside it. It never changes the graph or the history.
   A proposal that could never be accepted is refused at once, as a value: unknown nodes, a link the graph's
   own preview rejects, or a dimension or level the learner could not record.
 - **Only the human decides, through one path.** `decide()` is the single use case from a human decision to
@@ -37,7 +37,7 @@ second scene exists would be an abstraction without a second case to fit.
   checks, as authored. **Dismiss** removes the draft and commits nothing. What is committed goes through the
   graph's validated path, and its source names the suggestion, the agent and the channel (ADR 0008).
 - **A decision lands once, across a crash.** An accept or modify first writes a write-ahead record to the
-  drafts file: an operation id and the ids it will create. Then it writes the graph, then removes the
+  drafts: an operation id and the ids it will create. Then it writes the graph, then removes the
   draft and the record in one write. Opening a session settles any record a crash left behind. The draft is
   completed if the graph holds the change, and rolled back to pending if not; `session.recovered` says
   which. Deciding a draft whose earlier attempt failed mid-write settles that attempt first, so a retry
@@ -48,8 +48,8 @@ second scene exists would be an abstraction without a second case to fit.
 `distill({ title, text })` turns learning material into pending suggestions ([ADR 0009](../../docs/decisions/0009-distillation.md)).
 It changes no understanding.
 
-- **The material** is kept in `<graph>.sources.jsonl`, beside the graph and outside it. That file has the same
-  owner and the same atomic writes as the drafts, and `sources()` lists it.
+- **The material** is kept in the graph's database (its `sources` log), beside the graph and outside it. It has
+  the same owner and the same atomic writes as the drafts, and `sources()` lists it.
 - **Extraction.** The material is split into episodes and read by a distiller, the rule-based one unless
   another `CognitiveAgent` is given. What the distiller finds is checked against the domain's policy,
   `learnDistillationPolicy` unless another is given. Each kept candidate then goes through the checks

@@ -103,7 +103,7 @@ describe('the application', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-ids-'))
-    filePath = join(directory, 'learn.jsonl')
+    filePath = join(directory, 'learn.db')
     session = await LearnSession.open({ filePath })
     await seedTopic(session)
   })

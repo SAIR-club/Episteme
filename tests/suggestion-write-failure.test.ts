@@ -1,24 +1,22 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, SuggestionStore } from '@episteme/application'
+import { CompanionLog, openSqliteStorage } from '@episteme/storage-sqlite'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
- * A failed write of the drafts file leaves the store saying what the file says.
+ * A failed write of the drafts log leaves the store saying what the log says.
  *
  * Memory used to change before the write, so a failure could show a draft as decided, or a decision as
  * settled, that the next session would find otherwise. These tests make one write fail and hold the store, and
  * the session's decisions, to the file.
  */
 
-const fsPromises = createRequire(import.meta.url)('node:fs/promises') as {
-  rename: (from: string, to: string) => Promise<void>
-}
-const realRename = fsPromises.rename
-/** Writes of a drafts file to let through before the next one fails. */
+// eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+const realReplace = CompanionLog.prototype.replace
+/** Writes of the drafts log to let through before the next one fails. */
 let skip = 0
 let failNext = false
 
@@ -28,17 +26,18 @@ function failDraftsWrite(after = 0): void {
 }
 
 beforeEach(() => {
-  fsPromises.rename = async (from: string, to: string) => {
-    if (failNext && to.endsWith('.suggestions.jsonl')) {
+  CompanionLog.prototype.replace = function (this: CompanionLog, bodies) {
+    if (failNext && this.location.endsWith('(suggestions)')) {
       if (skip > 0) skip -= 1
       else {
         failNext = false
-        throw Object.assign(new Error('injected: no space left on device'), { code: 'ENOSPC' })
+        return Promise.reject(
+          Object.assign(new Error('injected: no space left on device'), { code: 'ENOSPC' }),
+        )
       }
     }
-    return realRename(from, to)
+    return realReplace.call(this, bodies)
   }
-  syncBuiltinESMExports()
 })
 
 let directory: string
@@ -48,8 +47,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   failNext = false
-  fsPromises.rename = realRename
-  syncBuiltinESMExports()
+  CompanionLog.prototype.replace = realReplace
   await rm(directory, { recursive: true, force: true })
 })
 
@@ -63,8 +61,9 @@ const draft = {
 
 describe('the drafts store when a write fails', () => {
   it('keeps neither a new draft nor a removal that did not reach the file', async () => {
-    const file = join(directory, 'learn.jsonl.suggestions.jsonl')
-    const store = await SuggestionStore.open(file)
+    const file = join(directory, 'learn.db')
+    const storage = await openSqliteStorage(file)
+    const store = await SuggestionStore.open(storage.companion('suggestions'))
     const kept = await store.add(draft)
 
     failDraftsWrite()
@@ -75,13 +74,15 @@ describe('the drafts store when a write fails', () => {
     await expect(store.remove(kept.id)).rejects.toThrow('injected')
     expect(store.get(kept.id)).toBeDefined()
 
-    const reopened = await SuggestionStore.open(file)
+    const reopened = await SuggestionStore.open(storage.companion('suggestions'))
     expect(reopened.list().map((suggestion) => suggestion.id)).toEqual([kept.id])
+    await storage.close()
   })
 
   it('keeps an unsettled decision on record while settling it fails', async () => {
-    const file = join(directory, 'learn.jsonl.suggestions.jsonl')
-    const store = await SuggestionStore.open(file)
+    const storage = await openSqliteStorage(join(directory, 'learn.db'))
+    const log = storage.companion('suggestions')
+    const store = await SuggestionStore.open(log)
     const kept = await store.add(draft)
     const resolution = {
       operationId: 'dec_test',
@@ -102,14 +103,15 @@ describe('the drafts store when a write fails', () => {
     await expect(store.abandon('dec_test')).rejects.toThrow('injected')
     expect(store.resolutionOf(kept.id)?.operationId).toBe('dec_test')
 
-    const onDisk = await readFile(file, 'utf8')
+    const onDisk = (await log.read()).join(' ')
     expect(onDisk).toContain('dec_test')
+    await storage.close()
   })
 })
 
 describe('a decision whose completing write fails', () => {
   it('reports the failure, keeps the draft on record, and settles it once on the next decision', async () => {
-    const filePath = join(directory, 'learn.jsonl')
+    const filePath = join(directory, 'learn.db')
     const session = await LearnSession.open({ filePath })
     await seedTopic(session)
     const proposed = await session.propose({ kind: 'claim', label: 'committed once' }, agent)

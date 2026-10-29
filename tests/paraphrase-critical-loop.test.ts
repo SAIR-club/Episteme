@@ -14,7 +14,7 @@ import {
   type NodeId,
 } from '@episteme/core'
 import { MockCognitiveAgent } from '@episteme/agent'
-import { openLocalStorage } from '@episteme/storage-local'
+import { openSqliteStorage } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
@@ -115,7 +115,7 @@ describe('paraphrase critical loop', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-paraphrase-'))
-    filePath = join(directory, 'graph.jsonl')
+    filePath = join(directory, 'graph.db')
   })
 
   afterEach(async () => {
@@ -124,7 +124,7 @@ describe('paraphrase critical loop', () => {
 
   it('recovers prior cognition from differently worded words, and changes the answer', async () => {
     // ── Session 1: the learner records an understanding, then the instance is dropped ──
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seedGraph(session1)
 
@@ -145,11 +145,13 @@ describe('paraphrase critical loop', () => {
     await storageA.close()
 
     // ── Session 2: a second adapter, no shared memory ──
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
 
     // ── The control: with no memory at all ──
-    const emptyPath = join(directory, 'never-written.jsonl')
-    const cold = await openEpisteme(await openLocalStorage(emptyPath))
+    const emptyPath = join(directory, 'never-written.db')
+    const storageCold = await openSqliteStorage(emptyPath)
+    const cold = await openEpisteme(storageCold)
     seedGraph(cold)
     seedUnrelatedClaims(cold)
     const withoutMemory = await askIn(cold, makeAgent(), PARAPHRASE)
@@ -190,10 +192,12 @@ describe('paraphrase critical loop', () => {
     expect(withoutMemory.response.text).toContain('build the foundation first')
     expect(response.text).toContain('without re-deriving the groundwork')
     expect(response.text).toContain(STORED_CLAIM)
+    await storageB.close()
+    await storageCold.close()
   })
 
   it('finds the prior cognition by meaning alone, with every other signal switched off', async () => {
-    const storage = await openLocalStorage(filePath)
+    const storage = await openSqliteStorage(filePath)
     const episteme = await openEpisteme(storage)
     seedGraph(episteme)
     episteme.log.commit({
@@ -225,10 +229,11 @@ describe('paraphrase critical loop', () => {
     // A lexical-only run through the same retriever misses it, so the two signals really are distinct.
     const lexicalOnly = await hybrid.retrieve({ text: PARAPHRASE, signals: ['lexical'], depth: 0 })
     expect(lexicalOnly.nodeIds).not.toContain(CLAIM_ID)
+    await storage.close()
   })
 
   it('survives persistence: the paraphrase is answered from disk after a restart', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seedGraph(session1)
     session1.log.commit({
@@ -246,7 +251,8 @@ describe('paraphrase critical loop', () => {
 
     // The embedding cache is deliberately thrown away: embeddings are derived data, and a fresh process
     // would have an empty one. Retrieval must still work.
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
     const adapter = new DeterministicEmbeddingAdapter()
     const cache = new InMemoryEmbeddingCache()
     expect(cache.size).toBe(0)
@@ -260,10 +266,11 @@ describe('paraphrase critical loop', () => {
     expect(contextSummary(retrieved)).toContain(STORED_CLAIM)
     // The cache filled during the call, which is what makes it derived rather than authoritative.
     expect(cache.size).toBeGreaterThan(0)
+    await storageB.close()
   })
 
   it('keeps one actor\u2019s paraphrase from retrieving another actor\u2019s state', async () => {
-    const storage = await openLocalStorage(filePath)
+    const storage = await openSqliteStorage(filePath)
     const episteme = await openEpisteme(storage)
     seedGraph(episteme)
 
@@ -298,10 +305,11 @@ describe('paraphrase critical loop', () => {
     expect(forHuman.summary).toBe('')
     expect(forAgent.known.map((entry) => entry.nodeId)).toContain(CLAIM_ID)
     expect(forAgent.summary).toContain('confidence=low')
+    await storage.close()
   })
 
   it('reports which signals contributed, so a result can explain itself', async () => {
-    const storage = await openLocalStorage(filePath)
+    const storage = await openSqliteStorage(filePath)
     const episteme = await openEpisteme(storage)
     seedGraph(episteme)
     episteme.log.commit({
@@ -326,12 +334,14 @@ describe('paraphrase critical loop', () => {
     expect(claim?.score).toBeGreaterThan(0)
     // The claim matched on meaning rather than words.
     expect(claim?.matchedTerms).toEqual([])
+    await storage.close()
   })
 })
 
 describe('embedding failure is explicit', () => {
   it('does not report "no understanding" when the provider is unavailable', async () => {
-    const storage = await openLocalStorage(join(tmpdir(), `episteme-absent-${Date.now()}.jsonl`))
+    const directory = await mkdtemp(join(tmpdir(), 'episteme-embedding-failure-'))
+    const storage = await openSqliteStorage(join(directory, 'graph.db'))
     const episteme = await openEpisteme(storage)
     seedGraph(episteme)
 
@@ -351,5 +361,7 @@ describe('embedding failure is explicit', () => {
     // An empty result would read as "the learner understands nothing", which is a different and worse
     // claim than "the embedding provider is down".
     await expect(hybrid.retrieve({ text: PARAPHRASE })).rejects.toThrow(/connection refused/)
+    await storage.close()
+    await rm(directory, { recursive: true, force: true })
   })
 })

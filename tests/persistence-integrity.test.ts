@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -12,7 +12,7 @@ import {
   type NodeId,
 } from '@episteme/core'
 import { MockCognitiveAgent } from '@episteme/agent'
-import { LocalStorageAdapter, openLocalStorage } from '@episteme/storage-local'
+import { SqliteStorageAdapter, openSqliteStorage } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
@@ -26,6 +26,7 @@ import {
   openEpisteme,
   type EpistemeContext,
 } from './fixtures.js'
+import { storedRecords, writeStoredRecords } from './stored.js'
 
 /**
  * What must survive a restart, and what must not leak across one.
@@ -86,7 +87,7 @@ describe('recovery integrity', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-integrity-'))
-    filePath = join(directory, 'graph.jsonl')
+    filePath = join(directory, 'graph.db')
   })
 
   afterEach(async () => {
@@ -94,7 +95,7 @@ describe('recovery integrity', () => {
   })
 
   it('preserves event order and branch ancestry', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
 
@@ -127,7 +128,8 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
 
     // Commit order is part of the history, not an accident of storage.
     expect(
@@ -139,10 +141,11 @@ describe('recovery integrity', () => {
     expect(reloadedBranch?.parentBranchId).toBe(session1.log.defaultBranchId)
     expect(reloadedBranch?.forkPoint).toBe(second.id)
     expect(session2.log.getEvent(first.id)?.reason).toBe('first pass')
+    await storageB.close()
   })
 
   it('keeps a retracted event historically present, and still out of the current state', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
 
@@ -163,7 +166,8 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
 
     // The retraction is data, so it survives: the event is still readable...
     expect(session2.log.getEvent(retracted.id)).toEqual(retracted)
@@ -181,10 +185,11 @@ describe('recovery integrity', () => {
         .history({ target: CLAIM_ID, actorId: session2.humanId, includeRevoked: true })
         .map((e) => e.id),
     ).toEqual([kept.id, retracted.id])
+    await storageB.close()
   })
 
   it('preserves actor isolation and shared concepts', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
 
@@ -203,7 +208,8 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
 
     // One shared claim, two independent understandings.
     expect(
@@ -215,10 +221,11 @@ describe('recovery integrity', () => {
     // A concept belongs to nobody, so it is still one node after reload.
     expect(session2.graph.getNode('c_self_attention')?.actorId).toBe(session1.humanId)
     expect(session2.graph.findNodes({ type: NODE.concept })).toHaveLength(3)
+    await storageB.close()
   })
 
   it('reduces to the same state after reload, and retrieves an equivalent context', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
 
@@ -247,7 +254,8 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
     const stateAfter = [...session2.log.stateOf(CLAIM_ID, session2.humanId).entries()]
     const contextAfter = await retrieveRelevantContext(session2.graph, session2.log, QUESTION, {
       actorId: session2.humanId,
@@ -261,10 +269,11 @@ describe('recovery integrity', () => {
     expect(contextAfter.summary).toBe(contextBefore.summary)
     expect(contextAfter.known).toEqual(contextBefore.known)
     expect(contextSummary(contextAfter)).toBe(contextSummary(contextBefore))
+    await storageB.close()
   })
 
   it('gives the same answer to the same question after reload as before shutdown', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
     session1.log.commit({
@@ -285,7 +294,8 @@ describe('recovery integrity', () => {
       new MockCognitiveAgent({ responder: learnerResponder }),
       QUESTION,
     )
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
     const warm = await askIn(
       session2,
       new MockCognitiveAgent({ responder: learnerResponder }),
@@ -294,10 +304,11 @@ describe('recovery integrity', () => {
 
     expect(warm.response.text).toBe(cold.response.text)
     expect(warm.response.usedContext).toBe(true)
+    await storageB.close()
   })
 
   it('fails loudly on a truncated file instead of reporting a shorter history', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
     session1.log.commit({
@@ -310,30 +321,38 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    // Simulate a crash that left a half-written final line.
-    const contents = await readFile(filePath, 'utf8')
-    const truncated = `${contents.split('\n').slice(0, -2).join('\n')}\n{"schemaVersion":1,"kind":"ev`
-    await writeFile(filePath, truncated, 'utf8')
+    // Simulate damage that left the final record half written.
+    const records = storedRecords(filePath)
+    await writeStoredRecords(filePath, {
+      records: [...records.slice(0, -1), '{"schemaVersion":1,"kind":"ev'],
+    })
 
-    await expect(openLocalStorage(filePath)).rejects.toThrow(/not valid JSON/)
+    await expect(openSqliteStorage(filePath)).rejects.toThrow(/not valid JSON/)
+  })
+
+  it('fails loudly on a file that is not a database instead of starting an empty history', async () => {
+    await writeFile(filePath, 'text left where the graph was, not a database\n'.repeat(100), 'utf8')
+
+    await expect(openSqliteStorage(filePath)).rejects.toThrow(/not a database/)
   })
 
   it('refuses to be used before it is opened', () => {
-    const storage = new LocalStorageAdapter(filePath)
+    const storage = new SqliteStorageAdapter(filePath)
     expect(() => storage.putNode({ id: asId<NodeId>('x') } as never)).toThrow(/before open/)
   })
 
   it('treats a missing file as an empty history rather than an error', async () => {
-    const storage = await openLocalStorage(join(directory, 'does-not-exist.jsonl'))
+    const storage = await openSqliteStorage(join(directory, 'does-not-exist.db'))
     expect(storage.listNodes()).toHaveLength(0)
     // And its event log is reported absent, so a fresh history is started rather than restored.
     const session = await openEpisteme(storage)
     expect(session.log.eventCount).toBe(0)
     expect(session.log.getBranch(session.log.defaultBranchId)).toBeDefined()
+    await storage.close()
   })
 
   it('keeps a second actor\u2019s branch and events apart from the first after reload', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seed(session1)
 
@@ -352,7 +371,8 @@ describe('recovery integrity', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const session2 = await openEpisteme(await openLocalStorage(filePath))
+    const storageB = await openSqliteStorage(filePath)
+    const session2 = await openEpisteme(storageB)
     const humanBranch = session2.log.getEvent(humanEvent.id)?.branchId
     const agentBranch = session2.log.getEvent(agentEvent.id)?.branchId
 
@@ -376,5 +396,6 @@ describe('recovery integrity', () => {
       }),
     ).toThrow(/another actor/)
     expect(session2.log.getEvent(asId<EventId>(humanEvent.id))).toBeDefined()
+    await storageB.close()
   })
 })

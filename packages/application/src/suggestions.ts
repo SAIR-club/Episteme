@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { readFile, rename, writeFile } from 'node:fs/promises'
 import type { EpochMillis } from '@episteme/core'
+import type { CompanionLog } from '@episteme/storage-sqlite'
 
 /**
  * Pending suggestions: what an agent proposed and a human has not yet decided.
@@ -10,9 +10,10 @@ import type { EpochMillis } from '@episteme/core'
  * graph either: the graph is what the learner's understanding is reduced from, and nothing an agent inferred
  * belongs there before a person accepts it. So drafts are kept here, beside the graph and outside it.
  *
- * Disposable by construction. Losing this file costs pending drafts, never understanding, and nothing in it
- * can corrupt the graph. Removing a draft is not a deletion of cognitive record, because the graph never saw
- * it. Only the graph's owner writes it, because it is opened only by a session that holds the graph's lock.
+ * Disposable by construction. Losing them costs pending drafts, never understanding, and nothing in them can
+ * corrupt the graph. Removing a draft is not a deletion of cognitive record, because the graph never saw it.
+ * Only the graph's owner writes them, because they are kept in the graph's own database, on the owner's
+ * connection (ADR 0018).
  */
 
 /** What an agent can propose. Each kind becomes an ordinary, validated mutation only when a human accepts it. */
@@ -124,9 +125,9 @@ export interface Suggestion {
 }
 
 /**
- * The version this build writes. Bump only together with a migration, as for the graph file.
+ * The version this build writes. Bump only together with a migration, as for the graph's records.
  *
- * Version 2 added resolution records, version 3 landing records. Earlier files hold only what their version
+ * Version 2 added resolution records, version 3 landing records. Earlier records hold only what their version
  * knew and read unchanged.
  */
 export const SUGGESTIONS_SCHEMA_VERSION = 4
@@ -135,9 +136,10 @@ const READABLE_VERSIONS: readonly number[] = [1, 2, 3, 4]
 /**
  * A decision that has started committing and has not been settled: a write-ahead record.
  *
- * The graph and the drafts are two files, and no write covers both. So before a decision commits anything,
- * it records here what it is about to commit, under a stable operation id, with the ids of the nodes and
- * edges it will create chosen in advance. Once the graph is written, one write of this file removes the draft
+ * The graph and the drafts are written separately, and no write covers both (ADR 0018 leaves that for later).
+ * So before a decision commits anything, it records here what it is about to commit, under a stable operation
+ * id, with the ids of the nodes and edges it will create chosen in advance. Once the graph is written, one
+ * write of the drafts removes the draft
  * and this record together. A crash in between leaves this record behind, and the graph itself then says
  * whether the decision landed: if it did, the draft is removed; if not, the record is dropped and the draft
  * waits to be decided again. Either way the decision lands once.
@@ -192,7 +194,7 @@ export interface Review {
  * Proof that a keyed submission's drafts were kept (ADR 0011 §5).
  *
  * A submission is recorded on its source before its drafts are written, so a draft's origin never points at
- * nothing, and no write covers both files. This record is written in the same write as the drafts, so it exists
+ * nothing, and no write covers both. This record is written in the same write as the drafts, so it exists
  * exactly when they were kept. A submission without one never got its drafts into the queue: a retry is then
  * read again rather than answered. It stays when the drafts are later decided, so that a suggestion missing
  * from the queue is known to have been in it.
@@ -225,7 +227,7 @@ type StoreRecord =
  * call returns, so a draft the agent was told about is one the next session can show.
  */
 export class SuggestionStore {
-  readonly #filePath: string | undefined
+  readonly #log: CompanionLog | undefined
   readonly #pending = new Map<string, Suggestion>()
   readonly #resolutions = new Map<string, Resolution>()
   readonly #landings = new Map<string, SubmissionLanding>()
@@ -233,32 +235,22 @@ export class SuggestionStore {
   readonly #delegations = new Map<string, Delegation>()
   #writeChain: Promise<void> = Promise.resolve()
 
-  private constructor(filePath: string | undefined) {
-    this.#filePath = filePath
+  private constructor(log: CompanionLog | undefined) {
+    this.#log = log
   }
 
   /**
-   * Reads the drafts kept at `filePath`, or starts an empty in-memory store.
+   * Reads the drafts kept in `log`, or starts an empty in-memory store.
    *
-   * A missing file is no drafts. A line this build cannot read **throws** rather than being skipped, for the
-   * same reason the graph file does: a silently dropped draft is a suggestion the learner never gets to see.
+   * A record this build cannot read **throws** rather than being skipped, for the same reason the graph's
+   * records do: a silently dropped draft is a suggestion the learner never gets to see.
    */
-  static async open(filePath?: string): Promise<SuggestionStore> {
-    const store = new SuggestionStore(filePath)
-    if (filePath === undefined) return store
+  static async open(log?: CompanionLog): Promise<SuggestionStore> {
+    const store = new SuggestionStore(log)
+    if (log === undefined) return store
 
-    let contents: string
-    try {
-      contents = await readFile(filePath, 'utf8')
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') return store
-      throw error
-    }
-
-    for (const [index, raw] of contents.split('\n').entries()) {
-      const line = raw.trim()
-      if (line === '') continue
-      const record = parseRecord(line, index + 1, filePath)
+    for (const [index, body] of (await log.read()).entries()) {
+      const record = parseRecord(body, index + 1, log.location)
       if (record.kind === 'suggestion') store.#pending.set(record.suggestion.id, record.suggestion)
       else if (record.kind === 'resolution') {
         store.#resolutions.set(record.resolution.operationId, record.resolution)
@@ -272,10 +264,6 @@ export class SuggestionStore {
         )
     }
     return store
-  }
-
-  get filePath(): string | undefined {
-    return this.#filePath
   }
 
   /** Every pending draft, oldest first. */
@@ -418,8 +406,8 @@ export class SuggestionStore {
   /**
    * Writes the store as `change` leaves it, and only then changes what this store holds in memory.
    *
-   * One write at a time, so concurrent changes cannot interleave. Memory follows the disk rather than leading
-   * it: when a write fails, the store still says what the file says. Otherwise a failed write would show a
+   * One write at a time, so concurrent changes cannot interleave. Memory follows the database rather than
+   * leading it: when a write fails, the store still says what the database says. Otherwise a failed write would show a
    * draft as decided, or a decision as settled, that the next session would find otherwise, and an id planned
    * for an unsettled decision could be handed to something else in the meantime.
    */
@@ -460,7 +448,7 @@ export class SuggestionStore {
     reviews: readonly Review[],
     delegations: ReadonlyMap<string, Delegation>,
   ): Promise<void> {
-    if (this.#filePath === undefined) return
+    if (this.#log === undefined) return
     const lines = [
       ...[...pending.values()].map((suggestion) =>
         JSON.stringify({
@@ -498,9 +486,7 @@ export class SuggestionStore {
         } satisfies StoreRecord),
       ),
     ]
-    const temporary = `${this.#filePath}.tmp`
-    await writeFile(temporary, lines.length === 0 ? '' : `${lines.join('\n')}\n`, 'utf8')
-    await rename(temporary, this.#filePath)
+    await this.#log.replace(lines)
   }
 }
 
@@ -513,13 +499,13 @@ function replace<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void {
   for (const [key, value] of source) target.set(key, value)
 }
 
-function parseRecord(line: string, lineNumber: number, filePath: string): StoreRecord {
+function parseRecord(line: string, position: number, location: string): StoreRecord {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
   } catch (error) {
     throw new Error(
-      `suggestion on line ${lineNumber} of "${filePath}" is not valid JSON: ${(error as Error).message}`,
+      `suggestion record ${position} of "${location}" is not valid JSON: ${(error as Error).message}`,
     )
   }
   const record = parsed as {
@@ -534,7 +520,7 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
   const version = record?.schemaVersion
   if (typeof version !== 'number' || !READABLE_VERSIONS.includes(version)) {
     throw new Error(
-      `line ${lineNumber} of "${filePath}" is not a suggestions record this build reads (version ${READABLE_VERSIONS.join(' or ')})`,
+      `record ${position} of "${location}" is not a suggestions record this build reads (version ${READABLE_VERSIONS.join(' or ')})`,
     )
   }
   if (record?.kind === 'suggestion' && record.suggestion !== undefined) {
@@ -553,6 +539,6 @@ function parseRecord(line: string, lineNumber: number, filePath: string): StoreR
     return { schemaVersion: version, kind: 'delegation', delegation: record.delegation }
   }
   throw new Error(
-    `line ${lineNumber} of "${filePath}" is not a suggestion, a resolution, a landing or a review record`,
+    `record ${position} of "${location}" is not a suggestion, a resolution, a landing or a review record`,
   )
 }

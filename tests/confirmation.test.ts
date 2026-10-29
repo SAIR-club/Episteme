@@ -23,7 +23,7 @@ let session: LearnSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-confirm-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   session = await LearnSession.open({ filePath })
   await seedTopic(session)
 })

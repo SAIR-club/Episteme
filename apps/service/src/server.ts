@@ -58,7 +58,7 @@ export interface EpistemeService {
   close(): Promise<void>
 }
 
-export const DEFAULT_GRAPH = join(homedir(), '.episteme', 'learn.jsonl')
+export const DEFAULT_GRAPH = join(homedir(), '.episteme', 'learn.db')
 const MCP_PATH = '/mcp'
 
 /**

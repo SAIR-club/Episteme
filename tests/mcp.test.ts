@@ -23,7 +23,7 @@ const call = (name: string, args: Record<string, unknown>, options: WireOptions 
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-mcp-'))
-  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

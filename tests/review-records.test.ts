@@ -31,7 +31,7 @@ async function proposeConfidence(level: string): Promise<string> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-reviews-'))
-  filePath = join(directory, 'graph.jsonl')
+  filePath = join(directory, 'graph.db')
   session = await CognitiveSession.open({ filePath })
   await session.addNode({ id: 'q_order', label: 'Why order?', kind: 'question' })
 })

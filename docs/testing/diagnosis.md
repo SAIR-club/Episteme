@@ -34,7 +34,7 @@ demonstration topic. Keep it **outside the repository**: the graph and the files
 own words and understanding, and must never be committed.
 
 ```bash
-pnpm serve --graph "$HOME/.episteme/validation/session-1.jsonl" --blank
+pnpm serve --graph "$HOME/.episteme/validation/session-1.db" --blank
 ```
 
 Use `--topic ./their-material.json` instead of `--blank` when the learner brings a topic file. The root
@@ -44,7 +44,7 @@ Use `--topic ./their-material.json` instead of `--blank` when the learner brings
 Workspace：http://127.0.0.1:4321/
 MCP：      http://127.0.0.1:4321/mcp
 REST API： http://127.0.0.1:4321/api/v1
-图谱：     <home>/.episteme/validation/session-1.jsonl
+图谱：     <home>/.episteme/validation/session-1.db
 ```
 
 Agents connect to the MCP address; the learner reviews in the Workspace. While the service runs it holds the
@@ -59,13 +59,16 @@ could do; a decision the learner does not remember making is an observation.
 There is **no session log**. The service does not record the questions it was asked or what it returned. The
 evidence that exists is what the service persists, and what the observer keeps at the time.
 
-Persisted beside the graph, written only by the service:
+Persisted in the graph's file, written only by the service (ADR 0018):
 
-| file                        | holds                                                                              |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| `<graph>`                   | nodes, edges and state events: the source of truth for the learner's understanding |
-| `<graph>.suggestions.jsonl` | pending suggestions, and write-ahead records of decisions in progress              |
-| `<graph>.sources.jsonl`     | material that was distilled, split into episodes                                   |
+| in `<graph>`                      | holds                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------- |
+| `records` table                   | nodes, edges and state events: the source of truth for the learner's understanding |
+| `companions`, name `suggestions`  | pending suggestions, and write-ahead records of decisions in progress              |
+| `companions`, name `sources`      | material that was distilled, split into episodes                                   |
+
+Read it with a SQLite client (`sqlite3 <graph> "SELECT body FROM companions WHERE name = 'suggestions'"`) once
+the service has stopped; while it runs, it holds the file exclusively.
 
 A suggestion that was accepted leaves its provenance (the suggestion, the proposing agent, the channel) on
 what it committed. A suggestion that was dismissed leaves no record anywhere.

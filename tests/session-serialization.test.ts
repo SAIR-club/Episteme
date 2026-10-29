@@ -34,7 +34,7 @@ afterEach(async () => {
 })
 
 async function openSeeded(): Promise<LearnSession> {
-  const session = await LearnSession.open({ filePath: join(directory, 'learn.jsonl') })
+  const session = await LearnSession.open({ filePath: join(directory, 'learn.db') })
   await seedTopic(session)
   return session
 }
@@ -123,7 +123,7 @@ describe('the Learn queue and the MCP form, deciding the same draft at once', ()
   })
 
   it('records exactly one decision', async () => {
-    server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+    server = await startService({ port: 0, graph: join(directory, 'learn.db') })
     const agent = mcpWire(() => server.mcpUrl, {
       name: 'Race Host',
       version: '1',
@@ -208,7 +208,7 @@ describe('the queue itself', () => {
     const closing = session.close()
     await Promise.all([recording, closing])
 
-    const reopened = await LearnSession.open({ filePath: join(directory, 'learn.jsonl') })
+    const reopened = await LearnSession.open({ filePath: join(directory, 'learn.db') })
     expect(reopened.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'high' }])
     await reopened.close()
   })

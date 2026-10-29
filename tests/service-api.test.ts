@@ -65,7 +65,7 @@ function claimId(body: Json): string {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-http-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   server = await startService({ port: 0, graph: filePath })
 })
 
@@ -84,7 +84,7 @@ describe('serving the interface', () => {
     )
     const served = await startService({
       port: 0,
-      graph: join(directory, 'served.jsonl'),
+      graph: join(directory, 'served.db'),
       workspace: workspaceDir,
     })
     try {

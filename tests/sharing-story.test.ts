@@ -73,7 +73,7 @@ beforeEach(async () => {
   wei = await person('Wei')
   service = await startService({
     port: 0,
-    graph: join(directory, 'shared.jsonl'),
+    graph: join(directory, 'shared.db'),
     mode: 'shared',
     users,
     publicOrigin: 'https://episteme.example.edu',

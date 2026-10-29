@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,24 +10,24 @@ import {
 } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type NodeId } from '@episteme/core'
+import { SqliteStorageAdapter } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { storedRecords, withCompanion, writeStoredRecords } from './stored.js'
 
 /**
- * A decision writes two files: the graph, then the drafts. A crash between them must not let it land twice.
+ * A decision writes two things in the graph's file: the history, then the drafts. A crash between them must not let it land twice.
  *
- * Each test puts the files on disk into the state a crash would leave, using the draft store's own write-ahead
+ * Each test puts the file into the state a crash would leave, using the draft store's own write-ahead
  * API, then opens a session and holds it to one outcome: a decision whose change reached the graph is
  * completed, one whose change did not is rolled back, and deciding again never commits a second time.
  */
 
 let directory: string
 let filePath: string
-let draftsPath: string
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-recovery-'))
-  filePath = join(directory, 'learn.jsonl')
-  draftsPath = `${filePath}.suggestions.jsonl`
+  filePath = join(directory, 'learn.db')
 })
 
 afterEach(async () => {
@@ -67,8 +67,9 @@ async function withDraft(proposal: Proposal): Promise<Suggestion> {
 
 /** Records a decision as begun and unfinished, as a crash after `begin` would leave it. */
 async function leaveUnfinished(resolution: Resolution): Promise<void> {
-  const store = await SuggestionStore.open(draftsPath)
-  await store.begin(resolution)
+  await withCompanion(filePath, 'suggestions', async (log) => {
+    await (await SuggestionStore.open(log)).begin(resolution)
+  })
 }
 
 interface Shape {
@@ -98,7 +99,7 @@ describe('a crash after the graph was written and before the draft was removed',
   ] as const) {
     it(`completes the ${kind} on the next start, once`, async () => {
       const suggestion = await withDraft(proposal)
-      const draftsBefore = await readFile(draftsPath, 'utf8')
+      const draftsBefore = storedRecords(filePath, 'suggestions')
 
       // The real decision, run to completion: this is the graph a crash after its write leaves behind.
       const deciding = await LearnSession.open({ filePath })
@@ -111,8 +112,8 @@ describe('a crash after the graph was written and before the draft was removed',
         .map((edge) => edge.id)
       await deciding.close()
 
-      // ...while the drafts file is put back to how the crash found it: the draft, and the decision begun.
-      await writeFile(draftsPath, draftsBefore, 'utf8')
+      // ...while the drafts are put back to how the crash found them: the draft, and the decision begun.
+      await writeStoredRecords(filePath, { logs: { suggestions: draftsBefore } })
       await leaveUnfinished({
         operationId: decided.operationId,
         suggestionId: suggestion.id,
@@ -180,14 +181,17 @@ describe('a decision whose graph write failed', () => {
     const suggestion = await withDraft(STATE)
     const session = await LearnSession.open({ filePath })
 
-    // A directory where the graph file should be: the write fails the same way on every platform.
-    await rm(filePath)
-    await mkdir(filePath)
-    await writeFile(join(filePath, 'blocker'), '', 'utf8')
-    await expect(
-      session.decide(suggestion.id, { action: 'accept' }, 'learn-review'),
-    ).rejects.toThrow()
-    await rm(filePath, { recursive: true })
+    // The graph's save fails once, as a full disk would, after the decision was recorded in the drafts.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+    const realSave = SqliteStorageAdapter.prototype.save
+    SqliteStorageAdapter.prototype.save = () => Promise.reject(new Error('injected: disk full'))
+    try {
+      await expect(
+        session.decide(suggestion.id, { action: 'accept' }, 'learn-review'),
+      ).rejects.toThrow('injected')
+    } finally {
+      SqliteStorageAdapter.prototype.save = realSave
+    }
 
     // The change is in memory and the decision is on record. Deciding again writes and settles it.
     const again = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
@@ -205,14 +209,13 @@ describe('a decision whose graph write failed', () => {
   })
 })
 
-describe('the drafts file', () => {
-  it('still reads a version 1 file, which holds only suggestions', async () => {
+describe('the drafts', () => {
+  it('still reads a version 1 log, which holds only suggestions', async () => {
     const suggestion = await withDraft(STATE)
-    const v1 = (await readFile(draftsPath, 'utf8')).replace(
-      '"schemaVersion":2',
-      '"schemaVersion":1',
+    const v1 = storedRecords(filePath, 'suggestions').map((body) =>
+      body.replace('"schemaVersion":2', '"schemaVersion":1'),
     )
-    await writeFile(draftsPath, v1, 'utf8')
+    await writeStoredRecords(filePath, { logs: { suggestions: v1 } })
 
     const session = await LearnSession.open({ filePath })
     expect(session.pendingSuggestions().map((pending) => pending.id)).toEqual([suggestion.id])
