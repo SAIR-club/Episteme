@@ -430,11 +430,11 @@ describe('in the session', () => {
     const [node, change] = outcome.suggestions
     expect(node?.basis).toBe('inferred')
     expect(change?.basis).toBe('inferred')
-    const accepted = await session.decide(node?.id ?? '', { action: 'accept' }, 'learn-review')
+    const accepted = await session.decide(node?.id ?? '', { action: 'accept' }, 'review')
     if (!accepted.ok || !('committed' in accepted)) throw new Error('the node was not accepted')
     const nodeId = accepted.committed.id
     expect(session.graph.getNode(nodeId)?.properties).toMatchObject({ basis: 'inferred' })
-    const decided = await session.decide(change?.id ?? '', { action: 'accept' }, 'learn-review')
+    const decided = await session.decide(change?.id ?? '', { action: 'accept' }, 'review')
     expect(decided.ok).toBe(true)
     const [event] = session.historyOf(nodeId) ?? []
     expect(event?.source).toContain('basis inferred')
@@ -454,11 +454,9 @@ describe('in the session', () => {
     )
     if (!outcome.ok) throw new Error(outcome.refusal.message)
     const [node, conflict] = outcome.suggestions
-    const accepted = await session.decide(node?.id ?? '', { action: 'accept' }, 'learn-review')
+    const accepted = await session.decide(node?.id ?? '', { action: 'accept' }, 'review')
     if (!accepted.ok || !('committed' in accepted)) throw new Error('the node was not accepted')
-    expect(
-      (await session.decide(conflict?.id ?? '', { action: 'accept' }, 'learn-review')).ok,
-    ).toBe(true)
+    expect((await session.decide(conflict?.id ?? '', { action: 'accept' }, 'review')).ok).toBe(true)
     expect(session.understandingOf(accepted.committed.id)).toEqual([
       { id: 'conflict', level: 'suspected' },
     ])

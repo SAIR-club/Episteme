@@ -89,7 +89,7 @@ describe('the drafts store when a write fails', () => {
       outcome: 'accepted',
       proposal: draft.proposal,
       planned: { nodeId: 'claim_9', edgeIds: [] },
-      channel: 'learn-review',
+      channel: 'review',
     } as const
     await store.begin(resolution)
 
@@ -118,7 +118,7 @@ describe('a decision whose completing write fails', () => {
     // `begin` writes first; the second write of the drafts file is the one that completes the decision.
     failDraftsWrite(1)
     await expect(
-      session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review'),
+      session.decide(proposed.suggestion.id, { action: 'accept' }, 'review'),
     ).rejects.toThrow('injected')
     const committed = session.listNodes().filter((node) => node.label === 'committed once')
     expect(committed).toHaveLength(1)
@@ -132,7 +132,7 @@ describe('a decision whose completing write fails', () => {
     expect(own.nodeId).not.toBe(committed[0]?.nodeId)
 
     // Deciding again settles the first decision instead of committing a second time.
-    const again = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review')
+    const again = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
     expect(again.ok).toBe(false)
     expect(session.listNodes().filter((node) => node.label === 'committed once')).toHaveLength(1)
     expect(session.pendingSuggestions().map((suggestion) => suggestion.id)).not.toContain(

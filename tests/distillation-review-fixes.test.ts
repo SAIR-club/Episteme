@@ -54,14 +54,14 @@ describe('a claim about a candidate', () => {
     )
     if (!proposed.ok) throw new Error(proposed.refusal.message)
 
-    const early = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review')
+    const early = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
     expect(early.ok).toBe(false)
     if (!early.ok) expect(early.refusal.code).toBe('depends_on_pending')
     expect(revokedClaims(session)).toEqual([])
 
-    const accepted = await session.decide(question.id, { action: 'accept' }, 'learn-review')
+    const accepted = await session.decide(question.id, { action: 'accept' }, 'review')
     if (!accepted.ok || accepted.outcome === 'dismissed') throw new Error('expected the question')
-    const claim = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review')
+    const claim = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
     expect(claim.ok).toBe(true)
     if (!claim.ok || claim.outcome === 'dismissed') throw new Error('expected the claim')
 
@@ -80,13 +80,9 @@ describe('a claim about a candidate', () => {
       agent,
     )
     if (!proposed.ok) throw new Error(proposed.refusal.message)
-    await session.decide(question.id, { action: 'dismiss' }, 'learn-review')
+    await session.decide(question.id, { action: 'dismiss' }, 'review')
 
-    const result = await session.decide(
-      proposed.suggestion.id,
-      { action: 'accept' },
-      'learn-review',
-    )
+    const result = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.refusal.code).toBe('unresolved_candidate')
     expect(revokedClaims(session)).toEqual([])
@@ -106,7 +102,7 @@ describe('a distilled node put in the learner’s own words', () => {
         // As the review queue sends it: the suggestion as it was, with only the label changed.
         proposal: { ...question.proposal, label: '位置编码为什么必要？' } as never,
       },
-      'learn-review',
+      'review',
     )
     if (!decided.ok || decided.outcome === 'dismissed') throw new Error('expected a node')
     const node = session.graph.getNode(decided.committed.id)

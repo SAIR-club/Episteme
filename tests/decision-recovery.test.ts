@@ -102,7 +102,7 @@ describe('a crash after the graph was written and before the draft was removed',
 
       // The real decision, run to completion: this is the graph a crash after its write leaves behind.
       const deciding = await CognitiveSession.open({ filePath })
-      const decided = await deciding.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+      const decided = await deciding.decide(suggestion.id, { action: 'accept' }, 'review')
       if (!decided.ok || decided.outcome === 'dismissed') throw new Error('expected a commit')
       const landed = shapeOf(deciding)
       const plannedEdges = deciding.graph
@@ -122,7 +122,7 @@ describe('a crash after the graph was written and before the draft was removed',
           proposal.kind === 'claim'
             ? { nodeId: decided.committed.id, edgeIds: plannedEdges }
             : { edgeIds: plannedEdges },
-        channel: 'learn-review',
+        channel: 'review',
       })
 
       const recovered = await CognitiveSession.open({ filePath })
@@ -168,7 +168,7 @@ describe('a crash after the decision was begun and before the graph was written'
     ])
     expect(shapeOf(session)).toMatchObject({ claims: [], pending: 1 })
 
-    const decided = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const decided = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     expect(decided.ok).toBe(true)
     expect(shapeOf(session)).toMatchObject({ claims: [CLAIM.label], pending: 0 })
     await session.close()
@@ -184,13 +184,11 @@ describe('a decision whose graph write failed', () => {
     await rm(filePath)
     await mkdir(filePath)
     await writeFile(join(filePath, 'blocker'), '', 'utf8')
-    await expect(
-      session.decide(suggestion.id, { action: 'accept' }, 'learn-review'),
-    ).rejects.toThrow()
+    await expect(session.decide(suggestion.id, { action: 'accept' }, 'review')).rejects.toThrow()
     await rm(filePath, { recursive: true })
 
     // The change is in memory and the decision is on record. Deciding again writes and settles it.
-    const again = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const again = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     expect(again).toMatchObject({ ok: false, refusal: { code: 'unknown_suggestion' } })
     expect(
       session.log.history({ target: asId<NodeId>('q_why_order'), actorId: session.actorId }),

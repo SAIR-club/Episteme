@@ -436,7 +436,7 @@ export async function handleApi(
       const result = await session.decide(
         id,
         decisionFrom(body),
-        'learn-review',
+        'review',
         caller === undefined
           ? undefined
           : {

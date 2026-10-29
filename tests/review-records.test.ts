@@ -46,7 +46,7 @@ describe('review records', () => {
     const dismissed = await proposeConfidence('low')
     const accepted = await proposeConfidence('high')
 
-    await session.decide(dismissed, { action: 'dismiss' }, 'learn-review', REVIEWER)
+    await session.decide(dismissed, { action: 'dismiss' }, 'review', REVIEWER)
     const result = await session.decide(accepted, { action: 'accept' }, 'mcp-elicitation')
     if (!result.ok) throw new Error(result.refusal.message)
 
@@ -54,7 +54,7 @@ describe('review records', () => {
       {
         suggestionId: dismissed,
         outcome: 'dismissed',
-        channel: 'learn-review',
+        channel: 'review',
         reviewer: REVIEWER,
       },
       { suggestionId: accepted, outcome: 'accepted', channel: 'mcp-elicitation' },
@@ -67,7 +67,7 @@ describe('review records', () => {
 
   it('keeps them across a restart, outside the understanding events', async () => {
     const dismissed = await proposeConfidence('low')
-    await session.decide(dismissed, { action: 'dismiss' }, 'learn-review', REVIEWER)
+    await session.decide(dismissed, { action: 'dismiss' }, 'review', REVIEWER)
     const events = session.eventCount
     await session.close()
 

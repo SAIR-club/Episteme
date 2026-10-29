@@ -64,7 +64,7 @@ describe('decisions on one draft, started together', () => {
         session.decide(
           suggestion.id,
           { action: 'accept' },
-          index % 2 === 0 ? 'learn-review' : 'mcp-elicitation',
+          index % 2 === 0 ? 'review' : 'mcp-elicitation',
         ),
       ),
     )
@@ -84,7 +84,7 @@ describe('decisions on one draft, started together', () => {
 
     const [accepted, dismissed] = await Promise.all([
       session.decide(suggestion.id, { action: 'accept' }, 'mcp-elicitation'),
-      session.decide(suggestion.id, { action: 'dismiss' }, 'learn-review'),
+      session.decide(suggestion.id, { action: 'dismiss' }, 'review'),
     ])
 
     expect(winners([accepted, dismissed])).toHaveLength(1)
@@ -103,7 +103,7 @@ describe('decisions on one draft, started together', () => {
       session.decide(
         suggestion.id,
         { action: 'modify', proposal: { ...STATE, level: 'low' } },
-        'learn-review',
+        'review',
       ),
       session.decide(suggestion.id, { action: 'accept' }, 'mcp-elicitation'),
     ])
@@ -196,9 +196,9 @@ describe('the queue itself', () => {
     await session.close()
 
     await expect(session.record('q_why_order', { confidence: 'high' })).rejects.toThrow(/closed/)
-    await expect(
-      session.decide(suggestion.id, { action: 'accept' }, 'learn-review'),
-    ).rejects.toThrow(/closed/)
+    await expect(session.decide(suggestion.id, { action: 'accept' }, 'review')).rejects.toThrow(
+      /closed/,
+    )
     await expect(session.addNode({ label: 'late', kind: 'claim' })).rejects.toThrow(/closed/)
   })
 

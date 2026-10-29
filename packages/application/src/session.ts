@@ -1988,7 +1988,7 @@ export class CognitiveSession {
         owner: this.#actor,
         suggestionId,
         outcome: 'undone',
-        channel: 'learn-review',
+        channel: 'review',
         reviewer: { actorId: this.#actor },
         decidedAt: systemClock.now(),
       })
@@ -3043,7 +3043,7 @@ export class CognitiveSession {
 }
 
 /** Where a human made a decision, recorded with whatever it committed. */
-export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation' | 'learn-review'
+export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
 
 /** What a human decided about a pending suggestion. */
 export type Decision =

@@ -86,9 +86,9 @@ describe('the distillation loop', () => {
         suggestion.proposal.to === `cand:${label(QUESTION).id}`,
     ) as Suggestion
 
-    const question = await session.decide(label(QUESTION).id, { action: 'accept' }, 'learn-review')
-    const claim = await session.decide(label(CLAIM).id, { action: 'accept' }, 'learn-review')
-    const link = await session.decide(answers.id, { action: 'accept' }, 'learn-review')
+    const question = await session.decide(label(QUESTION).id, { action: 'accept' }, 'review')
+    const claim = await session.decide(label(CLAIM).id, { action: 'accept' }, 'review')
+    const link = await session.decide(answers.id, { action: 'accept' }, 'review')
     // The learner says they are less sure than "我明白了" suggested: their own value, not the agent's.
     const state = await session.decide(
       said('我明白了。').id,
@@ -101,13 +101,9 @@ describe('the distillation loop', () => {
           level: 'low',
         },
       },
-      'learn-review',
+      'review',
     )
-    const dismissed = await session.decide(
-      label(EVIDENCE).id,
-      { action: 'dismiss' },
-      'learn-review',
-    )
+    const dismissed = await session.decide(label(EVIDENCE).id, { action: 'dismiss' }, 'review')
 
     for (const result of [question, claim, link, state, dismissed]) expect(result.ok).toBe(true)
     if (
@@ -186,8 +182,8 @@ describe('the distillation loop', () => {
         suggestion.proposal.kind === 'state' && suggestion.origin?.excerpt === '我明白了。',
     ) as Suggestion
 
-    const node = await session.decide(question.id, { action: 'accept' }, 'learn-review')
-    await session.decide(understood.id, { action: 'accept' }, 'learn-review')
+    const node = await session.decide(question.id, { action: 'accept' }, 'review')
+    await session.decide(understood.id, { action: 'accept' }, 'review')
     if (!node.ok || node.outcome === 'dismissed') throw new Error('expected a node')
 
     const [event] = session.log.history({
