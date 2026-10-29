@@ -47,6 +47,8 @@ export class SqliteStorageAdapter extends RecordStorage {
 
   readonly #filePath: string
   #db: Database.Database | undefined
+  #insertRecordStmt: Database.Statement | undefined
+  #deleteRecordsStmt: Database.Statement | undefined
 
   constructor(filePath: string) {
     super()
@@ -83,6 +85,8 @@ export class SqliteStorageAdapter extends RecordStorage {
       }[]
       const loaded = this.restore(rows.map((row) => deserializeRecord(row.body, row.seq)))
       this.#db = db
+      this.#insertRecordStmt = db.prepare('INSERT INTO records (seq, body) VALUES (?, ?)')
+      this.#deleteRecordsStmt = db.prepare('DELETE FROM records')
       return loaded
     } catch (error) {
       db.close()
@@ -95,6 +99,8 @@ export class SqliteStorageAdapter extends RecordStorage {
   close(): Promise<void> {
     return settled(() => {
       this.markClosed()
+      this.#insertRecordStmt = undefined
+      this.#deleteRecordsStmt = undefined
       this.#db?.close()
       this.#db = undefined
     })
@@ -109,10 +115,12 @@ export class SqliteStorageAdapter extends RecordStorage {
       if (state !== undefined) this.absorb(state)
       this.assertOpen()
       const db = this.#open()
-      const insert = db.prepare('INSERT INTO records (seq, body) VALUES (?, ?)')
+      const insert =
+        this.#insertRecordStmt ?? db.prepare('INSERT INTO records (seq, body) VALUES (?, ?)')
+      const deleteStmt = this.#deleteRecordsStmt ?? db.prepare('DELETE FROM records')
       const records = this.records()
       db.transaction(() => {
-        db.prepare('DELETE FROM records').run()
+        deleteStmt.run()
         records.forEach((record, index) => insert.run(index + 1, serializeRecord(record)))
       })()
     })
@@ -152,6 +160,7 @@ export class SqliteStorageAdapter extends RecordStorage {
     db.pragma('locking_mode = EXCLUSIVE')
     db.pragma('journal_mode = WAL')
     db.pragma('synchronous = FULL')
+    db.pragma('foreign_keys = ON')
     db.exec('BEGIN EXCLUSIVE')
     try {
       const version = db.pragma('user_version', { simple: true }) as number
@@ -185,19 +194,28 @@ export class CompanionLog {
   readonly #name: string
   /** Where the log is, for a store's messages. */
   readonly location: string
+  readonly #readStmt: Database.Statement
+  readonly #appendStmt: Database.Statement
+  readonly #deleteStmt: Database.Statement
+  readonly #insertStmt: Database.Statement
 
   constructor(db: Database.Database, name: string, location: string) {
     this.#db = db
     this.#name = name
     this.location = location
+    this.#readStmt = db.prepare('SELECT body FROM companions WHERE name = ? ORDER BY seq')
+    this.#appendStmt = db.prepare(
+      'INSERT INTO companions (name, seq, body) VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM companions WHERE name = ?), ?)',
+    )
+    this.#deleteStmt = db.prepare('DELETE FROM companions WHERE name = ?')
+    this.#insertStmt = db.prepare('INSERT INTO companions (name, seq, body) VALUES (?, ?, ?)')
   }
 
   /** Every body, oldest first. */
   read(): Promise<readonly string[]> {
     return settled(() => {
-      const rows = this.#open()
-        .prepare('SELECT body FROM companions WHERE name = ? ORDER BY seq')
-        .all(this.#name) as { body: string }[]
+      this.#assertOpen()
+      const rows = this.#readStmt.all(this.#name) as { body: string }[]
       return rows.map((row) => row.body)
     })
   }
@@ -205,35 +223,30 @@ export class CompanionLog {
   /** Adds one body after the others. */
   append(body: string): Promise<void> {
     return settled(() => {
-      this.#open()
-        .prepare(
-          'INSERT INTO companions (name, seq, body) VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM companions WHERE name = ?), ?)',
-        )
-        .run(this.#name, this.#name, body)
+      this.#assertOpen()
+      this.#appendStmt.run(this.#name, this.#name, body)
     })
   }
 
   /** Replaces every body at once. */
   replace(bodies: readonly string[]): Promise<void> {
     return settled(() => {
-      const db = this.#open()
-      const insert = db.prepare('INSERT INTO companions (name, seq, body) VALUES (?, ?, ?)')
-      db.transaction(() => {
-        db.prepare('DELETE FROM companions WHERE name = ?').run(this.#name)
-        bodies.forEach((body, index) => insert.run(this.#name, index + 1, body))
+      this.#assertOpen()
+      this.#db.transaction(() => {
+        this.#deleteStmt.run(this.#name)
+        bodies.forEach((body, index) => this.#insertStmt.run(this.#name, index + 1, body))
       })()
     })
   }
 
-  /** The connection, or a refusal in the storage's own words once the graph is closed. */
-  #open(): Database.Database {
+  /** Refuses when the companion log was used after its graph was closed. */
+  #assertOpen(): void {
     if (!this.#db.open) {
       throw new EpistemeError(
         'guard_rejected',
         `companion log "${this.location}" was used after its graph was closed`,
       )
     }
-    return this.#db
   }
 }
 
