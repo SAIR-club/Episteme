@@ -46,5 +46,5 @@ Episteme has no deployed graphs to carry over, so keeping JSONL for compatibilit
 - A killed process never leaves a lock. There is one storage code path to test.
 - Backing up, moving or deleting a graph is one file (with its `-wal` while open).
 - A graph is no longer a text file. Inspecting one takes a SQLite client, such as the `sqlite3` shell.
-- Installing Episteme needs Node 22 or later. `better-sqlite3` 13 carries its prebuilt driver in the package, with
-  no install script, so pnpm no longer needs to allow one (`pnpm-workspace.yaml`).
+- Installing Episteme needs Node 22 or later. `better-sqlite3` 13 carries its prebuilt driver in the package, so
+  nothing is downloaded or compiled at install: its build from source is refused in `pnpm-workspace.yaml`.
