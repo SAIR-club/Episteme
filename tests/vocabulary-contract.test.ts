@@ -53,7 +53,7 @@ async function post(path: string, body: unknown): Promise<Response> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-vocabulary-'))
-  service = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+  service = await startService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

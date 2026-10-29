@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -9,7 +9,9 @@ import {
   type DistillOutcome,
   type HostItem,
 } from '@episteme/application'
+import { CompanionLog } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { storedRecords, withCompanion, writeStoredRecords } from './stored.js'
 
 /**
  * Host-assisted distillation (ADR 0011, #21, PR-B): a host's model reads, Episteme verifies, the learner
@@ -85,7 +87,7 @@ let session: LearnSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-host-'))
-  graph = join(directory, 'learn.jsonl')
+  graph = join(directory, 'learn.db')
   session = await LearnSession.open({ filePath: graph })
 })
 
@@ -128,15 +130,27 @@ function without(item: HostItem, field: keyof HostItem): HostItem {
 const codes = (outcome: { refused: readonly { ref: string; code: string }[] }) =>
   Object.fromEntries(outcome.refused.map(({ ref, code }) => [ref, code]))
 
-/** The three files a decision or a distillation may write, read byte for byte. */
-async function files(): Promise<readonly (Buffer | undefined)[]> {
+/**
+ * Reads what the graph's file holds while the session lets go of it, and takes the session up again: the file is
+ * held exclusively by its owner.
+ */
+async function whileClosed<T>(read: () => T): Promise<T> {
   await session.flush()
-  return Promise.all(
-    [graph, `${graph}.sources.jsonl`, `${graph}.suggestions.jsonl`].map((path) =>
-      readFile(path).catch(() => undefined),
-    ),
-  )
+  await session.close()
+  try {
+    return read()
+  } finally {
+    session = await LearnSession.open({ filePath: graph })
+  }
 }
+
+/** The three places a decision or a distillation may write, as stored: the history and the two logs. */
+const files = () =>
+  whileClosed(() => [
+    storedRecords(graph),
+    storedRecords(graph, 'sources'),
+    storedRecords(graph, 'suggestions'),
+  ])
 
 async function accept(id: string | undefined): Promise<string> {
   const decided = await session.decide(id ?? '', { action: 'accept' }, 'learn-review')
@@ -438,24 +452,41 @@ describe('a host that lost the connection, a learner who decided some, and a ret
 
 describe('drafts that failed to land (fault injection)', () => {
   /**
-   * The drafts file is written to `<file>.tmp` and renamed. A directory at that path makes exactly that write
-   * fail, every time, while the sources file (its own `.tmp`) and the graph are written normally: the state a
-   * crash between the two writes leaves behind.
+   * While blocked, every write of the drafts log fails, while the sources log and the graph are written normally:
+   * the state a crash between the two writes leaves behind.
    */
-  const blocked = () => `${graph}.suggestions.jsonl.tmp`
-  const block = () => mkdir(blocked())
-  const unblock = () => rm(blocked(), { recursive: true, force: true })
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+  const realReplace = CompanionLog.prototype.replace
+  let blocked = false
+  const block = () => {
+    blocked = true
+  }
+  const unblock = () => {
+    blocked = false
+  }
+  beforeEach(() => {
+    CompanionLog.prototype.replace = function (this: CompanionLog, bodies) {
+      if (blocked && this.location.endsWith('(suggestions)')) {
+        return Promise.reject(new Error('injected: no space left on device'))
+      }
+      return realReplace.call(this, bodies)
+    }
+  })
+  afterEach(() => {
+    CompanionLog.prototype.replace = realReplace
+    blocked = false
+  })
   const restart = async () => {
     await session.close()
     session = await LearnSession.open({ filePath: graph })
   }
-  const landingRecords = async () =>
-    (await readFile(`${graph}.suggestions.jsonl`, 'utf8').catch(() => ''))
-      .split('\n')
-      .filter((line) => line.includes('"kind":"landing"'))
+  const landingRecords = () =>
+    whileClosed(() =>
+      storedRecords(graph, 'suggestions').filter((line) => line.includes('"kind":"landing"')),
+    )
 
   it('queues the candidates once when the request is retried after a restart', async () => {
-    await block()
+    block()
     await expect(submit(CORRECTION, { submissionId: 'sub-f' })).rejects.toThrow()
     // The source and the attempt were recorded; no draft reached the queue.
     expect(session.sources()).toHaveLength(1)
@@ -463,7 +494,7 @@ describe('drafts that failed to land (fault injection)', () => {
     expect(session.pendingSuggestions()).toEqual([])
     expect(await landingRecords()).toEqual([])
 
-    await unblock()
+    unblock()
     await restart()
     const retried = await submit(CORRECTION, { submissionId: 'sub-f' })
     // Read again, not answered as made: nothing of it had reached the queue.
@@ -495,9 +526,9 @@ describe('drafts that failed to land (fault injection)', () => {
   })
 
   it('recovers the same way without a restart', async () => {
-    await block()
+    block()
     await expect(submit(CORRECTION, { submissionId: 'sub-g' })).rejects.toThrow()
-    await unblock()
+    unblock()
     const retried = await submit(CORRECTION, { submissionId: 'sub-g' })
     expect(retried.status).toBe('pending')
     expect(session.pendingSuggestions()).toHaveLength(3)
@@ -505,9 +536,9 @@ describe('drafts that failed to land (fault injection)', () => {
   })
 
   it('never answers an attempt whose drafts did not land as a submission that was made', async () => {
-    await block()
+    block()
     await expect(submit(CORRECTION, { submissionId: 'sub-h' })).rejects.toThrow()
-    await unblock()
+    unblock()
     // A different request under the key of an attempt that queued nothing is read, not refused as a
     // conflict, and no suggestion of the first attempt is ever reported, as dismissed or otherwise.
     const other = await submit([CORRECTION[0] as HostItem], { submissionId: 'sub-h' })
@@ -557,9 +588,9 @@ describe('the payload digest', () => {
   })
 })
 
-describe('the drafts file', () => {
-  it('still reads a version 2 file, which has no landing records', async () => {
-    const path = join(directory, 'old.suggestions.jsonl')
+describe('the drafts log', () => {
+  it('still reads a version 2 record, which has no landing records', async () => {
+    const path = join(directory, 'old.db')
     const v2 = {
       schemaVersion: 2,
       kind: 'suggestion',
@@ -571,21 +602,18 @@ describe('the drafts file', () => {
         proposedAt: 1,
       },
     }
-    await writeFile(
-      path,
-      `${JSON.stringify(v2)}
-`,
-      'utf8',
-    )
-    const store = await SuggestionStore.open(path)
-    expect(store.get('sug_old')?.proposal).toEqual({ kind: 'claim', label: 'x' })
-    expect(store.landing('actor_human', 'actor_agent_old', 'anything')).toBeUndefined()
+    await writeStoredRecords(path, { logs: { suggestions: [JSON.stringify(v2)] } })
+    await withCompanion(path, 'suggestions', async (log) => {
+      const store = await SuggestionStore.open(log)
+      expect(store.get('sug_old')?.proposal).toEqual({ kind: 'claim', label: 'x' })
+      expect(store.landing('actor_human', 'actor_agent_old', 'anything')).toBeUndefined()
+    })
   })
 })
 
-describe('the sources file', () => {
+describe('the sources log', () => {
   it('still reads a version 1 record, and writes version 2 alongside it', async () => {
-    const path = join(directory, 'old.sources.jsonl')
+    const path = join(directory, 'old.db')
     const v1 = {
       schemaVersion: 1,
       kind: 'source',
@@ -598,12 +626,14 @@ describe('the sources file', () => {
         addedAt: 1,
       },
     }
-    await writeFile(path, `${JSON.stringify(v1)}\n`, 'utf8')
-    const store = await SourceStore.open(path)
-    expect(store.get('src_old')).toMatchObject({ reader: 'episteme', text: '学生：为什么？' })
-    expect(store.get('src_old')?.digest).toMatch(/^[0-9a-f]{64}$/u)
-    expect(store.reusable('actor_human', '学生：为什么？', 'episteme', undefined)?.id).toBe(
-      'src_old',
-    )
+    await writeStoredRecords(path, { logs: { sources: [JSON.stringify(v1)] } })
+    await withCompanion(path, 'sources', async (log) => {
+      const store = await SourceStore.open(log)
+      expect(store.get('src_old')).toMatchObject({ reader: 'episteme', text: '学生：为什么？' })
+      expect(store.get('src_old')?.digest).toMatch(/^[0-9a-f]{64}$/u)
+      expect(store.reusable('actor_human', '学生：为什么？', 'episteme', undefined)?.id).toBe(
+        'src_old',
+      )
+    })
   })
 })

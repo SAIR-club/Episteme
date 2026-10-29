@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startService, workspaceFile, type EpistemeService } from '@episteme/service'
+import { SqliteStorageAdapter } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -46,7 +46,7 @@ afterEach(async () => {
 
 describe('without a Workspace', () => {
   beforeEach(async () => {
-    service = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+    service = await startService({ port: 0, graph: join(directory, 'learn.db') })
   })
 
   it('starts, and says at / where to connect instead of serving a page', async () => {
@@ -99,15 +99,10 @@ describe('without a Workspace', () => {
   })
 
   it('answers a write that failed as a failure, not as a refusal', async () => {
-    const fsPromises = createRequire(import.meta.url)('node:fs/promises') as {
-      rename: (from: string, to: string) => Promise<void>
-    }
-    const realRename = fsPromises.rename
-    fsPromises.rename = async (from: string, to: string) => {
-      if (to.endsWith('learn.jsonl')) throw new Error('injected: no space left on device')
-      return realRename(from, to)
-    }
-    syncBuiltinESMExports()
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+    const realSave = SqliteStorageAdapter.prototype.save
+    SqliteStorageAdapter.prototype.save = () =>
+      Promise.reject(new Error('injected: no space left on device'))
     try {
       const failed = await post('/api/v1/record', {
         target: 'q_why_order',
@@ -117,8 +112,7 @@ describe('without a Workspace', () => {
       expect(failed.status).toBe(500)
       expect(failed.body['code']).toBe('internal')
     } finally {
-      fsPromises.rename = realRename
-      syncBuiltinESMExports()
+      SqliteStorageAdapter.prototype.save = realSave
     }
     // A refusal is still a refusal.
     const refused = await post('/api/v1/record', {
@@ -182,7 +176,7 @@ describe('with a Workspace', () => {
     await writeFile(join(directory, 'secret.txt'), 'outside the workspace')
     service = await startService({
       port: 0,
-      graph: join(directory, 'learn.jsonl'),
+      graph: join(directory, 'learn.db'),
       workspace: root,
     })
   })

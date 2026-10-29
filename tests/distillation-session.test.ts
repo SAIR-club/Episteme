@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -9,7 +9,9 @@ import {
 } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type NodeId } from '@episteme/core'
+import { SqliteStorageAdapter } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { storedRecords, storedText } from './stored.js'
 
 /**
  * Distillation inside a learner's session (ADR 0009): material in, pending suggestions out, nothing recorded
@@ -28,7 +30,7 @@ let session: LearnSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-distil-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   session = await LearnSession.open({ filePath })
   await seedTopic(session)
 })
@@ -68,14 +70,15 @@ const EVIDENCE = '例如把句子里的词打乱，注意力的输出只是跟�
 
 describe('distilling material', () => {
   it('keeps the material beside the graph and records nothing in it', async () => {
-    const graphBefore = await readFile(filePath, 'utf8')
+    await session.close()
+    const graphBefore = storedRecords(filePath)
+    session = await LearnSession.open({ filePath })
     const outcome = await distilled()
 
     expect(outcome.episodes).toBe(1)
     expect(outcome.suggestions).toHaveLength(9)
     expect(outcome.refused).toEqual([])
     expect(session.eventCount).toBe(0)
-    expect(await readFile(filePath, 'utf8')).toBe(graphBefore)
 
     const [source] = session.sources()
     expect(source).toMatchObject({
@@ -85,7 +88,12 @@ describe('distilling material', () => {
       kind: 'dialogue',
     })
     expect(source?.requestedBy).toBe('actor_agent_test-host')
-    expect(await readFile(`${filePath}.sources.jsonl`, 'utf8')).toContain(outcome.sourceId)
+
+    // The graph's history is as it was, and the material is in the sources kept with it.
+    await session.close()
+    expect(storedRecords(filePath)).toEqual(graphBefore)
+    expect(storedText(filePath, 'sources')).toContain(outcome.sourceId)
+    session = await LearnSession.open({ filePath })
   })
 
   it('gives every suggestion the words it came from, and says who proposed it and who asked', async () => {
@@ -283,13 +291,16 @@ describe('deciding what was distilled', () => {
     const outcome = await distilled()
     const question = find(outcome, nodeNamed(QUESTION))
 
-    await rm(filePath)
-    await mkdir(filePath)
-    await writeFile(join(filePath, 'blocker'), '', 'utf8')
-    await expect(
-      session.decide(question.id, { action: 'accept' }, 'learn-review'),
-    ).rejects.toThrow()
-    await rm(filePath, { recursive: true })
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+    const realSave = SqliteStorageAdapter.prototype.save
+    SqliteStorageAdapter.prototype.save = () => Promise.reject(new Error('injected: disk full'))
+    try {
+      await expect(
+        session.decide(question.id, { action: 'accept' }, 'learn-review'),
+      ).rejects.toThrow('injected')
+    } finally {
+      SqliteStorageAdapter.prototype.save = realSave
+    }
 
     expect(await session.decide(question.id, { action: 'accept' }, 'learn-review')).toMatchObject({
       ok: false,

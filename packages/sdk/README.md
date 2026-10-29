@@ -30,7 +30,7 @@ does: no mutation path of its own, no validation, no caching.
 
 ```ts
 import { agentActor, compose, humanActor, openEpisteme } from '@episteme/sdk'
-import { openLocalStorage } from '@episteme/storage-local'
+import { openSqliteStorage } from '@episteme/storage-sqlite'
 import { asId, type ActorId } from '@episteme/core'
 
 // In memory — loses everything on exit.
@@ -39,7 +39,7 @@ const ephemeral = compose({
 })
 
 // Durable — reads the file first, then composes over it.
-const storage = await openLocalStorage('graph.jsonl')
+const storage = await openSqliteStorage('graph.db')
 const episteme = await openEpisteme(storage, {
   actors: [humanActor(asId<ActorId>('actor_human')), agentActor(asId<ActorId>('actor_scaffold'))],
 })
@@ -47,7 +47,7 @@ const episteme = await openEpisteme(storage, {
 episteme.graph.addNode(/* ... */)
 episteme.log.commit(/* ... */)
 await episteme.persist() // hands the history to the store
-await storage.save() // writes the file, atomically
+await storage.save() // writes the history, in one transaction
 ```
 
 ## API

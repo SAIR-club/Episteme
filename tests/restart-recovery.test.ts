@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { asId, type DimensionId, type EdgeId, type NodeId } from '@episteme/core'
 import { MockCognitiveAgent } from '@episteme/agent'
-import { LocalStorageAdapter, openLocalStorage } from '@episteme/storage-local'
+import { SqliteStorageAdapter, openSqliteStorage } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DIMENSION,
@@ -22,7 +22,7 @@ import {
  * The Phase 1 claim: a user's understanding survives process restart and still affects future
  * interaction.
  *
- * The two halves of this test never share memory. Session 1 writes through a `LocalStorageAdapter`
+ * The two halves of this test never share memory. Session 1 writes through a `SqliteStorageAdapter`
  * and is then dropped; the adapter that session 2 reads is a *second* object built from the same
  * file with an empty in-memory state and a fresh id counter. That is what makes this a restart test
  * rather than an in-process round trip: if persistence were accidental, or if any cognition lived
@@ -123,7 +123,7 @@ describe('restart recovery', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-restart-'))
-    filePath = join(directory, 'graph.jsonl')
+    filePath = join(directory, 'graph.db')
   })
 
   afterEach(async () => {
@@ -132,7 +132,7 @@ describe('restart recovery', () => {
 
   it('carries understanding across a restart and changes the next interaction', async () => {
     // ── Session 1 ────────────────────────────────────────────────────────────
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     expect(session1.log.eventCount).toBe(0)
 
@@ -161,7 +161,7 @@ describe('restart recovery', () => {
 
     // ── Shutdown ─────────────────────────────────────────────────────────────
     // Nothing is shared with what follows: a second adapter reads the file from scratch.
-    const storageB = new LocalStorageAdapter(filePath)
+    const storageB = new SqliteStorageAdapter(filePath)
     const loaded = await storageB.open()
 
     expect(loaded.events.events.length).toBe(session1.log.eventCount)
@@ -185,10 +185,11 @@ describe('restart recovery', () => {
     expect(afterRestart.response.text).not.toBe(beforeAnyUnderstanding.response.text)
     expect(afterRestart.response.text).toBe(inProcess.response.text)
     expect(written.forkBranchId).toBeTypeOf('string')
+    await storageB.close()
   })
 
   it('does not collide on ids after reload, so history keeps distinct moments', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seedConcepts(session1)
     session1.graph.addNode({
@@ -210,7 +211,7 @@ describe('restart recovery', () => {
     // A restart means the first owner is gone before the second opens the file.
     await storageA.close()
 
-    const storageB = await openLocalStorage(filePath)
+    const storageB = await openSqliteStorage(filePath)
     const session2 = await openEpisteme(storageB)
 
     // A fresh counter would hand out `evt_1` again and two different moments would share one id.
@@ -223,10 +224,11 @@ describe('restart recovery', () => {
     expect(second.id).not.toBe(first.id)
     expect(session2.log.eventCount).toBe(2)
     expect(session2.log.getEvent(first.id)?.id).toBe(first.id)
+    await storageB.close()
   })
 
   it('keeps a learner who never persisted anything from seeing another file\u2019s cognition', async () => {
-    const storageA = await openLocalStorage(filePath)
+    const storageA = await openSqliteStorage(filePath)
     const session1 = await openEpisteme(storageA)
     seedConcepts(session1)
     session1.graph.addNode({
@@ -249,19 +251,21 @@ describe('restart recovery', () => {
     await storageA.close()
 
     // A second, unrelated file must not inherit the first one's understanding.
-    const otherPath = join(directory, 'other.jsonl')
-    const storageOther = await openLocalStorage(otherPath)
+    const otherPath = join(directory, 'other.db')
+    const storageOther = await openSqliteStorage(otherPath)
     const other = await openEpisteme(storageOther)
 
     expect(other.log.eventCount).toBe(0)
     expect(other.log.stateOf(CLAIM_ID, other.humanId).size).toBe(0)
 
     // While the persisted file still has it, so the emptiness is isolation and not a failed read.
-    const storageBack = await openLocalStorage(filePath)
+    const storageBack = await openSqliteStorage(filePath)
     const back = await openEpisteme(storageBack)
     expect(back.log.eventCount).toBe(1)
     expect(back.log.stateOf(CLAIM_ID, back.humanId).get(asId<DimensionId>('confidence'))).toEqual({
       level: 'high',
     })
+    await storageOther.close()
+    await storageBack.close()
   })
 })

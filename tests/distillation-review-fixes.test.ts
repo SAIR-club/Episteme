@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
-import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LearnSession, MAX_PENDING, type Suggestion } from '@episteme/application'
+import { CompanionLog } from '@episteme/storage-sqlite'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -135,29 +135,26 @@ describe('the pending limit', () => {
 })
 
 describe('a distillation whose drafts fail to be written', () => {
-  const fsPromises = createRequire(import.meta.url)('node:fs/promises') as {
-    rename: (from: string, to: string) => Promise<void>
-  }
-  const realRename = fsPromises.rename
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
+  const realReplace = CompanionLog.prototype.replace
   afterEach(() => {
-    fsPromises.rename = realRename
-    syncBuiltinESMExports()
+    CompanionLog.prototype.replace = realReplace
   })
 
   it('keeps no draft in memory that the file does not hold', async () => {
-    const filePath = join(directory, 'learn.jsonl')
+    const filePath = join(directory, 'learn.db')
     const session = await LearnSession.open({ filePath })
     await seedTopic(session)
-    fsPromises.rename = async (from: string, to: string) => {
-      if (to.endsWith('.suggestions.jsonl')) throw new Error('injected: no space left on device')
-      return realRename(from, to)
+    CompanionLog.prototype.replace = function (this: CompanionLog, bodies) {
+      if (this.location.endsWith('(suggestions)')) {
+        return Promise.reject(new Error('injected: no space left on device'))
+      }
+      return realReplace.call(this, bodies)
     }
-    syncBuiltinESMExports()
     await expect(session.distill({ text: MATERIAL })).rejects.toThrow('injected')
     expect(session.pendingSuggestions()).toEqual([])
 
-    fsPromises.rename = realRename
-    syncBuiltinESMExports()
+    CompanionLog.prototype.replace = realReplace
     await session.close()
     const reopened = await LearnSession.open({ filePath })
     expect(reopened.pendingSuggestions()).toEqual([])

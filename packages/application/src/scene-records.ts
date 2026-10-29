@@ -1,5 +1,5 @@
-import { appendFile, readFile } from 'node:fs/promises'
 import type { EpochMillis } from '@episteme/core'
+import type { CompanionLog } from '@episteme/storage-sqlite'
 
 /**
  * A scene's own records (ADR 0015, decision 7): what a scene needs to work, such as a learning project's goal or
@@ -32,32 +32,23 @@ function keyOf(namespace: string, owner: string, key: string): string {
 
 /** The scene records of one graph. Append-only; a read returns the latest version. */
 export class SceneRecordStore {
-  readonly #filePath: string | undefined
+  readonly #log: CompanionLog | undefined
   readonly #latest = new Map<string, SceneRecord>()
 
-  private constructor(filePath: string | undefined) {
-    this.#filePath = filePath
+  private constructor(log: CompanionLog | undefined) {
+    this.#log = log
   }
 
-  static async open(filePath?: string): Promise<SceneRecordStore> {
-    const store = new SceneRecordStore(filePath)
-    if (filePath === undefined) return store
-    let contents: string
-    try {
-      contents = await readFile(filePath, 'utf8')
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') return store
-      throw error
-    }
-    for (const [index, raw] of contents.split('\n').entries()) {
-      const line = raw.trim()
-      if (line === '') continue
+  static async open(log?: CompanionLog): Promise<SceneRecordStore> {
+    const store = new SceneRecordStore(log)
+    if (log === undefined) return store
+    for (const [index, body] of (await log.read()).entries()) {
       let parsed: unknown
       try {
-        parsed = JSON.parse(line)
+        parsed = JSON.parse(body)
       } catch (error) {
         throw new Error(
-          `line ${index + 1} of "${filePath}" is not valid JSON: ${(error as Error).message}`,
+          `record ${index + 1} of "${log.location}" is not valid JSON: ${(error as Error).message}`,
         )
       }
       const record = parsed as { schemaVersion?: unknown; kind?: unknown; record?: SceneRecord }
@@ -66,7 +57,9 @@ export class SceneRecordStore {
         record.kind !== 'scene-record' ||
         record.record === undefined
       ) {
-        throw new Error(`line ${index + 1} of "${filePath}" is not a scene record this build reads`)
+        throw new Error(
+          `record ${index + 1} of "${log.location}" is not a scene record this build reads`,
+        )
       }
       store.#apply(record.record)
     }
@@ -94,13 +87,13 @@ export class SceneRecordStore {
   async put(record: Omit<SceneRecord, 'version'>): Promise<SceneRecord> {
     const previous = this.#latest.get(keyOf(record.namespace, record.owner, record.key))
     const next: SceneRecord = { ...record, version: (previous?.version ?? 0) + 1 }
-    if (this.#filePath !== undefined) {
-      await appendFile(
-        this.#filePath,
-        `${JSON.stringify({ schemaVersion: SCENE_RECORDS_SCHEMA_VERSION, kind: 'scene-record', record: next })}\n`,
-        'utf8',
-      )
-    }
+    await this.#log?.append(
+      JSON.stringify({
+        schemaVersion: SCENE_RECORDS_SCHEMA_VERSION,
+        kind: 'scene-record',
+        record: next,
+      }),
+    )
     this.#apply(next)
     return next
   }

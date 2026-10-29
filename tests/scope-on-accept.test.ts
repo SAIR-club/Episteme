@@ -20,7 +20,7 @@ let session: CognitiveSession
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-scope-'))
   session = await CognitiveSession.open({
-    filePath: join(directory, 'graph.jsonl'),
+    filePath: join(directory, 'graph.db'),
   })
 })
 
@@ -246,7 +246,7 @@ describe('over the wire', () => {
   beforeEach(async () => {
     service = await startService({
       port: 0,
-      graph: join(directory, 'served.jsonl'),
+      graph: join(directory, 'served.db'),
     })
   })
 

@@ -79,7 +79,7 @@ import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './sc
 import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
 import { learnScene } from './learn-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
-import { companionPath, openGraphStorage } from './graph-files.js'
+import { openSqliteStorage } from '@episteme/storage-sqlite'
 
 const DIMENSION = {
   confidence: asId<DimensionId>('confidence'),
@@ -552,7 +552,7 @@ interface SessionParts {
   readonly store: Store | undefined
   readonly threads: ThreadStore
   readonly records: SceneRecordStore
-  /** The graph file, when there is one, so it can be copied aside before its first publication. */
+  /** The graph's file, when there is one, so it can be copied aside before its first publication. */
   readonly filePath: string | undefined
   readonly sharing: boolean
   /** The retriever for one person's view of the graph, sharing one embedding cache with the others. */
@@ -645,7 +645,7 @@ export class CognitiveSession {
       })
     }
 
-    const storage = await openGraphStorage(options.filePath)
+    const storage = await openSqliteStorage(options.filePath)
     let episteme: Episteme
     let suggestions: SuggestionStore
     let sources: SourceStore
@@ -653,13 +653,12 @@ export class CognitiveSession {
     let records: SceneRecordStore
     try {
       episteme = await openEpisteme(storage, { actors, actorId: HUMAN, packs })
-      // Opened only after the graph's lock is held, so the drafts have the same single owner as the graph.
-      suggestions = await SuggestionStore.open(companionPath(options.filePath, 'suggestions'))
-      // Material distilled into this graph, kept beside it like the drafts and owned with it.
-      sources = await SourceStore.open(companionPath(options.filePath, 'sources'))
-      // Conversations and a scene's own records, beside the graph and owned with it (ADR 0015).
-      threads = await ThreadStore.open(companionPath(options.filePath, 'threads'))
-      records = await SceneRecordStore.open(companionPath(options.filePath, 'records'))
+      // The stores kept with the graph, in its own database and on its connection, so they have its single owner
+      // (ADR 0018): the drafts, the material distilled into it, conversations and a scene's own records (ADR 0015).
+      suggestions = await SuggestionStore.open(storage.companion('suggestions'))
+      sources = await SourceStore.open(storage.companion('sources'))
+      threads = await ThreadStore.open(storage.companion('threads'))
+      records = await SceneRecordStore.open(storage.companion('scene-records'))
     } catch (error) {
       // The file is owned from the moment storage opened. A history that fails to restore must not keep it.
       await storage.close()
@@ -2074,7 +2073,7 @@ export class CognitiveSession {
       }
     }
 
-    // One write of one file, the draft gone and its review kept together: it happened or it did not.
+    // One write of the drafts, the draft gone and its review kept together: it happened or it did not.
     if (decision.action === 'dismiss') {
       await this.#suggestions.dismiss({
         owner: this.#actor,

@@ -105,7 +105,7 @@ from turning into a different product.
 | candidate extraction                   | `@episteme/distillation`, with policies from domain packs such as `@episteme/domain-learn` |
 | review and confirmation                | `@episteme/application` (`LearnSession.decide`)                                            |
 | API gateway, MCP side                  | `@episteme/mcp`                                                                            |
-| graph store, event log, artifact store | `@episteme/storage-local` and the draft and source files beside the graph                  |
+| graph store, event log, artifact store | `@episteme/storage-sqlite`: one database per graph, with its drafts and sources            |
 | Episteme Workspace                     | the Learn page today; a Workspace application of its own, possibly in its own repository   |
 
 ## How far each part is built
@@ -126,7 +126,7 @@ on something named.
 | identity and access     | one graph, one owner, a single-owner lock                                                                                       | —                                                                                           | scoped recall, then multi-user and shared subject knowledge |
 | event processing        | state reduction; a write-ahead record of decisions                                                                              | separate streams for review records and operational events                                  | notifications, real-time updates                            |
 | task scheduling         | —                                                                                                                               | —                                                                                           | incremental import, periodic analysis                       |
-| global memory           | JSONL graph and event log; draft and source files; plain text                                                                   | —                                                                                           | encryption at rest (before anyone else uses it)             |
+| global memory           | one SQLite file per graph: graph, event log, drafts, sources, threads and scene records; unencrypted                           | —                                                                                           | encryption at rest (before anyone else uses it)             |
 
 ## Order
 

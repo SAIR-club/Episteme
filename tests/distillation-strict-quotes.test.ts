@@ -127,7 +127,7 @@ describe('the canonical text, and spans that point into it', () => {
     // CRLF line endings, a decomposed é (e + U+0301), and Chinese; the quote is in NFC, after the é.
     const sent = '学生：café 是什么意思？\r\n老师：Café 的 crème 来自法语。\r\n'.replace(/é/gu, 'é')
     const quote = 'crème 来自法语'
-    const graph = join(directory, 'learn.jsonl')
+    const graph = join(directory, 'learn.db')
     let session = await LearnSession.open({ filePath: graph })
     const outcome = await session.distill(
       { text: sent },
@@ -355,7 +355,7 @@ describe('in the session', () => {
   let session: LearnSession
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-strict-session-'))
-    graph = join(directory, 'learn.jsonl')
+    graph = join(directory, 'learn.db')
     session = await LearnSession.open({ filePath: graph })
     await session.addNode({ label: '自注意力不区分顺序', kind: 'claim' })
     await session.flush()
@@ -470,7 +470,7 @@ describe('what the review and query interfaces show', () => {
     const directory = await mkdtemp(join(tmpdir(), 'episteme-strict-api-'))
     const service = await startService({
       port: 0,
-      graph: join(directory, 'learn.jsonl'),
+      graph: join(directory, 'learn.db'),
       profile: learnProfile(BLANK_TOPIC),
     })
     try {

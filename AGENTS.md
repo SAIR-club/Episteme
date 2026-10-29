@@ -8,8 +8,8 @@ Keep this file limited to durable, cross-session guidance. Current progress, tem
 
 - Purpose: Episteme turns inquiry into persistent, evolving understanding. It is open cognitive infrastructure for carrying, organising and evolving human understanding: a shared cognitive graph that applications built on Episteme project views over. The persistent cognitive graph is the core asset. See `README.md`.
 - Layer: Infrastructure. Episteme is domain-agnostic cognitive infrastructure without application business logic. See [Project Invariants](#project-invariants).
-- Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. No framework or model provider is wired in yet, and the only database is the optional SQLite storage backend (`@episteme/storage-sqlite`, ADR 0017) — Core must run and be tested with no frontend, no LLM and no database.
-- Package manager: pnpm, pinned by `packageManager` in `package.json` (see `pnpm-workspace.yaml`). The project supports Node >= 20.11 (`engines`). pnpm 11 itself needs Node >= 22.13 to run, so develop on Node 22.13 or later, or use a standalone pnpm. The two floors differ on purpose; see [Continuous Integration](#continuous-integration).
+- Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. No framework or model provider is wired in yet, and the only database is SQLite, the one durable storage backend (`@episteme/storage-sqlite`, ADR 0018) — Core must run and be tested with no frontend, no LLM and no database.
+- Package manager: pnpm, pinned by `packageManager` in `package.json` (see `pnpm-workspace.yaml`). The project supports Node >= 22 (`engines`). pnpm 11 itself needs Node >= 22.13 to run, so develop on Node 22.13 or later, or use a standalone pnpm. The two floors differ on purpose; see [Continuous Integration](#continuous-integration).
 
 ## Commands
 
@@ -132,7 +132,7 @@ Version-bump mapping per type lives in [Version Management](#version-management)
 ## Continuous Integration
 
 - `.github/workflows/ci.yml` is the merge gate. It runs `pnpm check` and `pnpm format:check` on the `engines` floor and on the current Node LTS.
-- The matrix tests the project's runtime, not the toolchain's. Install pnpm with `pnpm/action-setup` and `standalone: true`, so pnpm runs on its own bundled runtime whatever Node the matrix selects. Without it, pnpm 11 starts on the Node 20 floor and fails before installing anything (`No such built-in module: node:sqlite`).
+- The matrix tests the project's runtime, not the toolchain's. Install pnpm with `pnpm/action-setup` and `standalone: true`, so pnpm runs on its own bundled runtime whatever Node the matrix selects. Without it, pnpm 11 would start on whatever Node the matrix selects, which may be older than pnpm's own floor.
 - Changing `packageManager`, `engines.node` or the matrix is one change, made in one PR: check the new pnpm's own requirement (`npm view pnpm@<version> engines`), and keep the matrix's lowest entry equal to the `engines` floor.
 - Keep `fail-fast: false`, so one failing Node version does not cancel the others and hide whether they pass.
 - A workflow change lands through a PR like any other change, and merges only after that PR's own CI run is green. A workflow that has never run green has not been tested.
