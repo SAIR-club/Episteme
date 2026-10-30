@@ -1,8 +1,8 @@
 # Vision
 
 Why Episteme exists, what it is for, and where its edges are. This file changes only when the
-direction itself changes. What is being built now is in
-[`mindlink-spec.md`](mindlink-spec.md).
+direction itself changes. What is being built now is MindLink, planned in its own repository
+([SAIR-club/MindLink](https://github.com/SAIR-club/MindLink)).
 
 ## Purpose
 

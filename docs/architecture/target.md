@@ -140,4 +140,5 @@ on something named.
    tree, scheduling, real-time updates, multi-user access, shared subject knowledge, and Forum as a second
    scene.
 
-The [MindLink product spec](../planning/mindlink-spec.md) breaks the work that builds on them into issues.
+The work that builds on them is MindLink's, planned in its own repository; the [MindLink product spec](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-30/docs/planning/mindlink-spec.md) (archived)
+broke it into issues.
