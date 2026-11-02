@@ -18,6 +18,7 @@
     "@episteme/service": "workspace:*",
     "@episteme/storage-memory": "workspace:*",
     "@episteme/storage-sqlite": "workspace:*",
+    "@episteme/hypothesis": "workspace:*",
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {

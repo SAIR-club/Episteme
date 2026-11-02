@@ -66,7 +66,7 @@ describe('recall', () => {
     const recalled = await call('recall', { question: '为什么 Transformer 必须被告知序列顺序？' })
     expect(recalled.isError).toBeUndefined()
     expect(recalled.structuredContent?.['known']).toEqual([])
-    expect(recalled.content?.[0]?.text).toContain('recorded nothing')
+    expect(recalled.content?.[0]?.text).toContain('recorded no level of understanding')
   })
 
   it('returns what the human recorded, and whether it can be built on', async () => {

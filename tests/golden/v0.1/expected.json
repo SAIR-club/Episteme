@@ -141,6 +141,7 @@
         "type": "question",
         "score": 0.6721832697960923,
         "origin": "match",
+        "kept": true,
         "matchedTerms": ["need", "order"],
         "reasons": [
           {
@@ -201,6 +202,7 @@
         "type": "claim",
         "score": 0.38633501014942223,
         "origin": "match",
+        "kept": true,
         "matchedTerms": ["attention"],
         "reasons": [
           {
@@ -261,6 +263,7 @@
         "type": "concept",
         "score": 0.3728941574312876,
         "origin": "match",
+        "kept": true,
         "matchedTerms": ["attention"],
         "reasons": [
           {
@@ -321,6 +324,7 @@
         "type": "concept",
         "score": 0.20741919903897169,
         "origin": "match",
+        "kept": true,
         "matchedTerms": [],
         "reasons": [
           {
@@ -369,7 +373,7 @@
             "weight": 0.1,
             "contribution": 0,
             "share": 0,
-            "explanation": "you have not recorded anything about it",
+            "explanation": "you have recorded no level of understanding for it",
             "explanationZh": "你还没有为它记录过任何理解",
             "labelZh": "你的理解"
           }

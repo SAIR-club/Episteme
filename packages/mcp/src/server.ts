@@ -65,7 +65,7 @@ const RECALL_INPUT = fromJsonSchema<{
     question: {
       type: 'string',
       minLength: 1,
-      description: 'The question being worked on, in the learner’s words where possible.',
+      description: 'The question being worked on, in the person’s words where possible.',
     },
     scope: {
       type: 'string',
@@ -111,9 +111,9 @@ function proposeInput(dimensions: readonly RecordableDimension[]) {
       rationale: {
         type: 'string',
         minLength: 1,
-        description: 'Why you propose this, so the learner can judge it.',
+        description: 'Why you propose this, so the person can judge it.',
       },
-      label: { type: 'string', description: 'claim: the claim, as the learner would state it.' },
+      label: { type: 'string', description: 'claim: the claim, as the person would state it.' },
       about: {
         type: 'array',
         items: { type: 'string' },
@@ -134,7 +134,7 @@ function proposeInput(dimensions: readonly RecordableDimension[]) {
       dimension: {
         type: 'string',
         enum: dimensions.map((dimension) => dimension.id),
-        description: 'state: which dimension of the learner’s understanding.',
+        description: 'state: which dimension of the person’s understanding.',
       },
       level: {
         type: 'string',
@@ -191,7 +191,7 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
           },
           label: {
             type: 'string',
-            description: 'node: the unit of understanding, as the learner would state it.',
+            description: 'node: the unit of understanding, as the person would state it.',
           },
           from: { type: 'string', description: 'relation: "cand:<ref>" or an existing node id.' },
           to: { type: 'string', description: 'relation: "cand:<ref>" or an existing node id.' },
@@ -209,7 +209,7 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
           level: {
             type: 'string',
             description:
-              'state: the level. A conflict may be suggested as suspected or open only; settling one is the learner’s act.',
+              'state: the level. A conflict may be suggested as suspected or open only; settling one is the person’s act.',
           },
           quote: {
             type: 'string',
@@ -227,7 +227,7 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
             type: 'string',
             enum: ['stated', 'inferred'],
             description:
-              'stated: the quoted words are the learner’s own, in their turn. inferred: this is your reading of what was said. Say inferred whenever you are interpreting, even when the words you quote are the learner’s. Neither means the learner has mastered anything.',
+              'stated: the quoted words are the person’s own, in their turn. inferred: this is your reading of what was said. Say inferred whenever you are interpreting, even when the words you quote are the person’s. Neither means the person has mastered anything.',
           },
           rationale: { type: 'string', minLength: 1, description: 'Why you propose it.' },
         },
@@ -243,7 +243,7 @@ const DISTILL_INPUT = fromJsonSchema<DistillInput>({
     learner: {
       ...SHORT_TEXT,
       description:
-        'The learner’s speaker label in the text, exactly as written, such as "学生" or "User". Without it nothing can be stated.',
+        'The person’s speaker label in the text, exactly as written, such as "学生" or "User". Without it nothing can be stated.',
     },
     hostSession: {
       ...SHORT_TEXT,
@@ -372,7 +372,7 @@ export function createEpistemeMcpServer(
     {
       title: 'Recall prior understanding',
       description:
-        'Before answering, find what this learner already understands that bears on the question, with why each item was retrieved and what they have recorded about it. Build on what is settled; do not build on anything marked with an open conflict. Changes nothing.',
+        'Before answering, find what this person already understands that bears on the question, with why each item was retrieved and what they have recorded about it. Build on what is settled; do not build on anything marked with an open conflict. Changes nothing.',
       inputSchema: RECALL_INPUT,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -392,14 +392,14 @@ export function createEpistemeMcpServer(
     {
       title: 'Expand one recalled item',
       description:
-        'The full detail of one node from a summary: its words, what the learner recorded about it, its neighbours and where it came from. Changes nothing.',
+        'The full detail of one node from a summary: its words, what the person recorded about it, its neighbours and where it came from. Changes nothing.',
       inputSchema: EXPAND_INPUT,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ node }) => {
       const expanded = session.expand(node)
       if (expanded === undefined) {
-        return refused('unknown_node', `there is no node "${node}" the learner can see`)
+        return refused('unknown_node', `there is no node "${node}" the person can see`)
       }
       return result(
         `${expanded.label} [${expanded.nodeId}], ${expanded.neighbours.length} neighbour(s); recorded: ${
@@ -413,14 +413,14 @@ export function createEpistemeMcpServer(
   server.registerTool(
     'propose',
     {
-      title: 'Propose a change to the learner’s understanding',
+      title: 'Propose a change to the person’s understanding',
       description:
-        'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the learner decides on it themselves; you cannot decide for them. If your host can show the learner a form, they are asked right away; otherwise it waits in their review queue. A proposal that could never be accepted is refused with the reason.',
+        'Propose a claim, a link or a state change. It is kept as a pending suggestion and changes nothing until the person decides on it themselves; you cannot decide for them. If your host can show the person a form, they are asked right away; otherwise it waits in their review queue. A proposal that could never be accepted is refused with the reason.',
       inputSchema: proposeInput(session.recordableDimensions),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async (input, context) => {
-      // A retry carrying the learner's answer to a form this tool asked for. The signed state, not the
+      // A retry carrying the person's answer to a form this tool asked for. The signed state, not the
       // arguments, says which draft it is about.
       const answered = context.mcpReq.requestState<PendingDecisionState>()
       if (answered !== undefined) {
@@ -444,10 +444,10 @@ export function createEpistemeMcpServer(
       if (!outcome.ok) return refused(outcome.refusal.code, outcome.refusal.message)
 
       const { suggestion } = outcome
-      // The learner let the service confirm for them in this scope (ADR 0016): say so, and that they can undo it.
+      // The person let the service confirm for them in this scope (ADR 0016): say so, and that they can undo it.
       if (outcome.delegated?.ok === true) {
         return result(
-          `Accepted for the learner under their delegation (${suggestion.id}). It is part of their understanding, ` +
+          `Accepted for the person under their delegation (${suggestion.id}). It is part of their understanding, ` +
             `marked as confirmed for them; they can undo it.`,
           { status: 'accepted', by: 'delegation', suggestion, result: outcome.delegated },
         )
@@ -456,7 +456,7 @@ export function createEpistemeMcpServer(
         return askLearner(session, suggestion, codec, context)
       }
       return result(
-        `Kept as pending suggestion ${suggestion.id}. It changes nothing until the learner accepts it; ` +
+        `Kept as pending suggestion ${suggestion.id}. It changes nothing until the person accepts it; ` +
           `do not tell them it has been recorded.`,
         { status: 'pending', suggestion },
       )
@@ -468,7 +468,7 @@ export function createEpistemeMcpServer(
     {
       title: 'Distil learning material into suggestions',
       description:
-        'Hand Episteme a stretch of learning material or a learning dialogue, and optionally your own reading of it as candidates. Episteme keeps the text, checks every quote against it, and turns what passes the domain’s checks (questions, claims, evidence, terms, how they relate, and what the learner said about their own understanding) into pending suggestions, each with the words it came from. A verified quote only shows the words are in the text you sent. Nothing is recorded: the learner decides on each in their review queue, and is not asked here. Do not tell the learner anything was recorded.',
+        'Hand Episteme a stretch of material or a dialogue, and optionally your own reading of it as candidates. Episteme keeps the text, checks every quote against it, and turns what passes the domain’s checks (questions, claims, evidence, terms, how they relate, and what the person said about their own understanding) into pending suggestions, each with the words it came from. A verified quote only shows the words are in the text you sent. Nothing is recorded: the person decides on each in their review queue, and is not asked here. Do not tell the person anything was recorded.',
       inputSchema: DISTILL_INPUT,
       annotations: {
         readOnlyHint: false,
@@ -524,9 +524,9 @@ export function createEpistemeMcpServer(
   server.registerTool(
     'reflect',
     {
-      title: 'Reflect the learner’s understanding back',
+      title: 'Reflect the person’s understanding back',
       description:
-        'What this learner has recorded so far, grouped by what needs attention next (an open conflict, shaky ground, something believed but not yet explainable) and what is settled, plus how many of your suggestions are still pending. Changes nothing.',
+        'What this person has recorded so far, grouped by what needs attention next (an open conflict, shaky ground, something believed but not yet explainable) and what is settled, plus how many of your suggestions are still pending. Changes nothing.',
       inputSchema: REFLECT_INPUT,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -617,14 +617,14 @@ function proposalFrom(input: ProposeInput): Proposal | string {
 
 function describeRecall(recalled: RecallResult): string {
   if (recalled.known.length === 0 && recalled.ranked.length === 0) {
-    return 'Nothing in this learner’s graph bears on that question yet. Establish the ground; there is nothing recorded to build on.'
+    return 'Nothing in this person’s graph bears on that question yet. Establish the ground; there is nothing recorded to build on.'
   }
 
   const lines: string[] = []
   if (recalled.known.length === 0) {
-    lines.push('The learner has recorded nothing about the retrieved items yet.')
+    lines.push('The person has recorded no level of understanding for the retrieved items yet.')
   } else {
-    lines.push('What the learner has recorded:')
+    lines.push('What the person has recorded:')
     for (const entry of recalled.known) {
       const levels = entry.dimensions.map((dimension) => `${dimension.id}=${dimension.level}`)
       const standing =
@@ -637,13 +637,16 @@ function describeRecall(recalled: RecallResult): string {
     }
   }
 
-  lines.push('', 'Retrieved, most relevant first:')
+  lines.push(
+    '',
+    'Retrieved, most relevant first. "kept" means the person wrote or accepted these words: they hold it, which says nothing about how well they understand it.',
+  )
   for (const entry of recalled.ranked) {
     const reasons = entry.reasons
       .filter((reason) => reason.contribution > 0)
       .map((reason) => `${reason.signal} ${(reason.share * 100).toFixed(0)}%`)
     lines.push(
-      `- ${entry.label} [${entry.nodeId}] score ${entry.score.toFixed(2)}${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}`,
+      `- ${entry.label} [${entry.nodeId}]${entry.kept ? ' kept,' : ''} score ${entry.score.toFixed(2)}${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}`,
     )
   }
   return lines.join('\n')
@@ -654,7 +657,7 @@ function describeDistilled(outcome: Extract<DistillOutcome, { ok: true }>): stri
     const pending = outcome.receipt?.kept.filter((entry) => entry.status === 'pending').length ?? 0
     return (
       `This submission was already made${outcome.receipt === undefined ? '' : ` (${outcome.receipt.submissionId})`}; nothing was changed or queued again. ` +
-      `${pending} of its suggestion(s) still wait in the learner’s review queue; the receipt says what became of each.`
+      `${pending} of its suggestion(s) still wait in the person’s review queue; the receipt says what became of each.`
     )
   }
   return (
@@ -662,18 +665,18 @@ function describeDistilled(outcome: Extract<DistillOutcome, { ok: true }>): stri
     (outcome.refused.length > 0
       ? `; ${outcome.refused.length} candidate(s) did not pass the checks`
       : '') +
-    '. They wait in the learner’s review queue. Nothing has been recorded.'
+    '. They wait in the person’s review queue. Nothing has been recorded.'
   )
 }
 
 function describeProgress(progress: ProgressSummary, pending: number): string {
   const lines = [
-    `The learner has recorded understanding of ${progress.touched} of ${progress.totalNodes} nodes; ${progress.settled} settled, ${progress.withOpenConflict} with an open conflict.`,
+    `The person has recorded understanding of ${progress.touched} of ${progress.totalNodes} nodes; ${progress.settled} settled, ${progress.withOpenConflict} with an open conflict.`,
   ]
   for (const item of progress.items) {
     lines.push(`- [${item.attention}] ${item.label} [${item.nodeId}]`)
   }
-  lines.push(`${pending} suggestion(s) pending the learner’s decision.`)
+  lines.push(`${pending} suggestion(s) pending the person’s decision.`)
   return lines.join('\n')
 }
 
@@ -767,7 +770,7 @@ function registerThreadTools(
     {
       title: 'Open a conversation thread',
       description:
-        'Open a thread for the conversation you are having with the learner, so its turns are kept for them. Call once per conversation; use thread_fork to start a second line from an earlier turn.',
+        'Open a thread for the conversation you are having with the person, so its turns are kept for them. Call once per conversation; use thread_fork to start a second line from an earlier turn.',
       inputSchema: THREAD_OPEN_INPUT,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
@@ -783,7 +786,7 @@ function registerThreadTools(
     {
       title: 'Record a turn',
       description:
-        'Record one turn of the conversation, exactly as said, as the learner or as yourself. It is kept as the learner’s archive, never as their understanding.',
+        'Record one turn of the conversation, exactly as said, as the person or as yourself. It is kept as the person’s archive, never as their understanding.',
       inputSchema: THREAD_APPEND_INPUT,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
@@ -851,7 +854,7 @@ const EXPAND_INPUT = fromJsonSchema<{ node: string }>({
 function describeSummary(summary: RecallSummary): string {
   const lines = summary.entries.map(
     (entry) =>
-      `- ${entry.label} [${entry.nodeId}]${entry.state === undefined ? '' : ` (${entry.state})`}${
+      `- ${entry.label} [${entry.nodeId}]${entry.kept === true ? ' kept' : ''}${entry.state === undefined ? '' : ` (${entry.state})`}${
         entry.openConflict === true ? ' — open conflict, do not build on it' : ''
       }${entry.inScope === true ? ' — in scope' : ''}`,
   )

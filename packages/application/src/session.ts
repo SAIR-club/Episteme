@@ -202,6 +202,11 @@ export interface RankedView {
   readonly type: string
   readonly score: number
   readonly origin: 'match' | 'neighbor'
+  /**
+   * In this person's own graph, because they wrote or accepted it. Says they hold these words, and nothing about how
+   * well: a host told only "nothing recorded" treated an accepted claim as stray text and refused to build on it.
+   */
+  readonly kept: boolean
   readonly matchedTerms: readonly string[]
   /** The contributions that produced the score, largest first. */
   readonly reasons: readonly ReasonView[]
@@ -436,6 +441,8 @@ export interface RecallSummaryEntry {
   readonly score: number
   /** What this person recorded about it, compactly. */
   readonly state?: string
+  /** See {@link RankedView.kept}. */
+  readonly kept?: true
   readonly openConflict?: true
   readonly inScope?: true
 }
@@ -838,6 +845,7 @@ export class CognitiveSession {
         ...(known === undefined
           ? {}
           : { state: known.dimensions.map((d) => `${d.id}=${d.level}`).join(', ') }),
+        ...(item.kept ? { kept: true as const } : {}),
         ...(known !== undefined && known.openConflicts.length > 0 ? { openConflict: true } : {}),
         ...(inScope.has(item.nodeId) ? { inScope: true } : {}),
       }
@@ -912,12 +920,21 @@ export class CognitiveSession {
   }
 
   #recallView(question: string, context: RelevantContext): RecallResult {
+    const ranked = toRankedView(
+      context,
+      (nodeId) => this.#seen.getNode(nodeId)?.actorId === this.#actor,
+    )
     return {
       question,
       retriever: context.retriever,
       // The Chinese display form, decided here so every surface reads the same and no view invents its own
       // wording for "nothing recorded". `contextSummary` is the English one, used by the English demos.
-      summary: context.summary === '' ? '关于这个，你还没有记录过任何东西' : context.summary,
+      summary:
+        context.summary !== ''
+          ? context.summary
+          : ranked.some((entry) => entry.kept)
+            ? '你保存过相关内容，但还没有标记理解程度'
+            : '关于这个，你还没有记录过任何东西',
       known: context.known.map((entry) => ({
         nodeId: entry.nodeId,
         label: entry.label,
@@ -930,7 +947,7 @@ export class CognitiveSession {
           }))
           .sort((left, right) => (left.id < right.id ? -1 : 1)),
       })),
-      ranked: toRankedView(context),
+      ranked,
       rules: this.rules,
     }
   }
@@ -3420,7 +3437,10 @@ function memoryLog(): SceneLog {
 }
 
 /** Turns the retrieval's recorded contributions into something a view can render. */
-function toRankedView(context: RelevantContext): readonly RankedView[] {
+function toRankedView(
+  context: RelevantContext,
+  isKept: (nodeId: string) => boolean,
+): readonly RankedView[] {
   const ranked: readonly RankedEntry[] = context.ranked ?? []
   const byId = new Map(context.nodes.map((node) => [node.id, node]))
 
@@ -3445,6 +3465,7 @@ function toRankedView(context: RelevantContext): readonly RankedView[] {
       type: node?.type ?? 'unknown',
       score: entry.score,
       origin: entry.origin,
+      kept: isKept(entry.nodeId),
       matchedTerms: entry.matchedTerms,
       reasons,
     }
@@ -3486,7 +3507,7 @@ function explainSignal(signal: string, value: number, matchedTerms: readonly str
         : 'is connected to what you asked about'
     case 'cognitive':
       return value === 0
-        ? 'you have not recorded anything about it'
+        ? 'you have recorded no level of understanding for it'
         : 'your own recorded understanding makes it worth resurfacing'
     case 'recency':
       return 'recently added or changed'
