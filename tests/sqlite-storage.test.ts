@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -125,6 +126,41 @@ describe('a graph kept in SQLite', () => {
     expect(refusal).toBeInstanceOf(EpistemeError)
     expect((refusal as Error).message).toContain('format version 1')
     expect((refusal as Error).message).toContain(`version ${SQLITE_FORMAT_VERSION}`)
+  })
+
+  it('leaves a graph from another build byte for byte as it was', async () => {
+    const old = new Database(graph)
+    old.exec('CREATE TABLE records (seq INTEGER PRIMARY KEY, body TEXT NOT NULL)')
+    old.pragma('user_version = 1')
+    old.close()
+    const before = await readFile(graph)
+
+    await expect(openSqliteStorage(graph)).rejects.toThrow(/format version 1/)
+
+    expect((await readFile(graph)).equals(before)).toBe(true)
+  })
+
+  it('refuses a SQLite file of something else rather than adding tables to it', async () => {
+    const other = new Database(graph)
+    other.exec('CREATE TABLE theirs (x)')
+    other.close()
+    const before = await readFile(graph)
+
+    await expect(openSqliteStorage(graph)).rejects.toThrow(/something else/)
+
+    expect((await readFile(graph)).equals(before)).toBe(true)
+  })
+
+  it('says so when an older JSONL graph sits where a new one would start empty', async () => {
+    const older = join(directory, 'learn.jsonl')
+    await writeFile(older, '{"schemaVersion":1}\n', 'utf8')
+
+    await expect(startService({ port: 0, graph: join(directory, 'learn.db') })).rejects.toThrow(
+      /older graph/,
+    )
+
+    expect(await readFile(older, 'utf8')).toBe('{"schemaVersion":1}\n')
+    expect(existsSync(join(directory, 'learn.db'))).toBe(false)
   })
 
   it('refuses a file that is not a database, without calling it locked', async () => {

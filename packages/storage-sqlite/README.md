@@ -16,7 +16,11 @@ And how it is held:
   releases when the process exits in any way, killed outright included. A second opener, in this process or
   another, is refused with `GraphLockedError`.
 - **Crash safety.** WAL with `synchronous=FULL`: a crash mid-save leaves the previous save.
-- **Format version** in `user_version`, currently 2. A file in another format is refused, not guessed at.
+- **Format version** in `user_version`, currently 2. A file in another format is refused, not guessed at, and
+  comes out of the refusal as it went in.
+- **Older graphs** are carried into a new file by `convertLegacyGraph` (`pnpm serve graph convert <older> <new>`),
+  which reads a JSONL or format 1 graph and its companion files without opening them in place, and never writes over
+  anything.
 
 ## Usage
 

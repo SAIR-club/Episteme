@@ -1,0 +1,3 @@
+{"schemaVersion":1,"kind":"thread","thread":{"id":"thr_9f6c0f80-e66b-4578-b1f7-2c797324750d","owner":"actor_human","title":"第一天","scope":"space_a","createdAt":1793713548875}}
+{"schemaVersion":1,"kind":"turn","turn":{"id":"turn_8ca027a4-df4b-4850-b2bb-9d47a6119270","thread":"thr_9f6c0f80-e66b-4578-b1f7-2c797324750d","seq":1,"speaker":"learner","text":"校验和不对时跳过这条","by":"actor_human","at":1793713548876}}
+{"schemaVersion":1,"kind":"turn","turn":{"id":"turn_87f65b6e-c88a-4b7b-800f-3728e9f43886","thread":"thr_9f6c0f80-e66b-4578-b1f7-2c797324750d","seq":2,"speaker":"agent","text":"协议要求遇到错误就停下","by":"actor_human","at":1793713548877}}

@@ -1,7 +1,8 @@
+import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
+import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
 import { createMcpEndpoint } from '@episteme/mcp'
 import { API_PREFIX, handleApi, operationOf, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
@@ -70,6 +71,13 @@ const MCP_PATH = '/mcp'
  */
 export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
+  // Graphs used to be JSONL beside this same name. Opening would start a new, empty one and read as lost work.
+  const older = graph.replace(/\.db$/, '.jsonl')
+  if (older !== graph && !existsSync(graph) && existsSync(older)) {
+    throw new UnreadableGraphError(
+      `found the older graph "${older}" and nothing at "${graph}". This build does not read JSONL and did not change it; keep it, and name another file to start a new graph. "graph convert" carries it into a new file.`,
+    )
+  }
   const profile = options.profile ?? learnProfile()
   // Checked before the graph is opened, so a profile or deployment that cannot be served never takes the
   // graph's lock.

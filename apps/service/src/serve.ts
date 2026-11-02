@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { GraphLockedError } from '@episteme/application'
+import {
+  GraphConversionError,
+  GraphLockedError,
+  UnreadableGraphError,
+  convertGraph,
+} from '@episteme/application'
 import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
 import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
@@ -45,6 +50,8 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `    pnpm serve users add <名字>\n` +
       `    pnpm serve tokens add <actorId> --kind human|agent --label <用途，例如 claude-code>\n` +
       `    pnpm serve tokens revoke <令牌 id>\n` +
+      `\n  把旧版图谱（JSONL 或第 1 版 SQLite）转换成新文件。旧文件只读，不会被改动，目标已存在时拒绝：\n` +
+      `    pnpm serve graph convert <旧图谱> <新图谱>\n` +
       `\n  环境变量：EPISTEME_FILE 与 --graph 等效，PORT 与 --port 等效；命令行参数优先。\n` +
       `\n  本地模式只监听本机回环地址。确认建议、记录理解需要你本人的令牌：托管的 Workspace 会自动带上，\n` +
       `  其他客户端用启动时打印的令牌。它能防止误操作，但挡不住以你的身份运行、能用 shell 的 agent。\n\n`,
@@ -76,6 +83,9 @@ function refusalMessage(error: unknown): string | undefined {
   if (error instanceof GraphLockedError) {
     return `这个图谱已经被另一个进程打开了，比如正在运行的 Episteme 服务：\n  ${error.graphPath}\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
   }
+  if (error instanceof UnreadableGraphError) {
+    return `这个版本打不开这个文件，文件没有被改动：\n  ${error.message}\n如果它是旧版图谱，可以转换成一个新文件：\n  pnpm serve graph convert <旧图谱> <新图谱>`
+  }
   return undefined
 }
 
@@ -85,6 +95,35 @@ const usersPath = optionValue(argv, '--users') ?? process.env.EPISTEME_USERS ?? 
 if (argv[0] === 'users' || argv[0] === 'tokens') {
   await administer(argv)
   process.exit(0)
+}
+
+// Conversion of an older graph: one command, then exit. The older files are only read.
+if (argv[0] === 'graph') {
+  const [, action, from, to] = argv
+  if (action !== 'convert' || from === undefined || to === undefined) {
+    process.stderr.write('用法：pnpm serve graph convert <旧图谱> <新图谱>\n')
+    process.exit(1)
+  }
+  try {
+    const done = await convertGraph(from, to)
+    const counts = (found: Readonly<Record<string, number | undefined>>): string =>
+      Object.entries(found)
+        .map(([name, count]) => `${name} ${count ?? 0}`)
+        .join('，') || '无'
+    process.stdout.write(
+      `已转换（${done.sourceFormat}）：\n  新图谱：${done.to}\n  记录：${counts(done.records)}\n  伴生数据：${counts(done.companions)}\n` +
+        `  旧文件没有改动，校验值前后一致，可以保留：\n` +
+        Object.entries(done.source)
+          .map(([file, sha256]) => `    ${file}  ${sha256}\n`)
+          .join('') +
+        done.notes.map((note) => `  注意：${note}\n`).join(''),
+    )
+    process.exit(0)
+  } catch (error) {
+    if (!(error instanceof GraphConversionError)) throw error
+    process.stderr.write(`没有转换。旧文件没有改动，目标也没有被写入：\n  ${error.message}\n`)
+    process.exit(1)
+  }
 }
 
 /** `users add`, `tokens add` and `tokens revoke`, on the user file. A token is printed once and never again. */
