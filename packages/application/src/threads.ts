@@ -32,7 +32,18 @@ export interface Turn {
   readonly text: string
   /** Who sent it: the agent that relayed the turn, or the person. */
   readonly by: string
+  /**
+   * The credential the words arrived with (ADR 0021): the person's own, or an agent's, which is a relay whatever
+   * `speaker` says. Absent means nobody knows: a turn from before this was kept, or one sent with no credential.
+   */
+  readonly writtenWith?: 'person' | 'agent'
   readonly at: EpochMillis
+}
+
+/** The credential a turn arrived with, as far as anyone can tell: older turns whose `by` is an agent were relayed. */
+export function writtenWithOf(turn: Pick<Turn, 'by' | 'writtenWith'>): Turn['writtenWith'] {
+  if (turn.writtenWith !== undefined) return turn.writtenWith
+  return turn.by.startsWith('actor_agent_') ? 'agent' : undefined
 }
 
 export interface TurnSummary {

@@ -115,6 +115,58 @@ describe('a thread', () => {
     expect(await refusalOf(session.forkThread(thread.id, 'turn_absent'))).toBe('unknown_turn')
   })
 
+  it('forks a fork, and from a turn a branch only carries over, each line reading its own way back', async () => {
+    const main = await session.openThread({ title: 'main' })
+    const one = await session.appendTurn(main.id, { speaker: 'learner', text: 'one' })
+    const two = await session.appendTurn(main.id, { speaker: 'agent', text: 'two' })
+    await session.appendTurn(main.id, { speaker: 'learner', text: 'three on main' })
+
+    const side = await session.forkThread(main.id, two.id, 'side')
+    const sideOwn = await session.appendTurn(side.id, { speaker: 'learner', text: 'side own' })
+    await session.appendTurn(side.id, { speaker: 'agent', text: 'side later' })
+
+    // A branch of the branch, from a turn the branch said itself.
+    const deep = await session.forkThread(side.id, sideOwn.id, 'deep')
+    await session.appendTurn(deep.id, { speaker: 'learner', text: 'deep own' })
+    // A branch of the branch, from a turn it only carries over from main.
+    const early = await session.forkThread(side.id, one.id, 'early')
+    await session.appendTurn(early.id, { speaker: 'learner', text: 'early own' })
+
+    const texts = (id: string) => session.threadView(id)?.turns.map((turn) => turn.text)
+    expect(texts(main.id)).toEqual(['one', 'two', 'three on main'])
+    expect(texts(side.id)).toEqual(['one', 'two', 'side own', 'side later'])
+    expect(texts(deep.id)).toEqual(['one', 'two', 'side own', 'deep own'])
+    expect(texts(early.id)).toEqual(['one', 'early own'])
+    expect(early.parent).toEqual({ thread: side.id, turn: one.id })
+
+    // Every turn keeps the line it was said on, so a reader can tell carried-over from own.
+    expect(session.threadView(deep.id)?.turns.map((turn) => turn.thread)).toEqual([
+      main.id,
+      main.id,
+      side.id,
+      deep.id,
+    ])
+    // A turn after the fork point on the parent is not on the branch, and cannot be forked from it.
+    const later = session.threadView(side.id)?.turns.at(-1)
+    expect(await refusalOf(session.forkThread(deep.id, later!.id))).toBe('unknown_turn')
+
+    await session.close()
+    session = await CognitiveSession.open({ filePath })
+    expect(texts(deep.id)).toEqual(['one', 'two', 'side own', 'deep own'])
+    expect(session.threads().find((thread) => thread.id === deep.id)?.parent).toEqual({
+      thread: side.id,
+      turn: sideOwn.id,
+    })
+  })
+
+  it('forks only the person’s own thread', async () => {
+    const thread = await session.openThread({ title: 'mine' })
+    const turn = await session.appendTurn(thread.id, { speaker: 'learner', text: 'mine' })
+    const other = session.forActor('actor_human_other', 'Other')
+    expect(await refusalOf(other.forkThread(thread.id, turn.id))).toBe('unknown_thread')
+    expect(other.threads()).toEqual([])
+  })
+
   it('survives a restart', async () => {
     const thread = await session.openThread({ title: 'kept' })
     const turn = await session.appendTurn(thread.id, {
@@ -263,6 +315,34 @@ describe('threads in a shared service', () => {
       text: 'not mine',
     })
     expect(intruding).toMatchObject({ status: 422, body: { code: 'unknown_thread' } })
+  })
+
+  it('forks over REST for the owner only', async () => {
+    const opened = await call('/threads', lin.human, { title: '位置编码' })
+    const thread = (opened.body['thread'] as { id: string }).id
+    const said = await call(`/threads/${thread}/turns`, lin.human, {
+      speaker: 'learner',
+      text: '位置编码可以省略吗？',
+    })
+    const turn = (said.body['turn'] as { id: string }).id
+
+    const forked = await call(`/threads/${thread}/fork`, lin.human, { turn, title: '另一种问法' })
+    expect(forked).toMatchObject({
+      status: 200,
+      body: { thread: { title: '另一种问法', parent: { thread, turn } } },
+    })
+    const fork = (forked.body['thread'] as { id: string }).id
+    const read = await call(`/threads/${fork}`, lin.human)
+    expect(JSON.stringify(read.body)).toContain('位置编码可以省略吗')
+
+    expect(await call(`/threads/${thread}/fork`, lin.human, { turn: 'turn_absent' })).toMatchObject(
+      { status: 422, body: { code: 'unknown_turn' } },
+    )
+    expect(await call(`/threads/${thread}/fork`, wei.human, { turn })).toMatchObject({
+      status: 422,
+      body: { code: 'unknown_thread' },
+    })
+    expect((await call('/threads', wei.human)).body['threads']).toEqual([])
   })
 
   it('serves scene records over REST, the caller’s own', async () => {

@@ -146,7 +146,9 @@ than `agent` is refused with `422 agent_tokens_only`, revoking the token in use 
 and in local mode, which has no user file, all three answer `422 not_available_in_local_mode`.
 
 A scene may add routes of its own under `/api/v1/scene/<profile name>/…` (ADR 0013, _Scene extensions_). They
-answer with the same revision fields and error format, and cannot decide or record.
+answer with the same revision fields and error format, and cannot decide or record in the graph. A scene's `GET` is a
+read. Its `POST` needs the person's own credential unless the profile names it in `proposingRoutes`, for routes that
+only add something for the person to look at (ADR 0020).
 
 There is no route that answers a question. The service recalls, validates, records and projects. Writing an
 answer from what was recalled belongs to the agent, or to a client that has one.

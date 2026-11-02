@@ -4,7 +4,7 @@ import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
-import { createMcpEndpoint } from '@episteme/mcp'
+import { createMcpEndpoint, type McpActivity } from '@episteme/mcp'
 import { API_PREFIX, handleApi, operationOf, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
 import {
@@ -37,6 +37,11 @@ export interface ServiceOptions {
   readonly trustElicitation?: boolean
   /** Allow people to publish (ADR 0014). Off by default; the graph is copied aside before its first one. */
   readonly sharing?: boolean
+  /**
+   * Told of each MCP message that arrives, after the boundary and authorization have let it through: which client
+   * says it sent it, and what it asked. For showing the person which agents use the service. Never decides anything.
+   */
+  readonly onMcpActivity?: (activity: McpActivity) => void
 }
 
 export interface EpistemeService {
@@ -171,6 +176,7 @@ async function serve(
     elicitationDecisions: mode === 'local' || options.trustElicitation === true,
     ...(publicHost === undefined ? {} : { allowedHostnames: [publicHost] }),
     ...(options.publicOrigin === undefined ? {} : { allowedOrigins: [options.publicOrigin] }),
+    ...(options.onMcpActivity === undefined ? {} : { onActivity: options.onMcpActivity }),
   })
   const workspace = options.workspace
 
@@ -214,7 +220,7 @@ async function serve(
         : path === MCP_PATH
           ? authorized(response, caller, 'read', () => mcp.handle(request, response, caller))
           : path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)
-            ? authorized(response, caller, operationOf(method, path), () =>
+            ? authorized(response, caller, operationOf(method, path, profile), () =>
                 handleApi(request, response, path, {
                   // Each person reads and writes through their own session over the one graph (ADR 0014).
                   session: caller === undefined ? session : session.forActor(caller.actorId),

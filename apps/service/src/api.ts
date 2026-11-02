@@ -1,5 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
+import {
+  isRefusal,
+  sceneViewOf,
+  sceneWritesOf,
+  type CognitiveSession,
+  type Decision,
+} from '@episteme/application'
+import { agentActorFor } from '@episteme/mcp'
 import type { Caller, Directory, Operation } from './identity.js'
 import type { SceneProfile } from './profile.js'
 
@@ -39,12 +46,28 @@ const DECISION_PATTERNS: readonly RegExp[] = [
   /^POST \/api\/v1\/tokens\/[^/]+\/revoke$/,
 ]
 
-/** What a request to the API asks to do. */
-export function operationOf(method: string, path: string): Operation {
+/**
+ * What a request to the API asks to do.
+ *
+ * A scene's route that changes anything is the person's unless its profile names it as only proposing (ADR 0020), so
+ * a route nobody thought about is closed, and so is a path that matches no route.
+ */
+export function operationOf(
+  method: string,
+  path: string,
+  profile: Pick<SceneProfile, 'name' | 'proposingRoutes' | 'privateRoutes'>,
+): Operation {
   const route = `${method} ${path}`
-  return DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))
-    ? 'decide'
-    : 'read'
+  if (DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))) {
+    return 'decide'
+  }
+  const scene = `${API_PREFIX}/scene/${profile.name}`
+  if (!path.startsWith(`${scene}/`)) return 'read'
+  if (method === 'GET') {
+    // Only the person's own credential reads these, as only it decides.
+    return profile.privateRoutes?.includes(path.slice(scene.length)) === true ? 'decide' : 'read'
+  }
+  return profile.proposingRoutes?.includes(path.slice(scene.length)) === true ? 'read' : 'decide'
 }
 
 export interface ApiContext {
@@ -108,13 +131,16 @@ function sendRefusal(
 }
 
 /** Reads a JSON body, bounded so a malformed or hostile request cannot exhaust memory. */
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(
+  request: IncomingMessage,
+  limit = 1_000_000,
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > 1_000_000) throw new RequestError('request body too large')
+    if (size > limit) throw new RequestError('request body too large')
     chunks.push(buffer)
   }
   if (chunks.length === 0) return {}
@@ -152,7 +178,11 @@ function asObject(value: unknown, field: string): Record<string, unknown> {
  */
 function decisionFrom(body: Record<string, unknown>): Decision {
   const action = body['action']
-  if (action === 'accept' || action === 'dismiss') return { action }
+  if (action === 'dismiss') return { action }
+  // A space named for a candidate proposed without one. It is the person's choice, made here; the application
+  // refuses it for a candidate that already has a space and never fills one in on its own.
+  const placed = body['scope'] === undefined ? {} : { scope: asString(body['scope'], 'scope') }
+  if (action === 'accept') return { action, ...placed }
   if (action !== 'modify') {
     throw new RequestError('"action" must be one of accept, modify, dismiss')
   }
@@ -163,6 +193,7 @@ function decisionFrom(body: Record<string, unknown>): Decision {
       const properties = fields['properties']
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'node',
           nodeType: text('nodeType'),
@@ -183,6 +214,7 @@ function decisionFrom(body: Record<string, unknown>): Decision {
       }
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'claim',
           label: text('label'),
@@ -193,11 +225,13 @@ function decisionFrom(body: Record<string, unknown>): Decision {
     case 'link':
       return {
         action,
+        ...placed,
         proposal: { kind: 'link', from: text('from'), to: text('to'), relation: text('relation') },
       }
     case 'state':
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'state',
           target: text('target'),
@@ -281,6 +315,23 @@ export async function handleApi(
 
   async function route(): Promise<void> {
     const method = request.method ?? 'GET'
+
+    // Who is signed in, and what to call the people whose work they can read. Only those people: everyone else in
+    // the user file stays out of it, since being on a service does not make someone's name public.
+    if (path === `${API_PREFIX}/me` && method === 'GET') {
+      const names: Record<string, string> = {}
+      for (const id of [session.actorId, ...session.browsePublications().map((p) => p.author)]) {
+        const name = people?.nameOf(id)
+        if (name !== undefined) names[id] = name
+      }
+      sendJson(response, 200, {
+        actorId: session.actorId,
+        mode: people === undefined ? 'local' : 'shared',
+        sharing: session.sharingAllowed,
+        names,
+      })
+      return
+    }
 
     // The whole surface state in one read, so a Workspace renders from a single revision rather than from
     // several that could disagree.
@@ -433,9 +484,20 @@ export async function handleApi(
       const body = await readJson(request)
       const id = asString(body['id'], 'id')
       const userAgent = request.headers['user-agent']
+      const decision = decisionFrom(body)
+      // A space the scene owns must be one this person can open, or the node would land where no page shows it.
+      const filing = decision.action === 'dismiss' ? undefined : decision.scope
+      if (filing !== undefined && profile.checkFiling !== undefined) {
+        const check = profile.checkFiling
+        const checked = await refusing(response, () => {
+          check(sceneViewOf(session), filing)
+          return Promise.resolve(true)
+        })
+        if (checked === undefined) return
+      }
       const result = await session.decide(
         id,
-        decisionFrom(body),
+        decision,
         'review',
         caller === undefined
           ? undefined
@@ -649,6 +711,12 @@ export async function handleApi(
         session.appendTurn(segment(turnsPath[1]), {
           speaker,
           text: asString(body['text'], 'text'),
+          // From the credential, never the body (ADR 0021). With none, nobody knows who wrote it, so nothing is said.
+          ...(caller === undefined
+            ? {}
+            : caller.kind === 'agent'
+              ? { by: agentActorFor(caller.label), writtenWith: 'agent' as const }
+              : { writtenWith: 'person' as const }),
         }),
       )
       if (turn !== undefined) sendJson(response, 200, { ...at(session), turn })
@@ -815,10 +883,15 @@ export async function handleApi(
         (candidate) => candidate.method === method && candidate.path === subpath,
       )
       if (sceneRoute !== undefined) {
-        const body = method === 'POST' ? await readJson(request) : {}
+        const body = method === 'POST' ? await readJson(request, sceneRoute.maxBodyBytes) : {}
         const query = new URL(request.url ?? '/', 'http://localhost').searchParams
         const answer = await refusing(response, async () =>
-          sceneRoute.handle({ view: sceneViewOf(session), body, query }),
+          sceneRoute.handle({
+            view: sceneViewOf(session),
+            writes: sceneWritesOf(session),
+            body,
+            query,
+          }),
         )
         if (answer === undefined) return
         sendJson(response, 200, { ...at(session), ...answer })
