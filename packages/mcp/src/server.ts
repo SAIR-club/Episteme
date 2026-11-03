@@ -558,7 +558,7 @@ export function createEpistemeMcpServer(
             view,
             agent: actingAgent(access, context),
           })
-          return result(answer.text, answer.structured)
+          return resultWithData(answer.text, answer.structured)
         } catch (error) {
           if (!isRefusal(error)) throw error
           return refused(error.code, error.message)
@@ -755,7 +755,7 @@ function registerThreadTools(
   const answering = async (work: () => Promise<object>, describe: (value: object) => string) => {
     try {
       const value = await work()
-      return result(describe(value), value)
+      return resultWithData(describe(value), value)
     } catch (error) {
       if (!isRefusal(error)) throw error
       return refused(error.code, error.message)
@@ -862,6 +862,15 @@ function result(text: string, structured: object): CallToolResult {
     content: [{ type: 'text', text }],
     structuredContent: structured,
   }
+}
+
+/**
+ * For tools whose sentence is only a summary ("1 space(s).", "Thread opened."): many hosts read the text block and
+ * never `structuredContent`, so the ids they must pass on would be lost. The MCP spec asks for the serialized
+ * structure in a text block too; the sentence stays first.
+ */
+function resultWithData(text: string, structured: object): CallToolResult {
+  return result(`${text}\n${JSON.stringify(structured)}`, structured)
 }
 
 /** A refusal is a normal answer to an agent, not a protocol error: it says what to change. */
