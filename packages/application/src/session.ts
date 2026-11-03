@@ -1742,7 +1742,7 @@ export class CognitiveSession {
       if (isHuman && quotes.length === 0) {
         throw new SessionRefusal(
           'missing_quote',
-          'a summary of the human turn must quote at least some of their own words',
+          'a summary of the human turn must quote at least some of their own words: pass them in quotes, copied verbatim from the turn',
         )
       }
       for (const quote of quotes) {

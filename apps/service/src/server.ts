@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
@@ -177,6 +178,10 @@ async function serve(
   let boundPort = 0
   let origin = ''
 
+  // A socket that has asked nothing yet, such as a browser's preconnect. Closing leaves it open until the headers
+  // timeout, which is minutes, so close hangs up on these itself.
+  const unasked = new Set<Socket>()
+
   const server: Server = createServer((request, response) => {
     // One boundary for everything served: the Workspace, the API and the MCP endpoint alike.
     const refusal = boundaryRefusal(request, boundPort, options.publicOrigin)
@@ -320,6 +325,12 @@ async function serve(
     })
   })
 
+  server.on('connection', (socket) => {
+    unasked.add(socket)
+    socket.once('close', () => unasked.delete(socket))
+  })
+  server.on('request', (request) => unasked.delete(request.socket))
+
   const address = server.address()
   boundPort = typeof address === 'object' && address !== null ? address.port : port
   origin = `http://${host}:${boundPort}`
@@ -340,6 +351,7 @@ async function serve(
       await mcp.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
+        for (const socket of unasked) socket.destroy()
       })
       await session.close()
     },

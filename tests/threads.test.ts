@@ -80,6 +80,10 @@ describe('a thread', () => {
     expect(await refusalOf(session.summarizeTurn(thread.id, turn.id, { text: 's' }))).toBe(
       'missing_quote',
     )
+    // The refusal names the parameter, or an agent can only guess where the quote goes.
+    await expect(session.summarizeTurn(thread.id, turn.id, { text: 's' })).rejects.toThrow(
+      /pass them in quotes/,
+    )
     expect(
       await refusalOf(
         session.summarizeTurn(thread.id, turn.id, { text: 's', quotes: ['可以删掉吗'] }),
