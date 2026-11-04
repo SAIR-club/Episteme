@@ -1,0 +1,14 @@
+name: Stale Management
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  stale:
+    name: Manage Stale Issues and PRs
+    permissions:
+      issues: write
+      pull-requests: write
+    uses: SAIR-club/.github/.github/workflows/global-stale.yml@main
