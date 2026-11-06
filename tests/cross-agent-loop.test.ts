@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BLANK_TOPIC, learnProfile, startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type McpWire } from './mcp-wire.js'
+import { storedRecords } from './stored.js'
 
 /**
  * The First Real Learning Loop, across two agents and one service (#15):
@@ -125,7 +126,7 @@ async function toolNames(agent: McpWire): Promise<readonly string[]> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-cross-agent-'))
-  graph = join(directory, 'learn.jsonl')
+  graph = join(directory, 'learn.db')
   await start()
   // Each wire reads the service's address when it calls, so both survive a restart on a new port.
   agentA = mcpWire(() => service.mcpUrl, { name: 'agent-a', version: '1' })
@@ -288,9 +289,12 @@ describe('understanding one agent proposed, recalled by another', () => {
 
     // 4. The accepted node keeps the verified origin and its basis, and names the suggestion it came from;
     // the suggestion was Agent A's.
-    const stored = (await readFile(graph, 'utf8'))
-      .split('\n')
-      .filter((line) => line.includes(`"${nodeId}"`) && line.includes('"origin"'))
+    // The service holds the file while it runs, so it is stopped to read the history and started again.
+    await service.close()
+    const stored = storedRecords(graph).filter(
+      (line) => line.includes(`"${nodeId}"`) && line.includes('"origin"'),
+    )
+    await start()
     expect(stored).toHaveLength(1)
     const record = JSON.parse(stored[0] ?? '{}') as {
       node?: {

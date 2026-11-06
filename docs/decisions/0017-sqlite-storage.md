@@ -1,6 +1,6 @@
 # 0017 — SQLite storage: the same history, a lock the operating system holds
 
-Status: **proposed** (2026-10-28). Amends [ADR 0006](0006-persistence-format.md) where it says _why JSONL and not
+Status: **proposed** (2026-10-28); decisions 4 and 5 superseded by [ADR 0018](0018-sqlite-only.md). Amends [ADR 0006](0006-persistence-format.md) where it says _why JSONL and not
 SQLite_. Discussed in #72; replaces the stale-lock reclaim of #84.
 
 ## Context

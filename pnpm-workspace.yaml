@@ -4,9 +4,10 @@ packages:
   - 'tests'
 
 # pnpm blocks dependency build scripts by default. Each allowance is explicit instead of
-# approved interactively: esbuild's postinstall fetches the platform binary that Vitest needs,
-# and better-sqlite3's fetches the prebuilt SQLite driver for @episteme/storage-sqlite.
+# approved interactively: esbuild's postinstall fetches the platform binary that Vitest needs.
+# better-sqlite3's is refused: its package carries the prebuilt SQLite driver for every platform, and its
+# binding.gyp would only compile the same driver from source, which needs a C++ toolchain.
 allowBuilds:
-  better-sqlite3: true
+  better-sqlite3: false
   esbuild: true
   simple-git-hooks: true

@@ -24,7 +24,7 @@ const state = (target: string, dimension: string, level: string): Proposal => ({
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-delegation-'))
-  session = await CognitiveSession.open({ filePath: join(directory, 'graph.jsonl'), sharing: true })
+  session = await CognitiveSession.open({ filePath: join(directory, 'graph.db'), sharing: true })
   await session.addNode({ id: 'q_order', label: 'Why order?', kind: 'question' })
 })
 
@@ -128,7 +128,7 @@ describe('over the service', () => {
   beforeEach(async () => {
     await session.close()
     session = await CognitiveSession.open({})
-    service = await startService({ port: 0, graph: join(directory, 'served.jsonl') })
+    service = await startService({ port: 0, graph: join(directory, 'served.db') })
   })
 
   afterEach(async () => {

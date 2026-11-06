@@ -30,7 +30,7 @@ async function refusalOf(work: Promise<unknown>): Promise<string | undefined> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-threads-'))
-  filePath = join(directory, 'graph.jsonl')
+  filePath = join(directory, 'graph.db')
   session = await CognitiveSession.open({ filePath })
 })
 
@@ -216,7 +216,7 @@ describe('threads in a shared service', () => {
     wei = { human: await addToken(users, weiId, 'human', 'workspace') }
     service = await startService({
       port: 0,
-      graph: join(directory, 'shared.jsonl'),
+      graph: join(directory, 'shared.db'),
       mode: 'shared',
       users,
       publicOrigin: 'https://episteme.example.edu',

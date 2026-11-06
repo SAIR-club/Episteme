@@ -90,7 +90,7 @@ describe('over MCP', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-layered-'))
-    service = await startService({ port: 0, graph: join(directory, 'graph.jsonl') })
+    service = await startService({ port: 0, graph: join(directory, 'graph.db') })
   })
 
   afterEach(async () => {

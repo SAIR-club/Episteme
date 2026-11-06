@@ -75,7 +75,7 @@ describe('local mode', () => {
     const workspace = join(directory, 'workspace')
     await mkdir(workspace)
     await writeFile(join(workspace, 'index.html'), '<!doctype html><title>Workspace</title>')
-    service = await startService({ port: 0, graph: join(directory, 'learn.jsonl'), workspace })
+    service = await startService({ port: 0, graph: join(directory, 'learn.db'), workspace })
   })
 
   it('reads, proposes and distills without a token, as every host does today', async () => {
@@ -179,7 +179,7 @@ describe('shared mode', () => {
     agent = await addToken(users, actorId, 'agent', 'claude-code')
     service = await startService({
       port: 0,
-      graph: join(directory, 'shared.jsonl'),
+      graph: join(directory, 'shared.db'),
       mode: 'shared',
       users,
       publicOrigin: 'https://episteme.example.edu',
@@ -187,7 +187,7 @@ describe('shared mode', () => {
   })
 
   it('refuses to start without a user file or a public origin', async () => {
-    const graph = join(directory, 'other.jsonl')
+    const graph = join(directory, 'other.db')
     await expect(
       startService({ port: 0, graph, mode: 'shared', publicOrigin: 'https://e.example' }),
     ).rejects.toThrow(/user file/)

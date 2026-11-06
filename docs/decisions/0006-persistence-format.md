@@ -1,5 +1,8 @@
 # 0006 — Persistence format
 
+Status: **accepted**; the choice of JSONL is superseded by [ADR 0018](0018-sqlite-only.md). What is written, the
+whole history as records, and the sync/async bridge still hold.
+
 ## Context
 
 Phase 0 kept everything in memory: a restart erased the graph. Graph is the whole point of the

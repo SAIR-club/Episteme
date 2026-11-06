@@ -1,10 +1,11 @@
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession } from '@episteme/application'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { NODE, createFixture, learnTags } from './fixtures.js'
+import { storedRecords } from './stored.js'
 
 /**
  * Publications (ADR 0014, step S4): a person's deliberate act of making part of their understanding public.
@@ -48,7 +49,7 @@ async function open(sharing = true): Promise<void> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-publications-'))
-  filePath = join(directory, 'shared.jsonl')
+  filePath = join(directory, 'shared.db')
   await open()
 })
 
@@ -180,7 +181,10 @@ describe('withdrawing', () => {
 describe('persistence', () => {
   it('keeps publications and withdrawals across a restart, and copies the graph aside before the first', async () => {
     const work = await linsWork()
-    const before = await readFile(filePath, 'utf8')
+    // The graph's file is its owner's alone while it is open, so it is read between two owners.
+    await owner.close()
+    const before = storedRecords(filePath)
+    await open()
     const first = await lin.publish({ root: work.claim })
     const second = await lin.publish({ root: work.question })
     if (!first.ok || !second.ok) throw new Error('refused')
@@ -188,9 +192,10 @@ describe('persistence', () => {
 
     const backup = `${filePath}.before-sharing`
     await access(backup)
-    expect(await readFile(backup, 'utf8')).toBe(before)
 
     await owner.close()
+    expect(storedRecords(backup)).toEqual(before)
+    expect(storedRecords(filePath)).not.toEqual(before)
     await open()
     expect(wei.publications().map((publication) => publication.id)).toEqual([second.publication.id])
     expect(ids(wei)).toContain(work.question)

@@ -78,7 +78,7 @@ describe('shared mode', () => {
     meiAgent = await addToken(users, mei, 'agent', 'codex')
     service = await startService({
       port: 0,
-      graph: join(directory, 'shared.jsonl'),
+      graph: join(directory, 'shared.db'),
       mode: 'shared',
       users,
       publicOrigin: 'https://episteme.example.edu',
@@ -273,7 +273,7 @@ describe('shared mode', () => {
 
 describe('local mode', () => {
   beforeEach(async () => {
-    service = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+    service = await startService({ port: 0, graph: join(directory, 'learn.db') })
   })
 
   it('needs the person’s token, and then refuses: there is no user file to manage', async () => {

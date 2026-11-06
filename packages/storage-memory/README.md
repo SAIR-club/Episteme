@@ -26,8 +26,8 @@ const storage = createMemoryStorage()
 - **Validate.** `validateMutation` is the single authority and lives in the graph layer. A backend
   that also enforced rules would be a second, divergent authority.
 - **Generate ids or timestamps.** Those arrive on the entities from the caller.
-- **Persist.** Everything is lost when the process exits. Durable local storage is planned in
-  [`storage-local`](../storage-local/README.md).
+- **Persist.** Everything is lost when the process exits. Durable storage is
+  [`storage-sqlite`](../storage-sqlite/README.md).
 
 ## Known limitation
 

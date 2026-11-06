@@ -20,7 +20,7 @@ let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-boundary-'))
-  server = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+  server = await startService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

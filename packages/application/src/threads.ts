@@ -1,5 +1,5 @@
-import { appendFile, readFile } from 'node:fs/promises'
 import type { EpochMillis } from '@episteme/core'
+import type { CompanionLog } from '@episteme/storage-sqlite'
 
 /**
  * Conversation threads (ADR 0015): a person's dialogue with their agents, kept beside the graph and never in it.
@@ -55,35 +55,26 @@ type ThreadRecord =
 /**
  * The threads of one graph, in the order they were written.
  *
- * Append-only on disk as in memory: a turn is never edited, and a newer summary of a turn is appended beside the
- * earlier ones. Memory follows the disk, so a failed write leaves nothing the next session would not have.
+ * Append-only in the graph's database as in memory: a turn is never edited, and a newer summary of a turn is appended
+ * beside the earlier ones. Memory follows the database, so a failed write leaves nothing the next session would not have.
  */
 export class ThreadStore {
-  readonly #filePath: string | undefined
+  readonly #log: CompanionLog | undefined
   readonly #threads = new Map<string, Thread>()
   readonly #turns = new Map<string, Turn>()
   readonly #turnsOf = new Map<string, Turn[]>()
   readonly #summaries = new Map<string, TurnSummary[]>()
 
-  private constructor(filePath: string | undefined) {
-    this.#filePath = filePath
+  private constructor(log: CompanionLog | undefined) {
+    this.#log = log
   }
 
-  /** Reads the threads kept at `filePath`, or starts an empty in-memory store. An unreadable line throws. */
-  static async open(filePath?: string): Promise<ThreadStore> {
-    const store = new ThreadStore(filePath)
-    if (filePath === undefined) return store
-    let contents: string
-    try {
-      contents = await readFile(filePath, 'utf8')
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') return store
-      throw error
-    }
-    for (const [index, raw] of contents.split('\n').entries()) {
-      const line = raw.trim()
-      if (line === '') continue
-      store.#apply(parseRecord(line, index + 1, filePath))
+  /** Reads the threads kept in `log`, or starts an empty in-memory store. An unreadable record throws. */
+  static async open(log?: CompanionLog): Promise<ThreadStore> {
+    const store = new ThreadStore(log)
+    if (log === undefined) return store
+    for (const [index, body] of (await log.read()).entries()) {
+      store.#apply(parseRecord(body, index + 1, log.location))
     }
     return store
   }
@@ -143,9 +134,7 @@ export class ThreadStore {
   }
 
   async #write(record: ThreadRecord): Promise<void> {
-    if (this.#filePath !== undefined) {
-      await appendFile(this.#filePath, `${JSON.stringify(record)}\n`, 'utf8')
-    }
+    await this.#log?.append(JSON.stringify(record))
     this.#apply(record)
   }
 
@@ -171,13 +160,13 @@ export class ThreadStore {
   }
 }
 
-function parseRecord(line: string, lineNumber: number, filePath: string): ThreadRecord {
+function parseRecord(line: string, position: number, location: string): ThreadRecord {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
   } catch (error) {
     throw new Error(
-      `line ${lineNumber} of "${filePath}" is not valid JSON: ${(error as Error).message}`,
+      `record ${position} of "${location}" is not valid JSON: ${(error as Error).message}`,
     )
   }
   const record = parsed as Partial<{
@@ -189,7 +178,7 @@ function parseRecord(line: string, lineNumber: number, filePath: string): Thread
   }> | null
   if (record?.schemaVersion !== THREADS_SCHEMA_VERSION) {
     throw new Error(
-      `line ${lineNumber} of "${filePath}" is not a threads record this build reads (version ${THREADS_SCHEMA_VERSION})`,
+      `record ${position} of "${location}" is not a threads record this build reads (version ${THREADS_SCHEMA_VERSION})`,
     )
   }
   if (record.kind === 'thread' && record.thread !== undefined) {
@@ -201,5 +190,5 @@ function parseRecord(line: string, lineNumber: number, filePath: string): Thread
   if (record.kind === 'summary' && record.summary !== undefined) {
     return { schemaVersion: THREADS_SCHEMA_VERSION, kind: 'summary', summary: record.summary }
   }
-  throw new Error(`line ${lineNumber} of "${filePath}" is not a thread, a turn or a summary`)
+  throw new Error(`record ${position} of "${location}" is not a thread, a turn or a summary`)
 }

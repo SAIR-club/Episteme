@@ -168,7 +168,7 @@ describe('isolation through every read, in a shared service', () => {
     }
     service = await startService({
       port: 0,
-      graph: join(directory, 'shared.jsonl'),
+      graph: join(directory, 'shared.db'),
       mode: 'shared',
       users,
       publicOrigin: 'https://episteme.example.edu',
