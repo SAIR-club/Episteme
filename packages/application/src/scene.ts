@@ -17,6 +17,26 @@ export interface SessionScene {
   readonly distillationPolicy: DistillationPolicy
   /** The dimensions a person may set by hand, in the order they are offered. */
   readonly recordableDimensions: readonly RecordableDimension[]
+  /** Declarative cognitive evaluation policy for progress and attention (Issue #73). */
+  readonly evaluationPolicy?: EvaluationPolicy
+}
+
+/**
+ * Declarative evaluation policy for computing cognitive progress and attention levels.
+ * Allows scenes (e.g. learning, debate, research) to define their own epistemological assessment logic (Issue #73).
+ */
+export interface EvaluationPolicy {
+  /** Ordered list of attention levels, from most urgent to least urgent. */
+  readonly attentionLevels?: readonly string[]
+  /** Evaluates which attention level a node belongs to given its recorded state and conflicts. */
+  evaluateAttention?(
+    dimensions: readonly { readonly id: string; readonly level: string }[],
+    openConflicts: readonly string[],
+  ): string
+  /** Determines whether the node's dimensions place it in the settled band. */
+  isSettled?(dimensions: readonly { readonly id: string; readonly level: string }[]): boolean
+  /** Generates a human-readable summary line composed from touched and settled counts. */
+  progressLine?(touched: number, settled: number): string
 }
 
 /** A dimension a person can record, with the levels the scene's pack allows. */

@@ -167,7 +167,7 @@ episteme/
 │   ├── storage-sqlite/     The same records in one SQLite file, held by an OS lock (ADR 0017)
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
-│   ├── application/        The use-case layer every surface drives (LearnSession)
+│   ├── application/        The use-case layer every surface drives (CognitiveSession)
 │   ├── distillation/       Learning material → episodes → candidate understanding, as suggestions only
 │   ├── mcp/                The MCP surface: recall, propose, reflect and distill; no confirm tool
 │   ├── agent/              CognitiveAgent interface + a scripted mock used as the test double

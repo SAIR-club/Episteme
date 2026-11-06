@@ -1,7 +1,7 @@
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, SuggestionStore, type Proposal } from '@episteme/application'
+import { CognitiveSession, SuggestionStore, type Proposal } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -18,12 +18,12 @@ const WHY = 'the learner keeps returning to why order matters'
 
 let directory: string
 let filePath: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-suggest-'))
   filePath = join(directory, 'learn.jsonl')
-  session = await LearnSession.open({ filePath })
+  session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
 })
 
@@ -88,7 +88,7 @@ describe('proposing', () => {
     const graphBefore = await readFile(filePath, 'utf8')
     await session.close()
 
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(session.pendingSuggestions()).toHaveLength(1)
     expect(session.pendingSuggestions()[0]?.proposal).toEqual({
       kind: 'state',
@@ -177,7 +177,7 @@ describe('the draft file', () => {
     expect(await store.remove(result.suggestion.id)).toBe(false)
     expect(await readFile(`${filePath}.suggestions.jsonl`, 'utf8')).toBe('')
 
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(session.pendingSuggestions()).toHaveLength(0)
   })
 
@@ -185,7 +185,7 @@ describe('the draft file', () => {
     await session.close()
     await writeFile(`${filePath}.suggestions.jsonl`, '{"schemaVersion":99}\n', 'utf8')
 
-    await expect(LearnSession.open({ filePath })).rejects.toThrow(
+    await expect(CognitiveSession.open({ filePath })).rejects.toThrow(
       /not a suggestions record this build reads/,
     )
     const lockLeft = await access(`${filePath}.lock`).then(
@@ -195,11 +195,11 @@ describe('the draft file', () => {
     expect(lockLeft).toBe(false)
 
     await rm(`${filePath}.suggestions.jsonl`)
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
   })
 
   it('works in memory for a session without a file', async () => {
-    const inMemory = await LearnSession.open()
+    const inMemory = await CognitiveSession.open()
     await seedTopic(inMemory)
     const result = await inMemory.propose(
       { kind: 'state', target: 'c_rope', dimension: 'confidence', level: 'low' },

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startService, type EpistemeService } from '@episteme/service'
-import { LearnSession } from '@episteme/application'
+import { CognitiveSession } from '@episteme/application'
 import { agentActorFor, createMcpEndpoint } from '@episteme/mcp'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type ToolResult, type WireOptions } from './mcp-wire.js'
@@ -155,7 +155,7 @@ describe('the network boundary', () => {
   })
 
   it('rejects a request addressed to a host name other than localhost', async () => {
-    const session = await LearnSession.open()
+    const session = await CognitiveSession.open()
     const endpoint = createMcpEndpoint(session)
     const response = await endpoint.fetch(
       new Request('http://rebound.example/mcp', {
