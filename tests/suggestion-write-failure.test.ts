@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, SuggestionStore } from '@episteme/application'
+import { CognitiveSession, SuggestionStore } from '@episteme/application'
 import { CompanionLog, openSqliteStorage } from '@episteme/storage-sqlite'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -90,7 +90,7 @@ describe('the drafts store when a write fails', () => {
       outcome: 'accepted',
       proposal: draft.proposal,
       planned: { nodeId: 'claim_9', edgeIds: [] },
-      channel: 'learn-review',
+      channel: 'review',
     } as const
     await store.begin(resolution)
 
@@ -112,7 +112,7 @@ describe('the drafts store when a write fails', () => {
 describe('a decision whose completing write fails', () => {
   it('reports the failure, keeps the draft on record, and settles it once on the next decision', async () => {
     const filePath = join(directory, 'learn.db')
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await seedTopic(session)
     const proposed = await session.propose({ kind: 'claim', label: 'committed once' }, agent)
     if (!proposed.ok) throw new Error(proposed.refusal.message)
@@ -120,7 +120,7 @@ describe('a decision whose completing write fails', () => {
     // `begin` writes first; the second write of the drafts file is the one that completes the decision.
     failDraftsWrite(1)
     await expect(
-      session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review'),
+      session.decide(proposed.suggestion.id, { action: 'accept' }, 'review'),
     ).rejects.toThrow('injected')
     const committed = session.listNodes().filter((node) => node.label === 'committed once')
     expect(committed).toHaveLength(1)
@@ -134,7 +134,7 @@ describe('a decision whose completing write fails', () => {
     expect(own.nodeId).not.toBe(committed[0]?.nodeId)
 
     // Deciding again settles the first decision instead of committing a second time.
-    const again = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'learn-review')
+    const again = await session.decide(proposed.suggestion.id, { action: 'accept' }, 'review')
     expect(again.ok).toBe(false)
     expect(session.listNodes().filter((node) => node.label === 'committed once')).toHaveLength(1)
     expect(session.pendingSuggestions().map((suggestion) => suggestion.id)).not.toContain(
@@ -142,7 +142,7 @@ describe('a decision whose completing write fails', () => {
     )
     await session.close()
 
-    const reopened = await LearnSession.open({ filePath })
+    const reopened = await CognitiveSession.open({ filePath })
     expect(reopened.recovered).toEqual([])
     expect(reopened.listNodes().filter((node) => node.label === 'committed once')).toHaveLength(1)
     await reopened.close()

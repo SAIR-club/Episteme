@@ -1,7 +1,7 @@
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GraphLockedError, LearnSession } from '@episteme/application'
+import { GraphLockedError, CognitiveSession } from '@episteme/application'
 import { startService } from '@episteme/service'
 import { openEpisteme } from '@episteme/sdk'
 import { openSqliteStorage } from '@episteme/storage-sqlite'
@@ -98,16 +98,16 @@ describe('the storage adapter', () => {
 
 describe('the surfaces', () => {
   it('lets one session own a graph at a time, and releases it on close', async () => {
-    const first = await LearnSession.open({ filePath })
-    await expect(LearnSession.open({ filePath })).rejects.toBeInstanceOf(GraphLockedError)
+    const first = await CognitiveSession.open({ filePath })
+    await expect(CognitiveSession.open({ filePath })).rejects.toBeInstanceOf(GraphLockedError)
 
     await first.close()
-    const second = await LearnSession.open({ filePath })
+    const second = await CognitiveSession.open({ filePath })
     await second.close()
   })
 
   it('will not start a web surface over a graph another surface owns', async () => {
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await expect(startService({ port: 0, graph: filePath })).rejects.toBeInstanceOf(
       GraphLockedError,
     )
@@ -118,7 +118,7 @@ describe('the surfaces', () => {
     const server = await startService({ port: 0, graph: filePath })
     await server.close()
 
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await session.close()
   })
 
@@ -129,7 +129,7 @@ describe('the surfaces', () => {
     await expect(startService({ port: running.port, graph: filePath })).rejects.toThrow(
       /EADDRINUSE/,
     )
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await session.close()
 
     await running.close()

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  LearnSession,
+  CognitiveSession,
   SourceStore,
   SuggestionStore,
   payloadDigest,
@@ -83,12 +83,12 @@ const CORRECTION: readonly HostItem[] = [
 
 let directory: string
 let graph: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-host-'))
   graph = join(directory, 'learn.db')
-  session = await LearnSession.open({ filePath: graph })
+  session = await CognitiveSession.open({ filePath: graph })
 })
 
 afterEach(async () => {
@@ -140,7 +140,7 @@ async function whileClosed<T>(read: () => T): Promise<T> {
   try {
     return read()
   } finally {
-    session = await LearnSession.open({ filePath: graph })
+    session = await CognitiveSession.open({ filePath: graph })
   }
 }
 
@@ -153,7 +153,7 @@ const files = () =>
   ])
 
 async function accept(id: string | undefined): Promise<string> {
-  const decided = await session.decide(id ?? '', { action: 'accept' }, 'learn-review')
+  const decided = await session.decide(id ?? '', { action: 'accept' }, 'review')
   if (!decided.ok) throw new Error(`${decided.refusal.code}: ${decided.refusal.message}`)
   if (!('committed' in decided)) throw new Error('nothing was committed')
   return decided.committed.id
@@ -248,7 +248,7 @@ describe('references across episodes', () => {
       relation: 'evolves_to',
     })
 
-    const early = await session.decide(fix?.id ?? '', { action: 'accept' }, 'learn-review')
+    const early = await session.decide(fix?.id ?? '', { action: 'accept' }, 'review')
     expect(early.ok ? undefined : early.refusal.code).toBe('depends_on_pending')
     const oldNode = await accept(old?.id)
     const newNode = await accept(fresh?.id)
@@ -263,9 +263,9 @@ describe('references across episodes', () => {
 
   it('refuses the correction once the earlier claim is dismissed', async () => {
     const [old, fresh, fix] = (await submit(CORRECTION)).suggestions
-    await session.decide(old?.id ?? '', { action: 'dismiss' }, 'learn-review')
+    await session.decide(old?.id ?? '', { action: 'dismiss' }, 'review')
     await accept(fresh?.id)
-    const decided = await session.decide(fix?.id ?? '', { action: 'accept' }, 'learn-review')
+    const decided = await session.decide(fix?.id ?? '', { action: 'accept' }, 'review')
     expect(decided.ok ? undefined : decided.refusal.code).toBe('unresolved_candidate')
   })
 
@@ -416,7 +416,7 @@ describe('a host that lost the connection, a learner who decided some, and a ret
     const fresh = queued.filter((suggestion) => suggestion.proposal.kind === 'node')[1]
     // The learner accepts the earlier claim and dismisses the correction; the rest still wait.
     const committed = await accept(old?.id)
-    await session.decide(fresh?.id ?? '', { action: 'dismiss' }, 'learn-review')
+    await session.decide(fresh?.id ?? '', { action: 'dismiss' }, 'review')
     const before = await files()
 
     const retried = await submit(items, { submissionId: 'sub-7', hostSession: 'chat-7' })
@@ -478,7 +478,7 @@ describe('drafts that failed to land (fault injection)', () => {
   })
   const restart = async () => {
     await session.close()
-    session = await LearnSession.open({ filePath: graph })
+    session = await CognitiveSession.open({ filePath: graph })
   }
   const landingRecords = () =>
     whileClosed(() =>
@@ -553,7 +553,7 @@ describe('drafts that failed to land (fault injection)', () => {
   it('calls a suggestion not_pending only when its landing shows it was queued', async () => {
     const made = await submit(CORRECTION, { submissionId: 'sub-i' })
     for (const suggestion of made.suggestions) {
-      await session.decide(suggestion.id, { action: 'dismiss' }, 'learn-review')
+      await session.decide(suggestion.id, { action: 'dismiss' }, 'review')
     }
     expect(await landingRecords()).toHaveLength(1)
     const again = await submit(CORRECTION, { submissionId: 'sub-i' })

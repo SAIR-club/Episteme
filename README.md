@@ -166,7 +166,7 @@ episteme/
 │   ├── storage-sqlite/     Durable storage: one SQLite file per graph, held by an OS lock (ADR 0018)
 │   ├── embeddings-http/    Embedding adapters over HTTP (Ollama, OpenAI-compatible, TEI)
 │   ├── sdk/                Composition: the one place the layers are wired in order
-│   ├── application/        The use-case layer every surface drives (LearnSession)
+│   ├── application/        The use-case layer every surface drives (CognitiveSession)
 │   ├── distillation/       Learning material → episodes → candidate understanding, as suggestions only
 │   ├── mcp/                The MCP surface: recall, propose, reflect and distill; no confirm tool
 │   ├── agent/              CognitiveAgent interface + a scripted mock used as the test double
@@ -275,7 +275,7 @@ opt-in.
 - [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
 - [Vision](docs/planning/vision.md) · [Decision log](docs/planning/decision-log.md) ·
   [Discussions](docs/discussions/index.md)
-- [MindLink product spec](docs/planning/mindlink-spec.md) (the current plan)
+- [MindLink product spec](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-30/docs/planning/mindlink-spec.md) (archived: it is MindLink's plan, not Episteme's)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
 
 ## Limitations in v0.1.0
@@ -309,8 +309,8 @@ mock as the deterministic test double the loop's proofs depend on ([ADR 0008](do
 
 Episteme's side of the shared service is in place: identity, visibility, publications, threads and scene records,
 delegated confirmation and layered recall. Development now centres on MindLink, the learning application built on
-it; what it will be and the issues that build it are in the
-[MindLink product spec](docs/planning/mindlink-spec.md).
+it, in its own repository, [SAIR-club/MindLink](https://github.com/SAIR-club/MindLink); its plan as of this
+cleanup is the [MindLink product spec](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-30/docs/planning/mindlink-spec.md) (archived).
 
 ## Technical principles
 

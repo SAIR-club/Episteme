@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  LearnSession,
+  CognitiveSession,
   MAX_MATERIAL,
   type DistillOutcome,
   type Suggestion,
@@ -26,12 +26,12 @@ const DIALOGUE = [
 
 let directory: string
 let filePath: string
-let session: LearnSession
+let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-distil-'))
   filePath = join(directory, 'learn.db')
-  session = await LearnSession.open({ filePath })
+  session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
 })
 
@@ -72,7 +72,7 @@ describe('distilling material', () => {
   it('keeps the material beside the graph and records nothing in it', async () => {
     await session.close()
     const graphBefore = storedRecords(filePath)
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     const outcome = await distilled()
 
     expect(outcome.episodes).toBe(1)
@@ -93,7 +93,7 @@ describe('distilling material', () => {
     await session.close()
     expect(storedRecords(filePath)).toEqual(graphBefore)
     expect(storedText(filePath, 'sources')).toContain(outcome.sourceId)
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
   })
 
   it('gives every suggestion the words it came from, and says who proposed it and who asked', async () => {
@@ -146,11 +146,11 @@ describe('deciding what was distilled', () => {
     const answers = find(outcome, linkOf('answers'))
     const state = find(outcome, stateChange)
 
-    expect(await session.decide(answers.id, { action: 'accept' }, 'learn-review')).toMatchObject({
+    expect(await session.decide(answers.id, { action: 'accept' }, 'review')).toMatchObject({
       ok: false,
       refusal: { code: 'depends_on_pending' },
     })
-    expect(await session.decide(state.id, { action: 'accept' }, 'learn-review')).toMatchObject({
+    expect(await session.decide(state.id, { action: 'accept' }, 'review')).toMatchObject({
       ok: false,
       refusal: { code: 'depends_on_pending' },
     })
@@ -158,12 +158,12 @@ describe('deciding what was distilled', () => {
     const question = await session.decide(
       find(outcome, nodeNamed(QUESTION)).id,
       { action: 'accept' },
-      'learn-review',
+      'review',
     )
     const claim = await session.decide(
       find(outcome, nodeNamed(CLAIM)).id,
       { action: 'accept' },
-      'learn-review',
+      'review',
     )
     if (
       !question.ok ||
@@ -174,14 +174,14 @@ describe('deciding what was distilled', () => {
       throw new Error('expected the question and the claim to be accepted')
     }
 
-    const link = await session.decide(answers.id, { action: 'accept' }, 'learn-review')
+    const link = await session.decide(answers.id, { action: 'accept' }, 'review')
     expect(link.ok).toBe(true)
     const edge = session.graph
       .listEdges()
       .find((candidate) => candidate.type === 'answers' && candidate.from === claim.committed.id)
     expect(edge?.to).toBe(question.committed.id)
 
-    const confirmed = await session.decide(state.id, { action: 'accept' }, 'learn-review')
+    const confirmed = await session.decide(state.id, { action: 'accept' }, 'review')
     expect(confirmed.ok).toBe(true)
     const [event] = session.log.history({
       target: asId<NodeId>(question.committed.id),
@@ -198,7 +198,7 @@ describe('deciding what was distilled', () => {
   it('records on an accepted node which suggestion and which words it came from', async () => {
     const outcome = await distilled()
     const evidence = find(outcome, nodeNamed(EVIDENCE))
-    const result = await session.decide(evidence.id, { action: 'accept' }, 'learn-review')
+    const result = await session.decide(evidence.id, { action: 'accept' }, 'review')
     if (!result.ok || result.outcome === 'dismissed') throw new Error('expected a node')
 
     const node = session.graph.getNode(asId<NodeId>(result.committed.id))
@@ -220,7 +220,7 @@ describe('deciding what was distilled', () => {
         action: 'modify',
         proposal: { kind: 'node', nodeType: 'claim', label: '注意力对顺序不敏感' },
       },
-      'learn-review',
+      'review',
     )
     if (!result.ok || result.outcome === 'dismissed') throw new Error('expected a node')
     expect(session.graph.getNode(asId<NodeId>(result.committed.id))?.label).toBe(
@@ -230,22 +230,14 @@ describe('deciding what was distilled', () => {
 
   it('leaves what depended on a dismissed suggestion with nothing to attach to', async () => {
     const outcome = await distilled()
-    await session.decide(
-      find(outcome, nodeNamed(QUESTION)).id,
-      { action: 'dismiss' },
-      'learn-review',
-    )
-    await session.decide(find(outcome, nodeNamed(CLAIM)).id, { action: 'accept' }, 'learn-review')
+    await session.decide(find(outcome, nodeNamed(QUESTION)).id, { action: 'dismiss' }, 'review')
+    await session.decide(find(outcome, nodeNamed(CLAIM)).id, { action: 'accept' }, 'review')
 
     expect(
-      await session.decide(
-        find(outcome, linkOf('answers')).id,
-        { action: 'accept' },
-        'learn-review',
-      ),
+      await session.decide(find(outcome, linkOf('answers')).id, { action: 'accept' }, 'review'),
     ).toMatchObject({ ok: false, refusal: { code: 'unresolved_candidate' } })
     expect(
-      await session.decide(find(outcome, stateChange).id, { action: 'accept' }, 'learn-review'),
+      await session.decide(find(outcome, stateChange).id, { action: 'accept' }, 'review'),
     ).toMatchObject({ ok: false, refusal: { code: 'unresolved_candidate' } })
     expect(session.eventCount).toBe(0)
   })
@@ -255,7 +247,7 @@ describe('deciding what was distilled', () => {
     const claim = await session.decide(
       find(outcome, nodeNamed(CLAIM)).id,
       { action: 'accept' },
-      'learn-review',
+      'review',
     )
     if (!claim.ok || claim.outcome === 'dismissed') throw new Error('expected a claim')
     const about = find(
@@ -263,7 +255,7 @@ describe('deciding what was distilled', () => {
       (suggestion) =>
         suggestion.proposal.kind === 'link' && suggestion.proposal.to === 'c_self_attention',
     )
-    expect((await session.decide(about.id, { action: 'accept' }, 'learn-review')).ok).toBe(true)
+    expect((await session.decide(about.id, { action: 'accept' }, 'review')).ok).toBe(true)
     expect(
       session.graph
         .listEdges()
@@ -273,18 +265,14 @@ describe('deciding what was distilled', () => {
 
   it('survives a restart: sources, pending suggestions and their references', async () => {
     const outcome = await distilled()
-    await session.decide(
-      find(outcome, nodeNamed(QUESTION)).id,
-      { action: 'accept' },
-      'learn-review',
-    )
+    await session.decide(find(outcome, nodeNamed(QUESTION)).id, { action: 'accept' }, 'review')
     await session.close()
 
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
     expect(session.sources().map((source) => source.id)).toEqual([outcome.sourceId])
     expect(session.pendingSuggestions()).toHaveLength(8)
     const state = find({ suggestions: session.pendingSuggestions() }, stateChange)
-    expect((await session.decide(state.id, { action: 'accept' }, 'learn-review')).ok).toBe(true)
+    expect((await session.decide(state.id, { action: 'accept' }, 'review')).ok).toBe(true)
   })
 
   it('settles a node decision whose graph write failed, without adding the node twice', async () => {
@@ -295,14 +283,14 @@ describe('deciding what was distilled', () => {
     const realSave = SqliteStorageAdapter.prototype.save
     SqliteStorageAdapter.prototype.save = () => Promise.reject(new Error('injected: disk full'))
     try {
-      await expect(
-        session.decide(question.id, { action: 'accept' }, 'learn-review'),
-      ).rejects.toThrow('injected')
+      await expect(session.decide(question.id, { action: 'accept' }, 'review')).rejects.toThrow(
+        'injected',
+      )
     } finally {
       SqliteStorageAdapter.prototype.save = realSave
     }
 
-    expect(await session.decide(question.id, { action: 'accept' }, 'learn-review')).toMatchObject({
+    expect(await session.decide(question.id, { action: 'accept' }, 'review')).toMatchObject({
       ok: false,
       refusal: { code: 'unknown_suggestion' },
     })

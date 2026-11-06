@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  LearnSession,
+  CognitiveSession,
   SuggestionStore,
   type Proposal,
   type Resolution,
@@ -54,7 +54,7 @@ const LINK: Proposal = {
 
 /** A seeded graph with one pending draft, both written and released. */
 async function withDraft(proposal: Proposal): Promise<Suggestion> {
-  const session = await LearnSession.open({ filePath })
+  const session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
   const result = await session.propose(proposal, {
     proposedBy: 'actor_agent_recovery',
@@ -79,7 +79,7 @@ interface Shape {
   pending: number
 }
 
-function shapeOf(session: LearnSession): Shape {
+function shapeOf(session: CognitiveSession): Shape {
   return {
     events: session.eventCount,
     claims: session
@@ -102,8 +102,8 @@ describe('a crash after the graph was written and before the draft was removed',
       const draftsBefore = storedRecords(filePath, 'suggestions')
 
       // The real decision, run to completion: this is the graph a crash after its write leaves behind.
-      const deciding = await LearnSession.open({ filePath })
-      const decided = await deciding.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+      const deciding = await CognitiveSession.open({ filePath })
+      const decided = await deciding.decide(suggestion.id, { action: 'accept' }, 'review')
       if (!decided.ok || decided.outcome === 'dismissed') throw new Error('expected a commit')
       const landed = shapeOf(deciding)
       const plannedEdges = deciding.graph
@@ -123,10 +123,10 @@ describe('a crash after the graph was written and before the draft was removed',
           proposal.kind === 'claim'
             ? { nodeId: decided.committed.id, edgeIds: plannedEdges }
             : { edgeIds: plannedEdges },
-        channel: 'learn-review',
+        channel: 'review',
       })
 
-      const recovered = await LearnSession.open({ filePath })
+      const recovered = await CognitiveSession.open({ filePath })
       expect(recovered.recovered).toEqual([
         {
           operationId: decided.operationId,
@@ -143,7 +143,7 @@ describe('a crash after the graph was written and before the draft was removed',
       await recovered.close()
 
       // And the settlement itself was written: the next start finds nothing to recover.
-      const later = await LearnSession.open({ filePath })
+      const later = await CognitiveSession.open({ filePath })
       expect(later.recovered).toEqual([])
       expect(shapeOf(later)).toEqual({ ...landed, pending: 0 })
       await later.close()
@@ -163,13 +163,13 @@ describe('a crash after the decision was begun and before the graph was written'
       channel: 'mcp-elicitation',
     })
 
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     expect(session.recovered).toEqual([
       { operationId: 'dec_never_landed', suggestionId: suggestion.id, settled: 'rolled_back' },
     ])
     expect(shapeOf(session)).toMatchObject({ claims: [], pending: 1 })
 
-    const decided = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const decided = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     expect(decided.ok).toBe(true)
     expect(shapeOf(session)).toMatchObject({ claims: [CLAIM.label], pending: 0 })
     await session.close()
@@ -179,29 +179,29 @@ describe('a crash after the decision was begun and before the graph was written'
 describe('a decision whose graph write failed', () => {
   it('is settled, not repeated, when the same draft is decided again', async () => {
     const suggestion = await withDraft(STATE)
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
 
     // The graph's save fails once, as a full disk would, after the decision was recorded in the drafts.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
     const realSave = SqliteStorageAdapter.prototype.save
     SqliteStorageAdapter.prototype.save = () => Promise.reject(new Error('injected: disk full'))
     try {
-      await expect(
-        session.decide(suggestion.id, { action: 'accept' }, 'learn-review'),
-      ).rejects.toThrow('injected')
+      await expect(session.decide(suggestion.id, { action: 'accept' }, 'review')).rejects.toThrow(
+        'injected',
+      )
     } finally {
       SqliteStorageAdapter.prototype.save = realSave
     }
 
     // The change is in memory and the decision is on record. Deciding again writes and settles it.
-    const again = await session.decide(suggestion.id, { action: 'accept' }, 'learn-review')
+    const again = await session.decide(suggestion.id, { action: 'accept' }, 'review')
     expect(again).toMatchObject({ ok: false, refusal: { code: 'unknown_suggestion' } })
     expect(
       session.log.history({ target: asId<NodeId>('q_why_order'), actorId: session.actorId }),
     ).toHaveLength(1)
     await session.close()
 
-    const reopened = await LearnSession.open({ filePath })
+    const reopened = await CognitiveSession.open({ filePath })
     expect(reopened.recovered).toEqual([])
     expect(reopened.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'high' }])
     expect(reopened.pendingSuggestions()).toEqual([])
@@ -217,7 +217,7 @@ describe('the drafts', () => {
     )
     await writeStoredRecords(filePath, { logs: { suggestions: v1 } })
 
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     expect(session.pendingSuggestions().map((pending) => pending.id)).toEqual([suggestion.id])
     await session.close()
   })

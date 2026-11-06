@@ -103,7 +103,7 @@ from turning into a different product.
 | Episteme Core (the service)            | the Episteme service, `apps/service`: a host process built from the packages below         |
 | structure building, event processing   | `@episteme/core`: graph, guards, event log, projection, retrieval                          |
 | candidate extraction                   | `@episteme/distillation`, with policies from domain packs such as `@episteme/domain-learn` |
-| review and confirmation                | `@episteme/application` (`LearnSession.decide`)                                            |
+| review and confirmation                | `@episteme/application` (`CognitiveSession.decide`)                                       |
 | API gateway, MCP side                  | `@episteme/mcp`                                                                            |
 | graph store, event log, artifact store | `@episteme/storage-sqlite`: one database per graph, with its drafts and sources            |
 | Episteme Workspace                     | the Learn page today; a Workspace application of its own, possibly in its own repository   |
@@ -140,4 +140,5 @@ on something named.
    tree, scheduling, real-time updates, multi-user access, shared subject knowledge, and Forum as a second
    scene.
 
-The [MindLink product spec](../planning/mindlink-spec.md) breaks the work that builds on them into issues.
+The work that builds on them is MindLink's, planned in its own repository; the [MindLink product spec](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-30/docs/planning/mindlink-spec.md) (archived)
+broke it into issues.

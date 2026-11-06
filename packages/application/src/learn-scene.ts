@@ -11,6 +11,7 @@ import type { DistillationPolicy } from '@episteme/distillation'
 import {
   recordableDimensions,
   type DimensionPresentation,
+  type EvaluationPolicy,
   type RecordableDimension,
   type SessionScene,
 } from './scene.js'
@@ -251,6 +252,44 @@ const LEARN_PRESENTATIONS: readonly DimensionPresentation[] = [
   },
 ]
 
+/** Educational evaluation policy defining settled and attention heuristics for the Learn scene. */
+export const learnEvaluationPolicy: EvaluationPolicy = {
+  attentionLevels: ['conflict', 'shaky', 'unexplained', 'settled'],
+  isSettled(dimensions) {
+    const levelOf = (id: string): string | undefined =>
+      dimensions.find((entry) => entry.id === id)?.level
+    return (
+      (['medium', 'high'] as const).includes(levelOf(DIMENSION.confidence) as 'medium' | 'high') &&
+      (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
+    )
+  },
+  evaluateAttention(dimensions, openConflicts) {
+    if (openConflicts.length > 0) return 'conflict'
+
+    const levelOf = (id: string): string | undefined =>
+      dimensions.find((entry) => entry.id === id)?.level
+
+    const confidence = levelOf(DIMENSION.confidence)
+    if (
+      levelOf(DIMENSION.articulation) === 'low' &&
+      confidence !== undefined &&
+      confidence !== 'low'
+    ) {
+      return 'unexplained'
+    }
+
+    const settled =
+      (['medium', 'high'] as const).includes(confidence as 'medium' | 'high') &&
+      (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
+
+    return settled ? 'settled' : 'shaky'
+  },
+  progressLine(touched, settled) {
+    if (touched === 0) return '你还没有记录过任何理解'
+    return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
+  },
+}
+
 /**
  * The Learn scene a session uses when it is opened without one.
  *
@@ -261,6 +300,7 @@ export const learnScene: SessionScene = {
   packs: [defaultSessionPack],
   distillationPolicy: defaultDistillationPolicy,
   recordableDimensions: recordableDimensions(DEFAULT_STATE_DIMENSIONS, LEARN_PRESENTATIONS),
+  evaluationPolicy: learnEvaluationPolicy,
 }
 
 /** @deprecated Read `session.recordableDimensions`, which follows the session's scene. */

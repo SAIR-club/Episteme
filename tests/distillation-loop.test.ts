@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession, type Suggestion } from '@episteme/application'
+import { CognitiveSession, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { storedText } from './stored.js'
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
@@ -40,7 +40,7 @@ afterEach(async () => {
 
 describe('the distillation loop', () => {
   it('takes a real fragment through distillation and review into the graph, and keeps only what was decided', async () => {
-    let session = await LearnSession.open({ filePath })
+    let session = await CognitiveSession.open({ filePath })
     await seedTopic(session)
     const nodesBefore = session.listNodes().length
 
@@ -87,9 +87,9 @@ describe('the distillation loop', () => {
         suggestion.proposal.to === `cand:${label(QUESTION).id}`,
     ) as Suggestion
 
-    const question = await session.decide(label(QUESTION).id, { action: 'accept' }, 'learn-review')
-    const claim = await session.decide(label(CLAIM).id, { action: 'accept' }, 'learn-review')
-    const link = await session.decide(answers.id, { action: 'accept' }, 'learn-review')
+    const question = await session.decide(label(QUESTION).id, { action: 'accept' }, 'review')
+    const claim = await session.decide(label(CLAIM).id, { action: 'accept' }, 'review')
+    const link = await session.decide(answers.id, { action: 'accept' }, 'review')
     // The learner says they are less sure than "我明白了" suggested: their own value, not the agent's.
     const state = await session.decide(
       said('我明白了。').id,
@@ -102,13 +102,9 @@ describe('the distillation loop', () => {
           level: 'low',
         },
       },
-      'learn-review',
+      'review',
     )
-    const dismissed = await session.decide(
-      label(EVIDENCE).id,
-      { action: 'dismiss' },
-      'learn-review',
-    )
+    const dismissed = await session.decide(label(EVIDENCE).id, { action: 'dismiss' }, 'review')
 
     for (const result of [question, claim, link, state, dismissed]) expect(result.ok).toBe(true)
     if (
@@ -124,7 +120,7 @@ describe('the distillation loop', () => {
     await session.close()
 
     // ── After a restart ──
-    session = await LearnSession.open({ filePath })
+    session = await CognitiveSession.open({ filePath })
 
     // The nodes: what was accepted, with which suggestion and which words it came from.
     for (const [id, suggestion, text] of [
@@ -175,7 +171,7 @@ describe('the distillation loop', () => {
   })
 
   it('records an accepted change of understanding as the learner’s, confirmed by them', async () => {
-    const session = await LearnSession.open({ filePath })
+    const session = await CognitiveSession.open({ filePath })
     await seedTopic(session)
     const outcome = await session.distill({ text: FRAGMENT })
     if (!outcome.ok) throw new Error(outcome.refusal.message)
@@ -187,8 +183,8 @@ describe('the distillation loop', () => {
         suggestion.proposal.kind === 'state' && suggestion.origin?.excerpt === '我明白了。',
     ) as Suggestion
 
-    const node = await session.decide(question.id, { action: 'accept' }, 'learn-review')
-    await session.decide(understood.id, { action: 'accept' }, 'learn-review')
+    const node = await session.decide(question.id, { action: 'accept' }, 'review')
+    await session.decide(understood.id, { action: 'accept' }, 'review')
     if (!node.ok || node.outcome === 'dismissed') throw new Error('expected a node')
 
     const [event] = session.log.history({
