@@ -24,7 +24,7 @@ graph, so the terminal surface cannot open the same file.
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
 that could confirm would be confirming itself. A suggestion is accepted through the one human-decision path,
-from the Learn review queue or from an elicitation form answered in the host. See _Trust_ below for what each
+from the review queue or from an elicitation form answered in the host. See _Trust_ below for what each
 of these can and cannot guarantee.
 
 Every result carries the same data twice: as text addressed to the agent, and as `structuredContent`.
@@ -97,7 +97,7 @@ it, the SDK's legacy shim serves the same result as a 2025-style elicitation, so
 
 The two ways a suggestion gets decided offer different guarantees (ADR 0008, _Trust boundaries_).
 
-- **The Learn review queue** is the human-decision channel Episteme controls. No MCP tool can reach it.
+- **The review queue** is the human-decision channel Episteme controls. No MCP tool can reach it.
 - **Elicitation is a trusted-host boundary.** Episteme verifies that a retry carries state it sealed and an
   answer that fits its form. It cannot verify that a person gave the answer: any process that speaks MCP can
   declare the capability and answer its own form.

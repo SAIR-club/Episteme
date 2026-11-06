@@ -2,7 +2,7 @@
 
 The use-case layer: what a learner can do with their own graph, independent of the surface they do it from.
 
-`CognitiveSession` (formerly `LearnSession`, kept as a deprecated alias) opens a graph for one scene, answers a question from the retrieval it displays, records what the human now
+`CognitiveSession` (formerly `CognitiveSession`, kept as a deprecated alias) opens a graph for one scene, answers a question from the retrieval it displays, records what the human now
 understands, adds and links nodes, and summarises progress. The terminal and web surfaces in
 [`apps/learn`](../../apps/learn/README.md) drive it, and so will the MCP endpoint described in
 [ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md).

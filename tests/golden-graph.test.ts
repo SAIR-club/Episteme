@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LearnSession } from '@episteme/application'
+import { CognitiveSession } from '@episteme/application'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -25,7 +25,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-async function readGraph(open: (filePath: string) => Promise<LearnSession>) {
+async function readGraph(open: (filePath: string) => Promise<CognitiveSession>) {
   const session = await open(join(directory, 'graph.jsonl'))
   try {
     const nodes = session.listNodes().map((node) => node.nodeId)
@@ -48,7 +48,7 @@ async function readGraph(open: (filePath: string) => Promise<LearnSession>) {
 describe('the v0.1.0 golden graph', () => {
   it('reads exactly as it did', async () => {
     const expected: unknown = JSON.parse(await readFile(join(GOLDEN, 'expected.json'), 'utf8'))
-    const read = await readGraph((filePath) => LearnSession.open({ filePath }))
+    const read = await readGraph((filePath) => CognitiveSession.open({ filePath }))
     expect(JSON.parse(JSON.stringify(read))).toEqual(expected)
   })
 })

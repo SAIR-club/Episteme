@@ -181,7 +181,7 @@ describe('an agent without a form proposes, the learner decides in Learn', () =>
 
     const [event] = await eventsOnDisk()
     expect(event?.values['confidence']).toEqual({ level: 'low', sourceOf: pending?.id })
-    expect(event?.source).toContain('modified via learn-review')
+    expect(event?.source).toContain('modified via review')
   })
 
   it('records a claim the learner accepted, linked to what it is about', async () => {
@@ -228,7 +228,7 @@ describe('the two channels meet', () => {
     const [pending] = (await surface()).suggestions
     const decided = await learn('/api/v1/suggestions/decide', { id: pending?.id, action: 'accept' })
     expect(decided.status).toBe(200)
-    expect((await eventsOnDisk())[0]?.source).toContain('accepted via learn-review')
+    expect((await eventsOnDisk())[0]?.source).toContain('accepted via review')
   })
 
   it('fails closed when the host restarted between the rounds, and keeps the draft', async () => {
