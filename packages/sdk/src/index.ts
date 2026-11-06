@@ -161,7 +161,7 @@ export function composeDeterministic(startedAt = 0, options: ComposeOptions = {}
 }
 
 /** A human actor with the given id, so callers do not each invent the shape. */
-export function humanActor(id: ActorId, displayName = 'Learner', now = 0): Actor {
+export function humanActor(id: ActorId, displayName = 'Person', now = 0): Actor {
   return { id, kind: 'human', displayName, shareByDefault: false, createdAt: now }
 }
 

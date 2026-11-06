@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { LearnSession } from '@episteme/application'
+import { CognitiveSession } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { describe, expect, it } from 'vitest'
 
@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest'
  * graph, the review queue and a history from several reads can tell whether they describe one moment.
  */
 
-async function seeded(): Promise<LearnSession> {
-  const session = await LearnSession.open()
+async function seeded(): Promise<CognitiveSession> {
+  const session = await CognitiveSession.open()
   await seedTopic(session)
   return session
 }
@@ -65,13 +65,13 @@ describe('the session revision', () => {
     const directory = await mkdtemp(join(tmpdir(), 'episteme-epoch-'))
     const filePath = join(directory, 'learn.jsonl')
     try {
-      const first = await LearnSession.open({ filePath })
+      const first = await CognitiveSession.open({ filePath })
       await seedTopic(first)
       await first.record('q_why_order', { confidence: 'low' })
       const before = { epoch: first.epoch, revision: first.revision }
       await first.close()
 
-      const second = await LearnSession.open({ filePath })
+      const second = await CognitiveSession.open({ filePath })
       await second.record('q_why_order', { confidence: 'high' })
       await second.batch(() => undefined)
       // Counting again from zero can land on the same number for a different state.

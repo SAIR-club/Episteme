@@ -220,7 +220,7 @@ describe('understanding one agent proposed, recalled by another', () => {
       ],
     ])
     expect(event?.source).toContain(`suggestion ${confidence} from actor_agent_agent-a`)
-    expect(event?.source).toContain('accepted via learn-review')
+    expect(event?.source).toContain('accepted via review')
   })
 
   it('gives neither agent a way to decide', async () => {
