@@ -7,6 +7,7 @@ import {
   UnreadableGraphError,
   convertGraph,
 } from '@episteme/application'
+import { describeEmbeddings, EmbeddingSettingsError } from './embeddings.js'
 import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
 import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
@@ -53,6 +54,13 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `\n  把旧版图谱（JSONL 或第 1 版 SQLite）转换成新文件。旧文件只读，不会被改动，目标已存在时拒绝：\n` +
       `    pnpm serve graph convert <旧图谱> <新图谱>\n` +
       `\n  环境变量：EPISTEME_FILE 与 --graph 等效，PORT 与 --port 等效；命令行参数优先。\n` +
+      `\n  语义检索（默认关闭）：\n` +
+      `    EPISTEME_EMBEDDINGS_URL         嵌入服务地址，例如 http://127.0.0.1:11434\n` +
+      `    EPISTEME_EMBEDDINGS_MODEL       嵌入模型名（与 URL 一起设置才开启）\n` +
+      `    EPISTEME_EMBEDDINGS_PROTOCOL    openai（默认）、ollama 或 tei\n` +
+      `    EPISTEME_EMBEDDINGS_API_KEY     托管服务的密钥，可不设\n` +
+      `    EPISTEME_EMBEDDINGS_TIMEOUT_MS  单次请求超时，默认 10000\n` +
+      `    嵌入服务出错时，这次检索退回到关键词和图谱，并在结果里写明原因。\n` +
       `\n  本地模式只监听本机回环地址。确认建议、记录理解需要你本人的令牌：托管的 Workspace 会自动带上，\n` +
       `  其他客户端用启动时打印的令牌。它能防止误操作，但挡不住以你的身份运行、能用 shell 的 agent。\n\n`,
   )
@@ -85,6 +93,9 @@ function refusalMessage(error: unknown): string | undefined {
   }
   if (error instanceof UnreadableGraphError) {
     return `这个版本打不开这个文件，文件没有被改动：\n  ${error.message}\n如果它是旧版图谱，可以转换成一个新文件：\n  pnpm serve graph convert <旧图谱> <新图谱>`
+  }
+  if (error instanceof EmbeddingSettingsError) {
+    return `语义检索的设置有误，服务没有启动：\n  ${error.message}`
   }
   return undefined
 }
@@ -223,6 +234,7 @@ process.stdout.write(
     `  REST API： ${service.apiUrl}\n` +
     `  图谱：     ${service.graph}\n` +
     (topic === undefined ? '' : `  主题：     ${topic.title}\n`) +
+    `  ${describeEmbeddings(service.embeddings)}\n` +
     (service.humanToken === undefined
       ? `  模式：     共享（用户文件 ${usersPath}）\n`
       : `  你的令牌： ${service.humanToken}\n` +

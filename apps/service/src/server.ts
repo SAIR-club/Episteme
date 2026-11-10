@@ -8,6 +8,11 @@ import { createMcpEndpoint, type McpActivity } from '@episteme/mcp'
 import { API_PREFIX, handleApi, operationOf, sendJson } from './api.js'
 import { boundaryRefusal } from './boundary.js'
 import {
+  embeddingAdapter,
+  embeddingsFromEnvironment,
+  type EmbeddingSettings,
+} from './embeddings.js'
+import {
   accessRefusal,
   BrowserSessions,
   credentialOf,
@@ -42,6 +47,11 @@ export interface ServiceOptions {
    * says it sent it, and what it asked. For showing the person which agents use the service. Never decides anything.
    */
   readonly onMcpActivity?: (activity: McpActivity) => void
+  /**
+   * The embedding endpoint for semantic recall. Without it, `EPISTEME_EMBEDDINGS_*` decides; `false` turns it off
+   * whatever the environment says. Off unless configured.
+   */
+  readonly embeddings?: EmbeddingSettings | false
 }
 
 export interface EpistemeService {
@@ -62,6 +72,8 @@ export interface EpistemeService {
    * in the person's name, so it is printed for them and never logged.
    */
   readonly humanToken: string | undefined
+  /** The embedding endpoint semantic recall uses, without its key; `undefined` when it is off. */
+  readonly embeddings: Omit<EmbeddingSettings, 'apiKey' | 'timeoutMs'> | undefined
   close(): Promise<void>
 }
 
@@ -89,15 +101,27 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
   // graph's lock.
   assertSceneRoutes(profile.routes ?? [])
   const people = await peopleFor(options)
+  // A malformed setting is refused here, before the graph is opened, rather than on the first recall.
+  const embeddings =
+    options.embeddings === undefined ? embeddingsFromEnvironment() : options.embeddings
   const session = await CognitiveSession.open({
     filePath: graph,
     scene: profile.scene,
     sharing: options.sharing === true,
+    ...(embeddings === undefined || embeddings === false
+      ? {}
+      : { adapter: embeddingAdapter(embeddings) }),
   })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
-    return await serve(session, graph, profile, options, people)
+    return await serve(
+      session,
+      graph,
+      profile,
+      { ...options, embeddings: embeddings ?? false },
+      people,
+    )
   } catch (error) {
     await session.close()
     throw error
@@ -350,6 +374,14 @@ async function serve(
     graph,
     mode,
     humanToken: local?.token,
+    embeddings:
+      options.embeddings === undefined || options.embeddings === false
+        ? undefined
+        : {
+            model: options.embeddings.model,
+            protocol: options.embeddings.protocol,
+            baseUrl: options.embeddings.baseUrl,
+          },
     // In-flight agent exchanges first, since an open stream would hold the socket open; then the socket, so no
     // request arrives at a session that is closing; then the session, which writes what is pending and gives
     // up the graph.

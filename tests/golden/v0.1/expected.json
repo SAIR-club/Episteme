@@ -84,11 +84,12 @@
     "question": "why does attention need to know the order",
     "retriever": "hybrid",
     "summary": "Why does a transformer need to be told the order? [articulation=low, confidence=high]; Attention alone is permutation invariant [confidence=medium, conflict=suspected, evidence=weak] (unresolved: suspected); Self-attention [transfer=near]",
+    "summaryZh": "Why does a transformer need to be told the order? [articulation=low, confidence=high]; Attention alone is permutation invariant [confidence=medium, conflict=suspected, evidence=weak] (unresolved: suspected); Self-attention [transfer=near]",
     "known": [
       {
         "nodeId": "q_order",
         "label": "Why does a transformer need to be told the order?",
-        "settled": true,
+        "settled": false,
         "openConflicts": [],
         "dimensions": [
           {
@@ -104,7 +105,7 @@
       {
         "nodeId": "k_invariant",
         "label": "Attention alone is permutation invariant",
-        "settled": true,
+        "settled": false,
         "openConflicts": ["suspected"],
         "dimensions": [
           {

@@ -12,6 +12,7 @@ import {
   type DomainPack,
   type ActorId,
   type DimensionId,
+  type DimensionIndex,
   type EdgeId,
   type EdgeTypeId,
   type MutationRefusal,
@@ -25,7 +26,9 @@ import {
   type Tag,
 } from '@episteme/core'
 import {
+  EmbeddingError,
   HybridRetriever,
+  type RankSignal,
   retrieveWith,
   visibleTo,
   type GraphReadView,
@@ -240,11 +243,28 @@ export interface UnderstandingView {
 export interface RecallResult {
   readonly question: string
   readonly retriever: string
+  /** One line on what the person has recorded about the retrieved items, in English. */
   readonly summary: string
+  /** The same line in Simplified Chinese, for a surface that shows Chinese. */
+  readonly summaryZh: string
   readonly known: readonly UnderstandingView[]
   readonly ranked: readonly RankedView[]
   readonly rules: readonly RankRule[]
+  /**
+   * Present only when the embedding provider failed for this recall: why. The ranking then rests on words, links,
+   * the person's understanding and recency, without closeness in meaning.
+   */
+  readonly semanticUnavailable?: string
 }
+
+/** One retrieval, and whether it had to go without the embedding provider. */
+interface Retrieved {
+  readonly context: RelevantContext
+  readonly semanticUnavailable?: string
+}
+
+/** Every ranking signal but closeness in meaning, for when the embedding provider fails. */
+const WITHOUT_MEANING: readonly RankSignal[] = ['lexical', 'graph', 'cognitive', 'recency']
 
 export interface AskResult extends RecallResult {
   readonly answer: string
@@ -314,8 +334,10 @@ export interface ProgressSummary {
   readonly totalNodes: number
   /** Most in need of attention first. */
   readonly items: readonly ProgressItem[]
-  /** One readable line, so a surface does not have to compose the numbers itself. */
+  /** One readable line in English, so a surface does not have to compose the numbers itself. */
   readonly summary: string
+  /** The same line in Simplified Chinese. */
+  readonly summaryZh: string
 }
 
 /** How a thread's speakers are written when its turns become material to distil. */
@@ -454,6 +476,8 @@ export interface RecallSummary {
   /** How many retrieved items the budget left out. */
   readonly truncated: number
   readonly budget: number
+  /** As in `RecallResult`: present only when this recall went without the embedding provider. */
+  readonly semanticUnavailable?: string
 }
 
 export interface ExpandedNode {
@@ -790,10 +814,13 @@ export class CognitiveSession {
    * two cannot disagree.
    */
   async ask(question: string): Promise<AskResult> {
-    const context = await this.#retrieve(question)
-    const response = await this.#agent.respond({ text: question }, toAgentContext(context))
+    const retrieved = await this.#retrieve(question)
+    const response = await this.#agent.respond(
+      { text: question },
+      toAgentContext(retrieved.context),
+    )
     return {
-      ...this.#recallView(question, context),
+      ...this.#recallView(question, retrieved),
       answer: response.text,
       usedContext: response.usedContext,
     }
@@ -860,6 +887,9 @@ export class CognitiveSession {
       entries,
       truncated: full.ranked.length - entries.length,
       budget,
+      ...(full.semanticUnavailable === undefined
+        ? {}
+        : { semanticUnavailable: full.semanticUnavailable }),
     }
   }
 
@@ -911,28 +941,78 @@ export class CognitiveSession {
     )
   }
 
-  #retrieve(question: string, limit = RECALL_LIMIT): Promise<RelevantContext> {
-    return retrieveWith(this.#retriever, this.#seen, this.#episteme.log, question, {
+  /**
+   * Retrieves with every signal, or, when the embedding provider fails, with every signal but meaning.
+   *
+   * A recall that failed outright because a configured provider is down would lose the person's own words too, and
+   * one that quietly dropped meaning would read as "nothing close in meaning". So it falls back, and says so.
+   */
+  async #retrieve(question: string, limit = RECALL_LIMIT): Promise<Retrieved> {
+    const options = {
       actorId: this.#actor,
       depth: 1,
       limit,
-    })
+      isSettled: (state: DimensionIndex) => this.#isSettled(state),
+    }
+    try {
+      return {
+        context: await retrieveWith(
+          this.#retriever,
+          this.#seen,
+          this.#episteme.log,
+          question,
+          options,
+        ),
+      }
+    } catch (error) {
+      if (!(error instanceof EmbeddingError)) throw error
+      const context = await retrieveWith(
+        this.#retriever,
+        this.#seen,
+        this.#episteme.log,
+        question,
+        {
+          ...options,
+          signals: WITHOUT_MEANING,
+        },
+      )
+      return { context, semanticUnavailable: `${error.kind}: ${error.message}` }
+    }
   }
 
-  #recallView(question: string, context: RelevantContext): RecallResult {
+  /**
+   * Whether the person's state on a node is firm enough to build on, by the scene's evaluation policy.
+   *
+   * Recall and progress both read this one predicate, so a node is never buildable to an agent and shaky on the
+   * person's own progress page.
+   */
+  #isSettled(state: DimensionIndex): boolean {
+    const dimensions = dimensionLevels(state)
+    const policy = this.#scene.evaluationPolicy
+    return policy?.isSettled ? policy.isSettled(dimensions) : defaultIsSettled(dimensions)
+  }
+
+  #recallView(question: string, { context, semanticUnavailable }: Retrieved): RecallResult {
     const ranked = toRankedView(
       context,
       (nodeId) => this.#seen.getNode(nodeId)?.actorId === this.#actor,
     )
+    // Decided here so every surface reads the same and no view invents its own wording for "nothing recorded".
+    // A scene may be English or Chinese, so both are given; when something is recorded, both carry Core's line.
+    const kept = ranked.some((entry) => entry.kept)
     return {
       question,
       retriever: context.retriever,
-      // The Chinese display form, decided here so every surface reads the same and no view invents its own
-      // wording for "nothing recorded". `contextSummary` is the English one, used by the English demos.
       summary:
         context.summary !== ''
           ? context.summary
-          : ranked.some((entry) => entry.kept)
+          : kept
+            ? 'you kept related items but have recorded no level of understanding for them yet'
+            : 'nothing is recorded about this yet',
+      summaryZh:
+        context.summary !== ''
+          ? context.summary
+          : kept
             ? '你保存过相关内容，但还没有标记理解程度'
             : '关于这个，你还没有记录过任何东西',
       known: context.known.map((entry) => ({
@@ -949,6 +1029,7 @@ export class CognitiveSession {
       })),
       ranked,
       rules: this.rules,
+      ...(semanticUnavailable === undefined ? {} : { semanticUnavailable }),
     }
   }
 
@@ -1247,17 +1328,13 @@ export class CognitiveSession {
       const state = this.#episteme.log.stateOf(asId<NodeId>(node.nodeId), this.#actor)
       if (state.size === 0) continue // Untouched reference material is not progress.
 
-      const dimensions = [...state]
-        .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
-        .sort((left, right) => (left.id < right.id ? -1 : 1))
-
+      const dimensions = dimensionLevels(state)
       const openConflicts = dimensions
         .filter((entry) => entry.id === DIMENSION.conflict && isOpenConflict(entry.level))
         .map((entry) => entry.level)
 
-      const settled = policy?.isSettled
-        ? policy.isSettled(dimensions)
-        : defaultIsSettled(dimensions)
+      // The predicate recall hands to retrieval as well, so both say the same about this node.
+      const settled = this.#isSettled(state)
 
       const attention = (
         policy?.evaluateAttention
@@ -1303,6 +1380,7 @@ export class CognitiveSession {
       summary: policy?.progressLine
         ? policy.progressLine(items.length, settledCount)
         : progressLine(items.length, settledCount),
+      summaryZh: progressLineZh(items.length, settledCount),
     }
   }
 
@@ -3582,8 +3660,20 @@ function defaultAttentionFor(
   return settled ? 'settled' : 'shaky'
 }
 
+/** A node's state as sorted `{ id, level }` pairs, the shape an evaluation policy reads. */
+function dimensionLevels(state: DimensionIndex): { readonly id: string; readonly level: string }[] {
+  return [...state]
+    .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
+    .sort((left, right) => (left.id < right.id ? -1 : 1))
+}
+
 /** One readable line, so every surface does not compose the same sentence differently. */
 function progressLine(touched: number, settled: number): string {
+  if (touched === 0) return 'you have recorded no understanding yet'
+  return `you have recorded understanding of ${touched} ${touched === 1 ? 'node' : 'nodes'}; ${settled} can be built on`
+}
+
+function progressLineZh(touched: number, settled: number): string {
   if (touched === 0) return '你还没有记录过任何理解'
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }

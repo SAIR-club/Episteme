@@ -30,6 +30,13 @@ const retriever = hybridRetriever(graph, log, adapter, new InMemoryEmbeddingCach
 For a hosted provider, pass `apiKey`; it becomes a bearer token. The adapter reads no environment
 variable of its own, so a secret never appears in configuration this class invents.
 
+## Where it is used
+
+The service (and the workbench, which runs on it) uses this adapter when `EPISTEME_EMBEDDINGS_URL` and
+`EPISTEME_EMBEDDINGS_MODEL` are both set; otherwise semantic recall is off. When the provider fails, the
+session retries that recall without the semantic signal and reports why in `semanticUnavailable`; the
+adapter itself still never falls back. Run `pnpm serve --help` for the other settings.
+
 ## What it deliberately does not do
 
 - **It does not install, start or manage a model server.** Discovering a local runtime is an

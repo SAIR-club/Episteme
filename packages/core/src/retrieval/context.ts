@@ -1,5 +1,6 @@
 import type {
   ActorId,
+  DimensionIndex,
   GraphReadView,
   EventLog,
   GraphNode,
@@ -69,6 +70,22 @@ export interface RetrieveContextOptions {
   readonly limit?: number
   readonly retriever?: Retriever
   readonly signals?: readonly RankSignal[]
+  /**
+   * Whether a state is firm enough to build on. Without it, any one of confidence or articulation at medium or high
+   * is enough. An application that also reports progress passes the predicate it uses there, so the two agree.
+   */
+  readonly isSettled?: (state: DimensionIndex) => boolean
+}
+
+/** Any one dimension in its settled band: the reading used when the caller gives none. */
+function anySettledDimension(state: DimensionIndex): boolean {
+  for (const [dimension, value] of state) {
+    const levels = SETTLED_DIMENSIONS[dimension]
+    if (levels !== undefined && value.level !== undefined && levels.includes(value.level)) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -132,6 +149,7 @@ export async function retrieveWith(
     : undefined
 
   const known: KnownUnderstanding[] = []
+  const isSettled = options.isSettled ?? anySettledDimension
   if (actorId !== undefined) {
     for (const node of result.nodes) {
       const current = graph.getNode(node.id) ?? node
@@ -140,16 +158,12 @@ export async function retrieveWith(
 
       const record: Record<string, StateValue> = {}
       const openConflicts: string[] = []
-      let settled = false
+      const settled = isSettled(state)
 
       for (const [dimension, value] of state) {
         record[dimension] = value
         if (dimension === 'conflict' && isOpenConflict(value.level)) {
           openConflicts.push(value.level!)
-        }
-        const levels = SETTLED_DIMENSIONS[dimension]
-        if (levels !== undefined && value.level !== undefined && levels.includes(value.level)) {
-          settled = true
         }
       }
 

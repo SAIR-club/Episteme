@@ -389,11 +389,12 @@ async function scoreSemantically(
     ]
 
   const text = query.text ?? ''
-  const queryVector = text === '' ? undefined : await embedWithCache(adapter, cache, text)
-
   const vectors = new Map<NodeId, Vector>()
   const wants = (signal: RankSignal): boolean =>
     weights[signal] > 0 && (query.signals === undefined || query.signals.includes(signal))
+  // Only embedded when meaning is asked for: a query without it must not need the provider at all.
+  const queryVector =
+    text === '' || !wants('semantic') ? undefined : await embedWithCache(adapter, cache, text)
 
   if (queryVector !== undefined && wants('semantic')) {
     for (const entry of candidates) {
