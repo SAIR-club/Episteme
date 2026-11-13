@@ -320,7 +320,12 @@ export async function handleApi(
     // the user file stays out of it, since being on a service does not make someone's name public.
     if (path === `${API_PREFIX}/me` && method === 'GET') {
       const names: Record<string, string> = {}
-      for (const id of [session.actorId, ...session.browsePublications().map((p) => p.author)]) {
+      // and of those whose work they cited, which keeps its author's name after the author withdraws it.
+      for (const id of [
+        session.actorId,
+        ...session.browsePublications().map((p) => p.author),
+        ...session.citedAuthors(),
+      ]) {
         const name = people?.nameOf(id)
         if (name !== undefined) names[id] = name
       }
