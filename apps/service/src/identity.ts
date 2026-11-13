@@ -393,15 +393,23 @@ const SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000
 /**
  * Browser sessions: a random id in an `HttpOnly; SameSite=Strict` cookie, mapped in memory to a human caller.
  * They end when the service stops or after twelve hours.
+ *
+ * When people reach the service over HTTPS, as a shared deployment behind a TLS proxy does, the cookie is also
+ * `Secure`, so a browser never sends it over plain HTTP. Local mode on `http://127.0.0.1` stays as it is.
  */
 export class BrowserSessions {
   readonly #sessions = new Map<string, { readonly caller: Caller; readonly expiresAt: number }>()
+  readonly #secure: boolean
+
+  constructor(options: { readonly secure?: boolean } = {}) {
+    this.#secure = options.secure === true
+  }
 
   /** A new session for a human caller, and the `Set-Cookie` value that carries it. */
   open(caller: Caller): string {
     const id = randomBytes(32).toString('base64url')
     this.#sessions.set(id, { caller, expiresAt: Date.now() + SESSION_LIFETIME_MS })
-    return `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_LIFETIME_MS / 1000}`
+    return `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Strict;${this.#secure ? ' Secure;' : ''} Max-Age=${SESSION_LIFETIME_MS / 1000}`
   }
 
   resolve(id: string): Caller | undefined {

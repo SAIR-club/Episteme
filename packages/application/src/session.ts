@@ -1544,7 +1544,20 @@ export class CognitiveSession {
   browsePublications(
     query: { readonly author?: string; readonly scope?: string; readonly q?: string } = {},
   ): readonly PublicationSummary[] {
-    const text = query.q?.trim().toLowerCase()
+    // Every word has to appear somewhere in it: its root, a member or the author's note. Width and case do not count.
+    const folded = (words: string): string => words.normalize('NFKC').toLowerCase()
+    const terms = folded(query.q ?? '')
+      .split(/\s+/u)
+      .filter((term) => term !== '')
+    const matches = (publication: Publication, root: GraphNode | undefined): boolean => {
+      if (terms.length === 0) return true
+      const texts = [
+        root?.label ?? '',
+        publication.note ?? '',
+        ...publication.members.map((id) => this.#episteme.graph.getNode(id)?.label ?? ''),
+      ].map(folded)
+      return terms.every((term) => texts.some((each) => each.includes(term)))
+    }
     return this.publications()
       .filter((publication) => query.author === undefined || publication.actorId === query.author)
       .map((publication) => ({ publication, root: this.#episteme.graph.getNode(publication.root) }))
@@ -1552,15 +1565,7 @@ export class CognitiveSession {
         ({ root }) =>
           query.scope === undefined || root?.tags.includes(`scope:${query.scope}`) === true,
       )
-      .filter(
-        ({ publication, root }) =>
-          text === undefined ||
-          text === '' ||
-          (root?.label.toLowerCase().includes(text) ?? false) ||
-          publication.members.some((id) =>
-            this.#episteme.graph.getNode(id)?.label.toLowerCase().includes(text),
-          ),
-      )
+      .filter(({ publication, root }) => matches(publication, root))
       .map(({ publication, root }) => ({
         id: publication.id,
         author: publication.actorId,
@@ -1634,16 +1639,8 @@ export class CognitiveSession {
    * changed between the two. Nothing changes for them until they decide.
    */
   updates(): readonly PublicationUpdate[] {
-    const adopted = new Set<string>()
-    for (const node of this.#seen.listNodes()) {
-      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
-        if (event.source?.startsWith('publication:') === true) {
-          adopted.add(event.source.slice('publication:'.length))
-        }
-      }
-    }
     const updates: PublicationUpdate[] = []
-    for (const id of adopted) {
+    for (const id of this.#adopted()) {
       const versions = this.#versionsOf(id)
       const newest = versions[versions.length - 1]
       if (newest === undefined || newest === id || !this.#episteme.log.publications.isLive(newest))
@@ -1658,6 +1655,32 @@ export class CognitiveSession {
       })
     }
     return updates
+  }
+
+  /**
+   * The people whose publications this person cited, including ones since withdrawn: they read the author's name
+   * when they cited it, and what they cited still says whose it was.
+   */
+  citedAuthors(): readonly string[] {
+    const authors = new Set<string>()
+    for (const id of this.#adopted()) {
+      const author = this.#episteme.log.publications.get(id)?.actorId
+      if (author !== undefined) authors.add(author)
+    }
+    return [...authors]
+  }
+
+  /** The publications this person adopted from, live or not. */
+  #adopted(): ReadonlySet<string> {
+    const adopted = new Set<string>()
+    for (const node of this.#seen.listNodes()) {
+      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
+        if (event.source?.startsWith('publication:') === true) {
+          adopted.add(event.source.slice('publication:'.length))
+        }
+      }
+    }
+    return adopted
   }
 
   /** A publication's version chain, oldest first: what it supersedes, back to the first, then what supersedes it. */

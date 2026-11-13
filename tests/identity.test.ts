@@ -28,6 +28,8 @@ interface Answer {
   readonly status: number
   readonly body: Record<string, unknown>
   readonly cookie: string | undefined
+  /** Whether the cookie it set may only travel over HTTPS. */
+  readonly secure: boolean
 }
 
 async function call(
@@ -47,6 +49,7 @@ async function call(
     status: response.status,
     body: (text.startsWith('{') ? JSON.parse(text) : {}) as Record<string, unknown>,
     cookie: response.headers.get('set-cookie')?.split(';')[0],
+    secure: /;\s*Secure\b/i.test(response.headers.get('set-cookie') ?? ''),
   } satisfies Answer
 }
 
@@ -124,6 +127,8 @@ describe('local mode', () => {
     const header = (await fetch(`${service.url}/`)).headers.get('set-cookie') ?? ''
     expect(header).toMatch(/HttpOnly/)
     expect(header).toMatch(/SameSite=Strict/)
+    // Reached over plain HTTP on this machine: a Secure cookie would not come back.
+    expect(header).not.toMatch(/Secure/)
 
     const recorded = await call('/api/v1/record', {
       body: { target: 'q_why_order', dimensions: { confidence: 'low' } },
@@ -257,6 +262,7 @@ describe('shared mode', () => {
     const signedIn = await call('/api/v1/session', { body: { token: human } })
     expect(signedIn.status).toBe(200)
     expect(signedIn.body).toMatchObject({ actorId, label: 'workspace' })
+    expect(signedIn.secure).toBe(true)
     expect((await call('/api/v1/state', { cookie: signedIn.cookie! })).status).toBe(200)
   })
 

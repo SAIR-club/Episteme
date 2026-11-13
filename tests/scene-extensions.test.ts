@@ -376,6 +376,31 @@ describe('what a view reads of two people on one graph', () => {
     expect(linView.threadView(weis.id)).toBeUndefined()
   })
 
+  it('finds a publication by every word asked for, in its members or its note', async () => {
+    const root = (
+      await lin.addNode({ label: '崩溃恢复要按顺序重放日志', kind: 'claim', scope: 'db' })
+    ).nodeId
+    const member = (await lin.addNode({ label: 'Checksum mismatch', kind: 'concept', scope: 'db' }))
+      .nodeId
+    await lin.link(root, member)
+    const published = await lin.publish({ root, include: [member], note: '读完 WAL 那一章写的' })
+    if (!published.ok) throw new Error('refused')
+    const found = (q: string) =>
+      sceneViewOf(wei)
+        .browsePublications({ q })
+        .map((summary) => summary.id)
+
+    expect(found('重放')).toEqual([published.publication.id])
+    // Words from different members, and from the note, together.
+    expect(found('重放 checksum')).toEqual([published.publication.id])
+    expect(found('wal 日志')).toEqual([published.publication.id])
+    // Full-width letters and capitals read as the plain ones.
+    expect(found('ＣＨＥＣＫＳＵＭ')).toEqual([published.publication.id])
+    // Every word must be there.
+    expect(found('重放 attention')).toEqual([])
+    expect(found('   ')).toEqual([published.publication.id])
+  })
+
   it('browses only live publications, by scope, and shows no adopter', async () => {
     const claim = (
       await lin.addNode({

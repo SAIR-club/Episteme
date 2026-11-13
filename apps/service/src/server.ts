@@ -189,7 +189,10 @@ async function serve(
   const local = people === undefined ? Directory.single(session.actorId, 'you') : undefined
   const directory = people ?? local!.directory
   const localPerson = local === undefined ? undefined : directory.resolve(local.token)
-  const browsers = new BrowserSessions()
+  const browsers = new BrowserSessions({
+    secure:
+      options.publicOrigin !== undefined && new URL(options.publicOrigin).protocol === 'https:',
+  })
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
