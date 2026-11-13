@@ -16,7 +16,7 @@
 | Agent | `types.ts` 注释 | 没有行为耦合 | 不动 |
 | Distillation | `rule-based.ts` 的 `DEFAULT_LEARNERS` 说话人列表和 `learnerSpeakers` 选项 | 只是默认值，场景可以覆盖 | 不动 |
 | Application | `session.ts` 的 `options.scene ?? learnScene` 回退 | 忘记传场景时会静默变成学习场景，这是唯一有风险的默认值 | 列入待办，不在本轮改，现有 API 和测试依赖它 |
-| Application | `LEARNER_LABEL`、`source: 'learn-surface'`、`DecisionChannel 'learn-review'`、`speaker: 'learner'`、`LearnSession` 别名 | **已持久化或上线的值**。假设场景的事件里也写着 `source: "learn-surface"`，语义不准确 | 不改。改名要迁移旧图，属于需要批准的不可逆操作 |
+| Application | `LEARNER_LABEL`、`source: 'learn-surface'`、`DecisionChannel 'learn-review'`、`speaker: 'learner'`、`LearnSession` 别名 | **已持久化或上线的值**。假设场景的事件里也写着 `source: "learn-surface"`，语义不准确 | 2026-11-13 起新写入用 `review` 和 `session`，与团队仓一致；旧记录不改写，读取和 `?channel=` 筛选把 `learn-review` 当作 `review`（`tests/channel-names.test.ts`）。旧事件的 `source` 是来源记录，保持原样。其余几项不动 |
 | MCP | 工具说明里约 49 处 “the learner”，每个宿主都会读到，不管是什么场景 | **真实的渗透**：会让宿主模型把研究者当学生 | **已改**为 “the person”。线上参数 `learner` 和 `speaker: 'learner'` 不变 |
 | Service | 默认 profile 用 `learnScene` | 合理：这是这个产品的默认场景 | 不动 |
 | `packages/domain-forum` | 只有 README 的占位包 | 名不副实，但无害 | 列入待办 |
@@ -45,7 +45,7 @@ Mock 测试全过的情况下，真实 Claude Code 跑出一个语义缺陷：�
 ## 待办（未在本轮处理）
 
 1. `session.ts` 的 `learnScene` 回退改为必须显式传入，需要调整所有调用方。
-2. 持久值 `learn-surface`、`learn-review` 的中性化，需要先有迁移方案和批准。
+2. ~~持久值 `learn-surface`、`learn-review` 的中性化~~：新写入已改名，旧值靠读取时的别名兼容，没有迁移。
 3. `recall` 的中文摘要是写死的，英文场景也会读到中文。
 4. 删除或实现 `packages/domain-forum`。
 5. seed 节点的作者也是 human，所以在带示例种子的图里 `kept` 也为真。空图不受影响。
