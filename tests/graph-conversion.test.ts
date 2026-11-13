@@ -9,6 +9,7 @@ import {
   GraphConversionError,
   UnreadableGraphError,
   convertGraph,
+  currentChannel,
 } from '@episteme/application'
 import { startService } from '@episteme/service'
 import {
@@ -109,7 +110,14 @@ async function expectTheOlderBuildsReading(graph: string): Promise<void> {
       EXPECTED.threads,
     )
     expect(plain(session.pendingSuggestions())).toMatchObject(EXPECTED.pending)
-    expect(plain(session.reviews())).toMatchObject(EXPECTED.reviews)
+    // The older build named the review channel `learn-review`; it now reads under its current name, `review`, and
+    // the stored record keeps the old one (`channel-names.test.ts`). Nothing else about a review changes.
+    expect(plain(session.reviews())).toMatchObject(
+      (EXPECTED.reviews as { readonly channel: string }[]).map((review) => ({
+        ...review,
+        channel: currentChannel(review.channel),
+      })),
+    )
     expect(plain(session.delegations())).toMatchObject(EXPECTED.delegations)
     expect(plain(session.sceneRecords('learn'))).toMatchObject(EXPECTED.sceneRecords)
   } finally {
