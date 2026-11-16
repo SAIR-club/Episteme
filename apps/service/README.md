@@ -160,7 +160,7 @@ answer from what was recalled belongs to the agent, or to a client that has one.
 | File               | Contents                                                 |
 | ------------------ | -------------------------------------------------------- |
 | `src/server.ts`    | `startService`: ownership, seeding, routing, closing     |
-| `src/api.ts`       | the REST API, version 1                                  |
+| `src/api.ts`       | the REST API, version 1, declared with Hono              |
 | `src/boundary.ts`  | `boundaryRefusal`, in front of everything served         |
 | `src/profile.ts`   | the scene profile the service is composed with           |
 | `src/workspace.ts` | serving a prebuilt Workspace, and only what is inside it |

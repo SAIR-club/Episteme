@@ -8,7 +8,7 @@ Keep this file limited to durable, cross-session guidance. Current progress, tem
 
 - Purpose: Episteme turns inquiry into persistent, evolving understanding. It is open cognitive infrastructure for carrying, organising and evolving human understanding: a shared cognitive graph that applications built on Episteme project views over. The persistent cognitive graph is the core asset. See `README.md`.
 - Layer: Infrastructure. Episteme is domain-agnostic cognitive infrastructure without application business logic. See [Project Invariants](#project-invariants).
-- Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. No framework or model provider is wired in yet, and the only database is the optional SQLite storage backend (`@episteme/storage-sqlite`, ADR 0017) — Core must run and be tested with no frontend, no LLM and no database.
+- Stack: TypeScript (strict, ESM, NodeNext), pnpm workspace monorepo, Vitest, ESLint (flat config), Prettier. The HTTP service uses Hono; the core packages stay framework-free. No model provider is wired in. The only database is the optional SQLite storage backend (`@episteme/storage-sqlite`, ADR 0017) — Core must run and be tested with no frontend, no LLM and no database.
 - Package manager: pnpm, pinned by `packageManager` in `package.json` (see `pnpm-workspace.yaml`). The project supports Node >= 22 (`engines`). pnpm 11 itself needs Node >= 22.13 to run, so develop on Node 22.13 or later, or use a standalone pnpm. The two floors differ on purpose; see [Continuous Integration](#continuous-integration).
 
 ## Commands
