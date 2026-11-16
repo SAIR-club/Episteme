@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answer, mcpWire, type McpWire, type ToolResult } from './mcp-wire.js'
+import { storedRecords } from './stored.js'
 
 /**
  * The confirmation flow end to end (ADR 0008), across the surfaces that share it.
@@ -21,7 +22,7 @@ let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-flow-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   server = await startService({ port: 0, graph: filePath })
 })
 
@@ -77,11 +78,16 @@ interface StoredValue {
   sourceOf?: string
 }
 
-/** The state events as they are on disk, after the host has written them. */
+/**
+ * The state events as they are on disk, after the host has written them. The host holds the file exclusively
+ * while it runs, so it is stopped for the read and started again after.
+ */
 async function eventsOnDisk(): Promise<
   { target: string; actorId: string; source?: string; values: Record<string, StoredValue> }[]
 > {
-  const lines = (await readFile(filePath, 'utf8')).split('\n').filter((line) => line.trim() !== '')
+  await server.close()
+  const lines = storedRecords(filePath)
+  server = await startService({ port: 0, graph: filePath })
   return lines
     .map(
       (line) =>

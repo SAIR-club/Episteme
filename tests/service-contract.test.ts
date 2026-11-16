@@ -55,7 +55,7 @@ async function structured(name: string, args: Record<string, unknown>) {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-contract-'))
-  service = await startService({ port: 0, graph: join(directory, 'learn.jsonl') })
+  service = await startService({ port: 0, graph: join(directory, 'learn.db') })
   agent = mcpWire(() => service.mcpUrl, { name: 'Contract Agent', version: '1' })
 })
 
@@ -88,7 +88,7 @@ describe('the same question over REST and MCP', () => {
 
   it('distils the same material into the same suggestions', async () => {
     // Two graphs, one per protocol, so neither run sees the other's suggestions.
-    const second = await startService({ port: 0, graph: join(directory, 'second.jsonl') })
+    const second = await startService({ port: 0, graph: join(directory, 'second.db') })
     try {
       const overRest = await rest<{ suggestions: { proposal: unknown; excerpt?: string }[] }>(
         '/distill',

@@ -1,7 +1,7 @@
 import { ownerOf } from './suggestions.js'
 import { createHash } from 'node:crypto'
-import { readFile, rename, writeFile } from 'node:fs/promises'
 import type { EpochMillis } from '@episteme/core'
+import type { CompanionLog } from '@episteme/storage-sqlite'
 import { canonicalText } from '@episteme/distillation'
 
 /**
@@ -9,7 +9,7 @@ import { canonicalText } from '@episteme/distillation'
  *
  * Raw material is a draft: it never becomes a node. It is kept so that what a learner accepts can be traced
  * back to the words it came from, through the origin each suggestion and each accepted node carries. Only the
- * graph's owner writes this file, because only a session holding the graph's lock opens it.
+ * graph's owner writes it, because it is kept in the graph's own database, on the owner's connection.
  */
 
 export interface SourceEpisode {
@@ -111,28 +111,19 @@ function canonicalValue(value: unknown): unknown {
 
 /** The material distilled into one graph's suggestions, oldest first. In memory when given no path. */
 export class SourceStore {
-  readonly #filePath: string | undefined
+  readonly #log: CompanionLog | undefined
   readonly #sources = new Map<string, Source>()
 
-  private constructor(filePath: string | undefined) {
-    this.#filePath = filePath
+  private constructor(log: CompanionLog | undefined) {
+    this.#log = log
   }
 
-  /** Reads the sources kept at `filePath`. A line this build cannot read throws rather than being skipped. */
-  static async open(filePath?: string): Promise<SourceStore> {
-    const store = new SourceStore(filePath)
-    if (filePath === undefined) return store
-    let contents: string
-    try {
-      contents = await readFile(filePath, 'utf8')
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') return store
-      throw error
-    }
-    for (const [index, raw] of contents.split('\n').entries()) {
-      const line = raw.trim()
-      if (line === '') continue
-      const record = JSON.parse(line) as Partial<SourceRecord> | null
+  /** Reads the sources kept in `log`. A record this build cannot read throws rather than being skipped. */
+  static async open(log?: CompanionLog): Promise<SourceStore> {
+    const store = new SourceStore(log)
+    if (log === undefined) return store
+    for (const [index, body] of (await log.read()).entries()) {
+      const record = JSON.parse(body) as Partial<SourceRecord> | null
       if (
         typeof record?.schemaVersion !== 'number' ||
         !READABLE_VERSIONS.includes(record.schemaVersion) ||
@@ -140,7 +131,7 @@ export class SourceStore {
         record.source === undefined
       ) {
         throw new Error(
-          `line ${index + 1} of "${filePath}" is not a source record this build reads (version ${READABLE_VERSIONS.join(' or ')})`,
+          `record ${index + 1} of "${log.location}" is not a source record this build reads (version ${READABLE_VERSIONS.join(' or ')})`,
         )
       }
       const source = record.source as Partial<Source> & Omit<Source, 'reader' | 'digest'>
@@ -163,7 +154,7 @@ export class SourceStore {
 
   /**
    * The source a keyed submission stored, with that submission, when there is one. A submission is complete
-   * only once its drafts' landing record exists in the drafts file; until then it is a record of an attempt.
+   * only once its drafts' landing record exists among the drafts; until then it is a record of an attempt.
    */
   submission(
     owner: string,
@@ -205,7 +196,7 @@ export class SourceStore {
     // session would not have.
     const next = new Map(this.#sources)
     next.set(source.id, source)
-    if (this.#filePath !== undefined) {
+    if (this.#log !== undefined) {
       const lines = [...next.values()].map((kept) =>
         JSON.stringify({
           schemaVersion: SOURCES_SCHEMA_VERSION,
@@ -213,9 +204,7 @@ export class SourceStore {
           source: kept,
         } satisfies SourceRecord),
       )
-      const temporary = `${this.#filePath}.tmp`
-      await writeFile(temporary, `${lines.join('\n')}\n`, 'utf8')
-      await rename(temporary, this.#filePath)
+      await this.#log.replace(lines)
     }
     this.#sources.set(source.id, source)
   }

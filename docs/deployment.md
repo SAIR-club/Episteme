@@ -65,14 +65,14 @@ node apps/service/dist/serve.js \
   --mode shared \
   --users /srv/episteme/users.json \
   --public-origin https://episteme.example.edu \
-  --graph /srv/episteme/graph.jsonl \
+  --graph /srv/episteme/graph.db \
   --host 127.0.0.1 --port 4321 \
   --sharing
 ```
 
 - `--host 127.0.0.1`: the service speaks plain HTTP and must only be reached through the proxy.
 - `--public-origin`: the address students use; the boundary accepts it beside the loopback names.
-- `--sharing`: allows publishing. The graph is copied to `graph.jsonl.before-sharing` before its first
+- `--sharing`: allows publishing. The graph is copied to `graph.db.before-sharing` before its first
   publication, because no earlier build can open a graph that holds one.
 - `--trust-elicitation` is left off: in shared mode a form answered in some host is not taken as the student's
   decision (ADR 0012, decision 4).
@@ -87,7 +87,7 @@ After=network.target
 [Service]
 User=episteme
 WorkingDirectory=/opt/episteme
-ExecStart=/usr/bin/node apps/service/dist/serve.js --mode shared --users /srv/episteme/users.json --public-origin https://episteme.example.edu --graph /srv/episteme/graph.jsonl --host 127.0.0.1 --port 4321 --sharing
+ExecStart=/usr/bin/node apps/service/dist/serve.js --mode shared --users /srv/episteme/users.json --public-origin https://episteme.example.edu --graph /srv/episteme/graph.db --host 127.0.0.1 --port 4321 --sharing
 Restart=on-failure
 
 [Install]
@@ -112,27 +112,22 @@ endpoint uses.
 
 ## 5. Backups
 
-Everything the service owns is a set of files beside the graph:
+Everything the service owns is two files (ADR 0018):
 
-| file                                | holds                                              |
-| ----------------------------------- | -------------------------------------------------- |
-| `graph.jsonl`                       | nodes, edges, state history, publications          |
-| `graph.jsonl.suggestions.jsonl`     | pending drafts, reviews, delegations               |
-| `graph.jsonl.sources.jsonl`         | material that was distilled                        |
-| `graph.jsonl.threads.jsonl`         | conversations: raw turns and summaries             |
-| `graph.jsonl.scene.jsonl`           | scene records, such as MindLink projects           |
-| `users.json`                        | people and token hashes                            |
+| file         | holds                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| `graph.db`   | the graph (nodes, edges, state history, publications) and the stores kept with it: drafts, reviews and delegations, distilled material, conversations, scene records such as MindLink projects |
+| `users.json` | people and token hashes                                                                        |
 
-The first three are rewritten whole through a temporary file and a rename, so a copy never sees half a write.
-Threads and scene records are appended to; a copy taken mid-append may end in a partial line, which the service
-refuses to read. Copy them while it is stopped, or keep several generations:
+While the service runs it holds `graph.db` exclusively, with a `graph.db-wal` beside it, and nothing else can
+read it. Stop the service to copy it; on a clean stop the write-ahead log is folded into `graph.db`:
 
 ```bash
 # /etc/cron.d/episteme-backup, nightly
-15 3 * * * episteme tar -czf /srv/backup/episteme-$(date +\%F).tgz -C /srv episteme
+15 3 * * * root systemctl stop episteme && tar -czf /srv/backup/episteme-$(date +\%F).tgz -C /srv episteme; systemctl start episteme
 ```
 
-These files hold students' conversations and understanding in plain text (roadmap, Phase 4). Keep backups as
+These files hold students' conversations and understanding unencrypted (roadmap, Phase 4). Keep backups as
 private as the server.
 
 ## 6. Connect a host
