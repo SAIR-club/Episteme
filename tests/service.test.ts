@@ -62,7 +62,7 @@ describe('without a Workspace', () => {
     const { status, body } = await get('/api/v1/state')
     expect(status).toBe(200)
     expect(typeof body['revision']).toBe('number')
-    expect(body['scene']).toBe('learn')
+    expect(body['scene']).toBe('default')
     expect((body['nodes'] as unknown[]).length).toBeGreaterThan(0)
   })
 

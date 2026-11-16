@@ -13,7 +13,7 @@ import {
   defaultDistillationPolicy as learnDistillationPolicy,
 } from '@episteme/application'
 import { RuleBasedDistiller, distill, type Candidate } from '@episteme/distillation'
-import { BLANK_TOPIC, learnProfile, startService } from '@episteme/service'
+import { BLANK_TOPIC, defaultProfile, startService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -469,7 +469,7 @@ describe('what the review and query interfaces show', () => {
     const service = await startService({
       port: 0,
       graph: join(directory, 'learn.db'),
-      profile: learnProfile(BLANK_TOPIC),
+      profile: defaultProfile(BLANK_TOPIC),
     })
     try {
       const posted = await fetch(`${service.apiUrl}/distill`, {

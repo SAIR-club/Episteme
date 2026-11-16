@@ -80,7 +80,7 @@ import {
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './scene-records.js'
 import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
-import { learnScene } from './learn-scene.js'
+import { baseScene } from './base-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
 import { openSqliteStorage } from '@episteme/storage-sqlite'
 
@@ -645,7 +645,7 @@ export class CognitiveSession {
   static async open(options: SessionOptions = {}): Promise<CognitiveSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
-    const scene = options.scene ?? learnScene
+    const scene = options.scene ?? baseScene
     const packs = [applicationPack, ...(options.packs ?? scene.packs)]
 
     // One embedding cache for every person's retriever: what a text means does not depend on who asks.

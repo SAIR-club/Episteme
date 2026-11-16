@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { learnScene } from '@episteme/application'
+import { baseScene } from '@episteme/application'
 import {
   addPerson,
   addToken,
@@ -69,7 +69,7 @@ describe('a scene that says nothing about its routes', () => {
   const profile = (overrides: Partial<SceneProfile> = {}): SceneProfile => ({
     name: 'plain',
     seed: BLANK_TOPIC,
-    scene: learnScene,
+    scene: baseScene,
     routes: [ECHO, { method: 'GET', path: '/state', handle: () => ({ ok: true }) }],
     ...overrides,
   })

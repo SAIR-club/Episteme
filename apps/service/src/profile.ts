@@ -1,5 +1,5 @@
 import {
-  learnScene,
+  baseScene,
   type SceneView,
   type SceneWrites,
   type SessionScene,
@@ -34,6 +34,7 @@ export interface SeedTopic {
 
 export const BLANK_TOPIC: SeedTopic = Object.freeze({ title: 'blank', nodes: [] })
 
+/** A demonstration topic: how a Transformer handles order. The service starts from it when no profile is given. */
 export const TRANSFORMERS: SeedTopic = Object.freeze({
   title: 'Transformer 如何处理顺序',
   id: 'transformer',
@@ -146,20 +147,7 @@ export function assertSceneRoutes(routes: readonly SceneRoute[]): void {
   }
 }
 
-/**
- * A profile on the built-in Learn scene with a blank starting topic, for the development CLI.
- *
- * @deprecated Its scene is the deprecated built-in Learn scene. A scene's own launcher supplies its profile.
- */
+/** A profile on the base scene, starting from `seed` or from an empty graph. A scene's own launcher supplies its profile. */
 export function defaultProfile(seed: SeedTopic = BLANK_TOPIC): SceneProfile {
-  return { name: 'default', seed, scene: learnScene }
-}
-
-/**
- * The Learn scene, starting from `topic`, or from the transformer demonstration topic.
- *
- * @deprecated MindLink supplies the Learn profile (ADR 0013); this one is removed in step M6.
- */
-export function learnProfile(topic: SeedTopic = TRANSFORMERS): SceneProfile {
-  return { name: 'learn', seed: topic, scene: learnScene }
+  return { name: 'default', seed, scene: baseScene }
 }

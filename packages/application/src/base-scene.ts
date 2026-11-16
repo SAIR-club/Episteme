@@ -8,19 +8,15 @@ import {
   type StateDimensionDefinition,
 } from '@episteme/core'
 import type { DistillationPolicy } from '@episteme/distillation'
-import {
-  recordableDimensions,
-  type DimensionPresentation,
-  type EvaluationPolicy,
-  type RecordableDimension,
-  type SessionScene,
-} from './scene.js'
+import { recordableDimensions, type DimensionPresentation, type SessionScene } from './scene.js'
 
 /**
- * The Learn scene as v0.1.0 shipped it inside the application.
+ * The base scene: the epistemic vocabulary every scene starts from, and the one a session opens with when its
+ * caller names none.
  *
- * Kept for one release so callers that open a session without a scene keep working (ADR 0013, step M3). The Learn
- * vocabulary belongs to MindLink's `domain-learn`, which supplies its own scene; this copy is removed in step M6.
+ * It holds no application's vocabulary or policy (ADR 0013, step M6). A scene such as MindLink's Learn scene
+ * builds on these packs or brings its own, and judges progress by its own `evaluationPolicy`; without one, the
+ * session's built-in reading applies.
  */
 
 const DIMENSION = {
@@ -90,7 +86,7 @@ const DEFAULT_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
   },
 ]
 
-/** @deprecated The Learn pack moves to MindLink (ADR 0013); build a `SessionScene` instead. */
+/** The base node types, edge types, tag namespaces and state dimensions. Its id is persisted and never changes. */
 export const defaultSessionPack: DomainPack = defineDomainPack('default-session-pack', {
   tagNamespaces: [
     { namespace: 'scene', label: 'Scene' },
@@ -176,7 +172,7 @@ export const defaultSessionPack: DomainPack = defineDomainPack('default-session-
   stateDimensions: DEFAULT_STATE_DIMENSIONS,
 })
 
-/** @deprecated The Learn policy moves to MindLink (ADR 0013); set `SessionScene.distillationPolicy` instead. */
+/** How distillation maps what it reads onto the base vocabulary. A scene may set its own. */
 export const defaultDistillationPolicy: DistillationPolicy = {
   id: 'default',
   nodeTypes: {
@@ -209,17 +205,17 @@ export const defaultDistillationPolicy: DistillationPolicy = {
 const LOW_MEDIUM_HIGH_ZH = { low: '低', medium: '中', high: '高' }
 
 /**
- * The dimensions a learner may set from this surface, in the order they are offered.
+ * The dimensions a person may set by hand, in the order they are offered.
  *
  * Deliberately a subset of the registered axes. The others are recorded by other means or are not yet
  * settable by hand, and offering a control for a dimension whose meaning is unclear would invite the
- * learner to record something they cannot interpret later.
+ * person to record something they cannot interpret later.
  *
  * Chinese and English are both carried here rather than translated in a view, so the two cannot drift:
  * `AGENTS.md` requires Simplified Chinese for user-facing prose and English for code, and a dimension whose
  * Chinese name disagrees with its English one would be a correctness problem, not a cosmetic one.
  */
-const LEARN_PRESENTATIONS: readonly DimensionPresentation[] = [
+const BASE_PRESENTATIONS: readonly DimensionPresentation[] = [
   {
     id: DIMENSION.confidence,
     labelZh: '确信程度',
@@ -245,59 +241,21 @@ const LEARN_PRESENTATIONS: readonly DimensionPresentation[] = [
     id: DIMENSION.conflict,
     labelZh: '冲突',
     // `suspected` is recordable so a distilled suggestion of it can be decided like any other (ADR 0011). Who
-    // decides does not change: only the learner, through the one decision path.
+    // decides does not change: only the person, through the one decision path.
     levelLabelsZh: { none: '无', suspected: '疑似', open: '未解决', resolved: '已解决' },
     description: 'Whether you hold something that contradicts it.',
     descriptionZh: '你是否同时持有与它矛盾的东西。',
   },
 ]
 
-/** Educational evaluation policy defining settled and attention heuristics for the Learn scene. */
-export const learnEvaluationPolicy: EvaluationPolicy = {
-  attentionLevels: ['conflict', 'shaky', 'unexplained', 'settled'],
-  isSettled(dimensions) {
-    const levelOf = (id: string): string | undefined =>
-      dimensions.find((entry) => entry.id === id)?.level
-    return (
-      (['medium', 'high'] as const).includes(levelOf(DIMENSION.confidence) as 'medium' | 'high') &&
-      (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
-    )
-  },
-  evaluateAttention(dimensions, openConflicts) {
-    if (openConflicts.length > 0) return 'conflict'
-
-    const levelOf = (id: string): string | undefined =>
-      dimensions.find((entry) => entry.id === id)?.level
-
-    const confidence = levelOf(DIMENSION.confidence)
-    if (
-      levelOf(DIMENSION.articulation) === 'low' &&
-      confidence !== undefined &&
-      confidence !== 'low'
-    ) {
-      return 'unexplained'
-    }
-
-    const settled =
-      (['medium', 'high'] as const).includes(confidence as 'medium' | 'high') &&
-      (['medium', 'high'] as const).includes(levelOf(DIMENSION.articulation) as 'medium' | 'high')
-
-    return settled ? 'settled' : 'shaky'
-  },
-}
-
 /**
- * The Learn scene a session uses when it is opened without one.
+ * The scene a session opens with when its caller names none: the base vocabulary and no application policy.
  *
- * @deprecated Supply a scene: MindLink's `domain-learn` exports the Learn scene (ADR 0013, step M6 removes this).
+ * Its name keys the scene records a session keeps, so a scene with records of its own names itself.
  */
-export const learnScene: SessionScene = {
-  name: 'learn',
+export const baseScene: SessionScene = {
+  name: 'base',
   packs: [defaultSessionPack],
   distillationPolicy: defaultDistillationPolicy,
-  recordableDimensions: recordableDimensions(DEFAULT_STATE_DIMENSIONS, LEARN_PRESENTATIONS),
-  evaluationPolicy: learnEvaluationPolicy,
+  recordableDimensions: recordableDimensions(DEFAULT_STATE_DIMENSIONS, BASE_PRESENTATIONS),
 }
-
-/** @deprecated Read `session.recordableDimensions`, which follows the session's scene. */
-export const RECORDABLE_DIMENSIONS: readonly RecordableDimension[] = learnScene.recordableDimensions

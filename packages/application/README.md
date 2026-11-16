@@ -71,7 +71,7 @@ It changes no understanding.
 | `src/session.ts`     | `CognitiveSession` and the view types surfaces render                         |
 | `src/scene.ts`       | `SessionScene`: packs, distillation policy, recordable dimensions             |
 | `src/scene-view.ts`  | `SceneView`: what a scene's own tools and routes may do with a session        |
-| `src/learn-scene.ts` | the deprecated built-in Learn scene, used when none is given (until M6)       |
+| `src/base-scene.ts`  | the base scene: the epistemic vocabulary a session opens with when none is given |
 | `src/responder.ts`   | the Chinese answer templates the session's scripted agent uses                |
 | `src/sources.ts`     | `SourceStore`: distilled material, kept outside the graph                     |
 | `src/suggestions.ts` | `SuggestionStore` and the `Proposal` kinds an agent can make                  |

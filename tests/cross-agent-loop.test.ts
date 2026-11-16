@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BLANK_TOPIC, learnProfile, startService, type EpistemeService } from '@episteme/service'
+import { BLANK_TOPIC, defaultProfile, startService, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type McpWire } from './mcp-wire.js'
 import { storedRecords } from './stored.js'
@@ -62,7 +62,7 @@ let agentB: McpWire
 
 /** Starts the service on the test's graph with nothing seeded, so everything in it came through the loop. */
 async function start(): Promise<void> {
-  service = await startService({ port: 0, graph, profile: learnProfile(BLANK_TOPIC) })
+  service = await startService({ port: 0, graph, profile: defaultProfile(BLANK_TOPIC) })
 }
 
 async function restart(): Promise<void> {

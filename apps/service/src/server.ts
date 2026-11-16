@@ -20,7 +20,13 @@ import {
   type Caller,
   type DeploymentMode,
 } from './identity.js'
-import { assertSceneRoutes, learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
+import {
+  assertSceneRoutes,
+  defaultProfile,
+  TRANSFORMERS,
+  type SceneProfile,
+  type SeedTopic,
+} from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
 export interface ServiceOptions {
@@ -96,7 +102,7 @@ export async function startService(options: ServiceOptions = {}): Promise<Episte
       `found the older graph "${older}" and nothing at "${graph}". This build does not read JSONL and did not change it; keep it, and name another file to start a new graph. "graph convert" carries it into a new file.`,
     )
   }
-  const profile = options.profile ?? learnProfile()
+  const profile = options.profile ?? defaultProfile(TRANSFORMERS)
   // Checked before the graph is opened, so a profile or deployment that cannot be served never takes the
   // graph's lock.
   assertSceneRoutes(profile.routes ?? [])
