@@ -1,7 +1,8 @@
+import { openTestSession } from './test-session.js'
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { NODE, createFixture, learnTags } from './fixtures.js'
@@ -42,7 +43,7 @@ async function linsWork(): Promise<{
 }
 
 async function open(sharing = true): Promise<void> {
-  owner = await CognitiveSession.open({ filePath, sharing })
+  owner = await openTestSession({ filePath, sharing })
   lin = owner.forActor('actor_human_lin', 'Lin')
   wei = owner.forActor('actor_human_wei', 'Wei')
 }

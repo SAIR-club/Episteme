@@ -34,11 +34,11 @@ demonstration topic. Keep it **outside the repository**: the graph and the files
 own words and understanding, and must never be committed.
 
 ```bash
-pnpm serve --graph "$HOME/.episteme/validation/session-1.db" --blank
+pnpm serve --scene ./my-scene.js --graph "$HOME/.episteme/validation/session-1.db" --blank
 ```
 
-Use `--topic ./their-material.json` instead of `--blank` when the learner brings a topic file. The root
-`pnpm serve` serves the Learn page as the Workspace. The service prints where everything is:
+Use `--topic ./their-material.json` instead of `--blank` when the learner brings a topic file. A scene's
+launcher passes its own Workspace with `--workspace`. The service prints where everything is:
 
 ```text
 Workspace：http://127.0.0.1:4321/

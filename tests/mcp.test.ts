@@ -1,8 +1,9 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
-import { CognitiveSession } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
 import { agentActorFor, createMcpEndpoint } from '@episteme/mcp'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type ToolResult, type WireOptions } from './mcp-wire.js'
@@ -23,7 +24,7 @@ const call = (name: string, args: Record<string, unknown>, options: WireOptions 
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-mcp-'))
-  server = await startService({ port: 0, graph: join(directory, 'learn.db') })
+  server = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {
@@ -155,7 +156,7 @@ describe('the network boundary', () => {
   })
 
   it('rejects a request addressed to a host name other than localhost', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     const endpoint = createMcpEndpoint(session)
     const response = await endpoint.fetch(
       new Request('http://rebound.example/mcp', {

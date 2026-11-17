@@ -1,4 +1,4 @@
-import { CognitiveSession } from '@episteme/application'
+import { openTestSession } from './test-session.js'
 import { seedTopic } from './fixtures.js'
 import { readSettled } from '@episteme/service'
 import { describe, expect, it } from 'vitest'
@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 describe('a read that awaits', () => {
   it('reports the even revision it read at when nothing changed meanwhile', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     const before = session.revision
     const read = await readSettled(session, () =>
@@ -24,7 +24,7 @@ describe('a read that awaits', () => {
   })
 
   it('reports an odd revision when a change landed while it waited, even once the change is done', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     const read = await readSettled(session, async () => {
       const recalled = await session.recall('why does attention need positions')

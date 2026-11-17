@@ -1,3 +1,4 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,7 +11,7 @@ import {
   type NodeId,
 } from '@episteme/core'
 import { humanActor } from '@episteme/sdk'
-import { addPerson, addToken, startService, type EpistemeService } from '@episteme/service'
+import { addPerson, addToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DIMENSION, NODE, EDGE, createFixture, dimensions, learnTags, level } from './fixtures.js'
 import { mcpWire, type McpWire } from './mcp-wire.js'
@@ -166,7 +167,7 @@ describe('isolation through every read, in a shared service', () => {
       human: await addToken(users, weiId, 'human', 'workspace'),
       agent: await addToken(users, weiId, 'agent', 'claude-code'),
     }
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'shared.db'),
       mode: 'shared',
