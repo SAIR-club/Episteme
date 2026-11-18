@@ -1,5 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import {
   applyDomainPacks,
   asId,
@@ -42,6 +41,7 @@ import {
   exportFromGraph,
   importFromExport,
   importGraph,
+  writeFileExclusively,
   type GraphExport,
 } from './portable.js'
 
@@ -110,13 +110,11 @@ export function buildEpiFile(graph: string, options: BuildEpiFileOptions): EpiFi
 
 /**
  * Writes an `.epi` file. Same rules as a v1 export, because the file holds the same private material:
- * written once with `wx`, never over an existing file, readable only by its owner.
+ * published through the staged write, never over an existing file, readable only by its owner — so a
+ * failure anywhere leaves the target untouched and no partial file behind.
  */
 export async function writeEpiFile(epi: EpiFile, target: string): Promise<void> {
-  if (existsSync(target)) {
-    throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
-  }
-  await writeFile(target, JSON.stringify(epi), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+  await writeFileExclusively(JSON.stringify(epi), target)
 }
 
 /** Builds the `.epi` content for a graph and writes it to `target`. */

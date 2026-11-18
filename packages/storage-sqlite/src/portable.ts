@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { link, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import { SERIALIZATION_SCHEMA_VERSION, deserializeRecord } from './records.js'
@@ -128,6 +128,37 @@ export function exportFromGraph(
 }
 
 /**
+ * Publishes bytes at `target` under the rules a graph file must be written by: the content is staged
+ * beside the target first, and linked into place only once the whole file exists. `link` refuses
+ * atomically where a rename would replace, so a file that appeared in the meantime is never
+ * overwritten, and a crash or a full disk leaves no partial file wearing the target's name — the
+ * staging file is removed on every failure, and only a complete file is ever published.
+ *
+ * `0o600`: graph files hold private material, so only their owner reads them. Windows ignores the
+ * mode and the file takes its folder's permissions. The staging name is unique to this call, so a
+ * failed writer cleans up after itself and cannot remove another writer's staging file.
+ */
+export async function writeFileExclusively(bytes: string, target: string): Promise<void> {
+  const staging = join(dirname(target), `${basename(target)}.${randomUUID()}.writing`)
+  try {
+    await writeFile(staging, bytes, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+    try {
+      await link(staging, target)
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'EEXIST') {
+        throw new GraphExportError(
+          'target_exists',
+          `"${target}" already exists; it was not replaced`,
+        )
+      }
+      throw error
+    }
+  } finally {
+    await rm(staging, { force: true })
+  }
+}
+
+/**
  * Writes the graph to `target`. Refuses while anything holds the graph, because a copy of a graph in use could be a
  * state that never existed, and refuses to replace an existing file.
  */
@@ -136,13 +167,10 @@ export async function exportGraph(
   target: string,
   options: { readonly build: string; readonly now?: () => Date },
 ): Promise<GraphExport> {
-  if (existsSync(target)) {
-    throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
-  }
   const exported = exportFromGraph(graph, options)
-  // `wx`: a file that appeared in the meantime is still not replaced. `0o600`: the file holds everyone's private
-  // material, so only its owner reads it. Windows ignores the mode and the file takes its folder's permissions.
-  await writeFile(target, JSON.stringify(exported), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+  // Written through the same staged publish as a `.epi` file: the export carries everyone's
+  // private material, so a partial write must never be mistaken for a written graph.
+  await writeFileExclusively(JSON.stringify(exported), target)
   return exported
 }
 
