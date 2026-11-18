@@ -70,18 +70,16 @@ function digestOf(records: GraphExport['records'], companions: GraphExport['comp
 }
 
 /**
- * Writes the graph to `target`. Refuses while anything holds the graph, because a copy of a graph in use could be a
- * state that never existed, and refuses to replace an existing file.
+ * Reads the whole graph out of its file, under an exclusive hold, as a portable export object.
+ *
+ * This is `exportGraph` without the writing, so a v2 knowledge file can build on the same exclusive,
+ * all-or-nothing read without passing through a temporary file.
  */
-export async function exportGraph(
+export function exportFromGraph(
   graph: string,
-  target: string,
   options: { readonly build: string; readonly now?: () => Date },
-): Promise<GraphExport> {
+): GraphExport {
   if (!existsSync(graph)) throw new GraphExportError('no_graph', `no graph at "${graph}"`)
-  if (existsSync(target)) {
-    throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
-  }
   const db = new Database(graph, { timeout: 0, fileMustExist: true })
   let exported: GraphExport
   try {
@@ -122,6 +120,22 @@ export async function exportGraph(
   } finally {
     db.close()
   }
+  return exported
+}
+
+/**
+ * Writes the graph to `target`. Refuses while anything holds the graph, because a copy of a graph in use could be a
+ * state that never existed, and refuses to replace an existing file.
+ */
+export async function exportGraph(
+  graph: string,
+  target: string,
+  options: { readonly build: string; readonly now?: () => Date },
+): Promise<GraphExport> {
+  if (existsSync(target)) {
+    throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
+  }
+  const exported = exportFromGraph(graph, options)
   // `wx`: a file that appeared in the meantime is still not replaced. `0o600`: the file holds everyone's private
   // material, so only its owner reads it. Windows ignores the mode and the file takes its folder's permissions.
   await writeFile(target, JSON.stringify(exported), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
@@ -160,24 +174,27 @@ export async function readGraphExport(file: string): Promise<GraphExport> {
 }
 
 /**
- * Brings an export back as a new graph at `target`.
+ * Brings an export back as a new graph at `target`, without reading a file: what `importGraph` does
+ * after it has read, and what restoring the archive section of a v2 knowledge file calls directly.
  *
  * Only ever a new file: merging into a graph with its own history would be an irreversible rewrite of that history.
  * It is built beside the target and moved into place once it opens as a graph, so a failure leaves nothing at
  * `target`.
  */
-export async function importGraph(file: string, target: string): Promise<GraphExport> {
+export async function importFromExport(
+  exported: GraphExport,
+  target: string,
+): Promise<GraphExport> {
   if (existsSync(target)) {
     throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
   }
-  const exported = await readGraphExport(file)
   exported.records.forEach((body, index) => {
     try {
       deserializeRecord(body, index + 1)
     } catch (error) {
       throw new GraphExportError(
         'damaged',
-        `record ${index + 1} of "${file}" cannot be read: ${(error as Error).message}`,
+        `record ${index + 1} of the export cannot be read: ${(error as Error).message}`,
       )
     }
   })
@@ -209,4 +226,9 @@ export async function importGraph(file: string, target: string): Promise<GraphEx
     clean()
   }
   return exported
+}
+
+/** Reads a portable export file and brings it back as a new graph at `target`. */
+export async function importGraph(file: string, target: string): Promise<GraphExport> {
+  return importFromExport(await readGraphExport(file), target)
 }
