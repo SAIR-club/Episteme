@@ -53,6 +53,10 @@ export type GraphExportProblem =
   | 'not_an_export'
   | 'unsupported_version'
   | 'damaged'
+  | 'no_publication'
+  | 'ambiguous_publication'
+  | 'withdrawn_publication'
+  | 'unsafe_publication'
 
 /** Export or import refused, with nothing written. */
 export class GraphExportError extends Error {
