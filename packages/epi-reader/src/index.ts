@@ -64,6 +64,8 @@ export interface EpiRevisionClue {
   readonly reason?: string
   readonly dimensions: Readonly<Record<string, unknown>>
   readonly revoked: boolean
+  /** Why the recording was withdrawn, when the revocation carries one. */
+  readonly revocationReason?: string
 }
 
 export interface EpiSubgraph {
@@ -220,6 +222,7 @@ function revisionClues(
 ): readonly EpiRevisionClue[] {
   if (archive === undefined) return []
   const revoked = new Set<string>()
+  const revocationReasons = new Map<string, string>()
   const clues: EpiRevisionClue[] = []
   for (const record of archive.records) {
     let parsed: unknown
@@ -231,10 +234,13 @@ function revisionClues(
     const body = parsed as {
       kind?: string
       event?: Record<string, unknown>
-      revocation?: { eventId?: string }
+      revocation?: { eventId?: string; reason?: string }
     }
     if (body.kind === 'revocation' && typeof body.revocation?.eventId === 'string') {
       revoked.add(body.revocation.eventId)
+      if (typeof body.revocation.reason === 'string') {
+        revocationReasons.set(body.revocation.eventId, body.revocation.reason)
+      }
       continue
     }
     if (body.kind !== 'event') continue
@@ -250,9 +256,15 @@ function revisionClues(
       revoked: false,
     })
   }
-  return clues.map((clue) =>
-    clue.eventId !== undefined && revoked.has(clue.eventId) ? { ...clue, revoked: true } : clue,
-  )
+  return clues.map((clue) => {
+    if (clue.eventId === undefined || !revoked.has(clue.eventId)) return clue
+    const revocationReason = revocationReasons.get(clue.eventId)
+    return {
+      ...clue,
+      revoked: true,
+      ...(revocationReason === undefined ? {} : { revocationReason }),
+    }
+  })
 }
 
 function verify(
