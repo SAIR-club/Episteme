@@ -53,7 +53,7 @@ describe('exporting and importing a graph', () => {
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-export-'))
     graph = join(directory, 'graph.db')
-    archive = join(directory, 'graph.episteme.json')
+    archive = join(directory, 'graph.epi')
   })
 
   afterEach(async () => {
@@ -76,7 +76,7 @@ describe('exporting and importing a graph', () => {
     await exportGraph(graph, archive, { ...OPTIONS, now: () => new Date(0) })
     const restored = join(directory, 'restored.db')
     await importGraph(archive, restored)
-    const second = join(directory, 'second.episteme.json')
+    const second = join(directory, 'second.epi')
     await exportGraph(restored, second, { ...OPTIONS, now: () => new Date(0) })
     const first = await readGraphExport(archive)
     const again = await readGraphExport(second)
@@ -109,7 +109,7 @@ describe('exporting and importing a graph', () => {
       body: each.body.replaceAll('位置编码', '换过的词'),
     }))
     expect(JSON.stringify(companions)).toContain('换过的词')
-    const edited = join(directory, 'edited.episteme.json')
+    const edited = join(directory, 'edited.epi')
     await writeFile(
       edited,
       JSON.stringify({
@@ -120,7 +120,7 @@ describe('exporting and importing a graph', () => {
     )
     const restored = join(directory, 'restored.db')
     await importGraph(edited, restored)
-    const again = join(directory, 'again.episteme.json')
+    const again = join(directory, 'again.epi')
     await exportGraph(restored, again, OPTIONS)
     expect(JSON.stringify((await readGraphExport(again)).companions)).toContain('换过的词')
   }, 60_000)
@@ -186,5 +186,21 @@ describe('exporting and importing a graph', () => {
         JSON.stringify({ ...original, storedAs: { ...original.storedAs, sqliteFormat: 99 } }),
       ),
     ).toBe('unsupported_version')
+  }, 60_000)
+
+  // ADR 0022: the name is a convention for people and their operating systems; identity is the format field.
+  it('judges by content, not by file name', async () => {
+    const target = join(directory, 'restored.db')
+
+    const wrong = join(directory, 'looks-right.epi')
+    await writeFile(wrong, '{"format":"something-else"}')
+    expect(await refusal(importGraph(wrong, target))).toBe('not_an_export')
+
+    const plain = join(directory, 'backup')
+    await session()
+    await exportGraph(graph, plain, OPTIONS)
+    expect((await readGraphExport(plain)).format).toBe('episteme-graph-export')
+    await importGraph(plain, target)
+    expect(existsSync(target)).toBe(true)
   }, 60_000)
 })
