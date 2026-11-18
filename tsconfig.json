@@ -5,6 +5,7 @@
     { "path": "apps/service" },
     { "path": "packages/core" },
     { "path": "packages/epi-format" },
+    { "path": "packages/epi-reader" },
     { "path": "packages/storage-memory" },
     { "path": "packages/storage-sqlite" },
     { "path": "packages/agent" },
