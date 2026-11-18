@@ -68,7 +68,10 @@ header and never confused.**
    every checksum and every receipt, and refuses with one of
    `not_an_epi | unsupported_version | invalid_profiles | missing_section | damaged |
    projection_mismatch`. Import never needs the knowledge section: the history alone restores the
-   graph, and a knowledge-only file is refused on import rather than faked.
+   graph, and a knowledge-only file is refused on import rather than faked. The `views` section is
+   the one exception to strict refusal, on purpose: it is derived presentation, checksummed by
+   nothing and authoritative in nothing, so a broken view entry is dropped and the knowledge reads
+   on — a view is never the truth's hostage.
 
 7. **Ownership rules carry over.** Written once, never over an existing file, mode `0o600`, exported
    under an exclusive hold, imported only into a new graph. Scoped export (sharing a publication's

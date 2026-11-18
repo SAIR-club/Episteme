@@ -421,25 +421,25 @@ function readKnowledgeSections(
   return { ontology: manifest, knowledge: { ...payload, sha256: knowledge.sha256 } }
 }
 
+/**
+ * Views are derived presentation, checksummed by nothing and authoritative in nothing, so a broken
+ * view entry is dropped rather than allowed to gate the knowledge it decorates (ADR 0023). The
+ * file's truth — profiles, sections, checksums, receipts — is never a view's hostage.
+ */
 function readViews(value: unknown): readonly ViewSection[] | undefined {
-  if (value === undefined) return undefined
-  if (!Array.isArray(value))
-    throw new EpiFileError('damaged', 'views must be an array of named layouts')
-  for (const view of value) {
-    const section = asObject(view, 'damaged', 'a view must be an object')
-    if (typeof section.name !== 'string' || typeof section.kind !== 'string') {
-      throw new EpiFileError('damaged', 'a view must be named and carry a kind')
-    }
-    if (
-      typeof section.over !== 'object' ||
-      section.over === null ||
-      typeof section.layout !== 'object' ||
-      section.layout === null
-    ) {
-      throw new EpiFileError('damaged', 'a view must name what it presents and how it lays it out')
-    }
-  }
-  return value as readonly ViewSection[]
+  if (!Array.isArray(value)) return undefined
+  const views = value.filter((view): view is ViewSection => {
+    if (typeof view !== 'object' || view === null) return false
+    const section = view as Record<string, unknown>
+    if (typeof section.name !== 'string' || typeof section.kind !== 'string') return false
+    return (
+      typeof section.over === 'object' &&
+      section.over !== null &&
+      typeof section.layout === 'object' &&
+      section.layout !== null
+    )
+  })
+  return views.length === 0 ? undefined : views
 }
 
 function isCompanion(value: unknown): boolean {

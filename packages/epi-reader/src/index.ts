@@ -17,6 +17,7 @@ import {
   type HistorySection,
   type KnowledgeSection,
   type OntologyManifest,
+  type ViewSection,
 } from '@episteme/epi-format'
 
 /** The structural shape of a projected node: the reader reads what the file carries, optional where it must. */
@@ -110,6 +111,11 @@ export interface EpiKnowledgeFile {
   stateOf(target: string): readonly EpiStateEntry[]
   publications(): readonly unknown[]
   sources(): readonly unknown[]
+  /** The file's carried views, validated by the container; derived presentation, never truth. */
+  readonly views: readonly ViewSection[] | undefined
+  readonly knowledge: KnowledgeSection | undefined
+  /** The v1 archive the file carries, when it does; `undefined` for a knowledge-only file. */
+  readonly archive: HistorySection | undefined
   /**
    * The state-event clues an archive carries for one node, in commit order, each marked with whether
    * a recorded revocation withdraws it. Clues are raw records, not a refold — visible history, not a
@@ -175,6 +181,9 @@ export function openEnvelope(file: EpiFile): EpiKnowledgeFile {
     stateOf: (target) => state.filter((entry) => entry.target === target),
     publications: () => knowledge?.publications ?? [],
     sources: () => knowledge?.sources ?? [],
+    views: file.views,
+    knowledge,
+    archive,
     historyOf: (nodeId) => revisionClues(archive, nodeId),
     verifyIntegrity: () => verify(file, knowledge, archive),
   }
@@ -282,7 +291,8 @@ function verify(
   }
 }
 
-function asDimensionRecord(value: unknown): Readonly<Record<string, unknown>> {
+/** Internal: persisted events serialize dimension maps as [key, value] pairs. Shared with views. */
+export function asDimensionRecord(value: unknown): Readonly<Record<string, unknown>> {
   // Persisted events serialize their dimensions map as [key, value] pairs; the reader gives them
   // back in the same object form the knowledge section's state uses.
   if (Array.isArray(value)) {
@@ -370,3 +380,5 @@ export type {
   KnowledgeSection,
   OntologyManifest,
 } from '@episteme/epi-format'
+export { mapView, outlineView, timelineView } from './views.js'
+export type { MapView, OutlineGroup, OutlineNode, TimelineEntry } from './views.js'
