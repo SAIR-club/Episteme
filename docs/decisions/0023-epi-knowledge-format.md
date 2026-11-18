@@ -51,7 +51,12 @@ header and never confused.**
    derivation invents no second semantics. The section carries `derivedFrom` — the history's checksum,
    the ontology's checksum and the projection filter — plus its own `sha256` over the canonical
    serialization. A file whose receipt names a history or ontology it does not carry is refused as
-   `projection_mismatch`.
+   `projection_mismatch`. A receipt pins inputs; it does not prove a derivation. Replay verification
+   (`verifyEpiProjection` in `@episteme/storage-sqlite`) refolds the carried history through Core
+   under the file's own manifest and filter, and refuses as `projection_mismatch` unless the refold
+   reproduces the carried knowledge section — hash integrity and replay consistency are separate
+   claims, and only the archive profile admits the second, because a knowledge-only file has no
+   history to replay and is refused rather than verified.
 
 5. **Determinism is by stable keys, and canonical JSON is a pinned JCS subset.** Ids of edges,
    branches and publications are content-independent UUIDs, so sorting by id would make the same

@@ -18,6 +18,7 @@ import {
 import {
   EPI_FORMAT,
   EPI_VERSION,
+  EpiFileError,
   canonicalJson,
   detectEpiKind,
   knowledgeDigestOf,
@@ -127,6 +128,45 @@ export async function exportEpiFile(
   const epi = buildEpiFile(graph, options)
   await writeEpiFile(epi, target)
   return epi
+}
+
+/**
+ * Replay-verifies a `.epi` file's knowledge projection: the carried archive history is refolded
+ * through the same Core machinery that built the projection, under the manifest and filter the file
+ * itself declares, and the result must be the knowledge section the file carries.
+ *
+ * This is a different claim from the checksums `readEpiFile` checks. A checksum proves the bytes are
+ * the ones that were written; a tamperer who edits the projection and recomputes its checksum passes
+ * every hash. Only a refold proves the projection really derives from the history the file holds. A
+ * knowledge-only file carries no history, so there is nothing to replay: it is refused, never waved
+ * through with an unverified claim.
+ */
+export function verifyEpiProjection(epi: EpiFile): void {
+  const history = epi.archive?.history
+  if (history === undefined) {
+    throw new EpiFileError(
+      'missing_section',
+      'replay verification refolds the archive history, and this file carries no history',
+    )
+  }
+  if (epi.ontology === undefined || epi.knowledge === undefined) {
+    throw new EpiFileError(
+      'missing_section',
+      'replay verification needs the ontology manifest and the knowledge section to verify',
+    )
+  }
+  const derived = deriveKnowledge(
+    history as unknown as GraphExport,
+    epi.ontology,
+    epi.knowledge.derivedFrom.filter as unknown as ProjectionFilter,
+    epi.knowledge.derivedAt,
+  )
+  if (derived.sha256 !== epi.knowledge.sha256) {
+    throw new EpiFileError(
+      'projection_mismatch',
+      'the knowledge section does not derive from the history this file carries',
+    )
+  }
 }
 
 /**
