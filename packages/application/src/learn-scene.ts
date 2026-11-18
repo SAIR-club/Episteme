@@ -3,6 +3,7 @@ import {
   defineDomainPack,
   type DimensionId,
   type DomainPack,
+  type DomainPackDefinitions,
   type EdgeTypeId,
   type NodeTypeId,
   type StateDimensionDefinition,
@@ -90,8 +91,8 @@ const DEFAULT_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
   },
 ]
 
-/** @deprecated The Learn pack moves to MindLink (ADR 0013); build a `SessionScene` instead. */
-export const defaultSessionPack: DomainPack = defineDomainPack('default-session-pack', {
+/** @deprecated The Learn pack moves to MindLink (ADR 0013); build a `SessionScene` instead. Its definitions stay exported as data, so a `.epi` file's ontology manifest records exactly what it registers (ADR 0023). */
+export const learnPackDefinitions: DomainPackDefinitions = {
   tagNamespaces: [
     { namespace: 'scene', label: 'Scene' },
     { namespace: 'topic', label: 'Topic' },
@@ -174,7 +175,13 @@ export const defaultSessionPack: DomainPack = defineDomainPack('default-session-
     { id: asId<EdgeTypeId>('exemplifies'), label: 'exemplifies', category: 'epistemic' },
   ],
   stateDimensions: DEFAULT_STATE_DIMENSIONS,
-})
+}
+
+/** @deprecated See `learnPackDefinitions`. */
+export const defaultSessionPack: DomainPack = defineDomainPack(
+  'default-session-pack',
+  learnPackDefinitions,
+)
 
 /** @deprecated The Learn policy moves to MindLink (ADR 0013); set `SessionScene.distillationPolicy` instead. */
 export const defaultDistillationPolicy: DistillationPolicy = {
