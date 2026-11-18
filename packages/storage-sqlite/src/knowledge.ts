@@ -156,7 +156,7 @@ export function verifyEpiProjection(epi: EpiFile): void {
   const derived = deriveKnowledge(
     history as unknown as GraphExport,
     epi.ontology,
-    epi.knowledge.derivedFrom.filter as unknown as ProjectionFilter,
+    epi.knowledge.derivedFrom.filter,
     epi.knowledge.derivedAt,
   )
   if (derived.sha256 !== epi.knowledge.sha256) {

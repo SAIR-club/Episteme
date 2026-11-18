@@ -23,6 +23,16 @@ afterEach(async () => {
   await import('node:fs/promises').then((fs) => fs.rm(directory, { recursive: true, force: true }))
 })
 
+/** The refusal code a refused verification carries, or a marker when nothing was refused. */
+function codeOf(run: () => void): string {
+  try {
+    run()
+  } catch (error) {
+    return (error as { code?: string }).code ?? 'no code'
+  }
+  return 'no refusal'
+}
+
 function exportedArchive(graph: string): EpiFile {
   return buildEpiFile(graph, { build: BUILD, packs: PACKS, now: NOW })
 }
@@ -43,39 +53,34 @@ describe('replay verification of an archive knowledge projection', () => {
     // A tamperer rewrites a claim and fixes the section checksum: every byte-level check now
     // agrees with itself, and readEpiFile — which checks checksums and receipts, never a refold —
     // passes. This is exactly the forgery hash integrity cannot see.
+    const knowledge = epi.knowledge
+    if (knowledge === undefined) throw new Error('the export carries no knowledge section')
     const forged = {
-      ...epi,
-      knowledge: {
-        ...epi.knowledge,
-        nodes: epi.knowledge.nodes.map((node) =>
-          (node as { id: string }).id === 'k_position'
-            ? { ...(node as object), label: 'Attention needs no position information' }
-            : node,
-        ),
-      },
+      ...knowledge,
+      nodes: knowledge.nodes.map((node) =>
+        (node as { id: string }).id === 'k_position'
+          ? { ...(node as object), label: 'Attention needs no position information' }
+          : node,
+      ),
     }
-    const { sha256: _dropped, ...payload } = forged.knowledge
+    delete (forged as { sha256?: string }).sha256
     const resealed: EpiFile = {
-      ...forged,
-      knowledge: { ...payload, sha256: knowledgeDigestOf(payload) },
+      ...epi,
+      knowledge: { ...forged, sha256: knowledgeDigestOf(forged) },
     }
     expect(() => readEpiFile(JSON.stringify(resealed))).not.toThrow()
     expect(() => verifyEpiProjection(resealed)).toThrow(EpiFileError)
-    expect(() => verifyEpiProjection(resealed)).toThrow(
-      expect.objectContaining({ code: 'projection_mismatch' }),
-    )
+    expect(codeOf(() => verifyEpiProjection(resealed))).toBe('projection_mismatch')
   })
 
   it('refuses to replay-verify a knowledge-only file, which carries no history', async () => {
     const graph = join(directory, 'graph.db')
     await learningGraph(graph, { publish: true })
     const epi = exportedArchive(graph)
-    const knowledgeOnly: EpiFile = {
-      ...epi,
-      profiles: ['knowledge'],
-      archive: undefined,
-    }
+    const knowledgeOnly: EpiFile = { ...epi, profiles: ['knowledge'] }
+    delete (knowledgeOnly as { archive?: unknown }).archive
     expect(() => verifyEpiProjection(knowledgeOnly)).toThrow(EpiFileError)
+    expect(codeOf(() => verifyEpiProjection(knowledgeOnly))).toBe('missing_section')
     expect(() => verifyEpiProjection(knowledgeOnly)).toThrow(/no history/)
   })
 })

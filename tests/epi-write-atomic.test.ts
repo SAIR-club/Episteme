@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import type * as nodeFsPromises from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readEpiFile } from '@episteme/epi-format'
@@ -18,7 +19,7 @@ import { BUILD, NOW, learningGraph } from './epi-fixtures.js'
 const failure = vi.hoisted(() => ({ crashBeforePublish: false }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const actual = await importOriginal<typeof nodeFsPromises>()
   return {
     ...actual,
     link: async (...args: Parameters<typeof actual.link>) => {
@@ -31,7 +32,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 let directory: string
 
 beforeEach(async () => {
-  directory = await mkdir(join(tmpdir(), 'episteme-epi-write-'), { recursive: true })
+  directory = await mkdtemp(join(tmpdir(), 'episteme-epi-write-'))
 })
 
 afterEach(async () => {
@@ -69,7 +70,7 @@ describe('an .epi file is published atomically', () => {
 
     const epi = await exportEpiFile(graph, target, { build: BUILD, packs: [], now: NOW })
     const checked = readEpiFile(await readFile(target, 'utf8'))
-    expect(checked.knowledge?.sha256).toBe(epi.knowledge.sha256)
+    expect(checked.knowledge?.sha256).toBe(epi.knowledge?.sha256)
     expect(await residue()).toEqual([])
   })
 

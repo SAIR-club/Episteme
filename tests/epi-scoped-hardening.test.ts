@@ -56,6 +56,16 @@ function bodyOf(exported: GraphExport, kind: string, id: string): string | undef
   })
 }
 
+/** The refusal code a refused export carries, or a marker when nothing was refused. */
+function codeOf(run: () => void): string {
+  try {
+    run()
+  } catch (error) {
+    return (error as { code?: string }).code ?? 'no code'
+  }
+  return 'no refusal'
+}
+
 const OPTIONS = {
   build: BUILD,
   packs: PACKS,
@@ -83,9 +93,7 @@ describe('a scoped export of hostile records', () => {
     )
     expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(GraphExportError)
     expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(/someone else/)
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a publication whose root is not among its members', async () => {
@@ -103,9 +111,7 @@ describe('a scoped export of hostile records', () => {
       },
     )
     expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(GraphExportError)
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a member that is really an edge, not a node', async () => {
@@ -124,9 +130,7 @@ describe('a scoped export of hostile records', () => {
         publication.members = [...publication.members, edgeId]
       },
     )
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a member node that was written by someone else', async () => {
@@ -139,9 +143,7 @@ describe('a scoped export of hostile records', () => {
         ;(record.node as { actorId: string }).actorId = 'actor_other'
       },
     )
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a member node that is a draft', async () => {
@@ -154,9 +156,7 @@ describe('a scoped export of hostile records', () => {
         ;(record.node as { meta: { tier: string } }).meta = { tier: 'draft' }
       },
     )
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a member node that was revoked', async () => {
@@ -169,9 +169,7 @@ describe('a scoped export of hostile records', () => {
         ;(record.node as { revoked: boolean }).revoked = true
       },
     )
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses a boundary endpoint that cannot be proven visible to everyone', async () => {
@@ -193,9 +191,7 @@ describe('a scoped export of hostile records', () => {
         ;(record.edge as { to: string }).to = 'k_outsider'
       },
     )
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'unsafe_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('unsafe_publication')
   })
 
   it('refuses when two publications of the same person share one root', async () => {
@@ -212,9 +208,7 @@ describe('a scoped export of hostile records', () => {
       ...exported,
       records: [...exported.records, JSON.stringify(second)],
     }
-    expect(() => publishedEpiOf(tampered, OPTIONS)).toThrow(
-      expect.objectContaining({ code: 'ambiguous_publication' }),
-    )
+    expect(codeOf(() => publishedEpiOf(tampered, OPTIONS))).toBe('ambiguous_publication')
   })
 })
 
