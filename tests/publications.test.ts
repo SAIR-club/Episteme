@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { CognitiveSession } from '@episteme/application'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { NODE, createFixture, learnTags } from './fixtures.js'
+import { EDGE, NODE, createFixture, learnTags } from './fixtures.js'
 import { storedRecords } from './stored.js'
 
 /**
@@ -175,6 +175,21 @@ describe('withdrawing', () => {
     expect(ids(wei)).toContain(work.claim)
     expect(wei.historyOf(work.claim)).toHaveLength(1)
     expect(wei.publications()).toEqual([])
+  })
+
+  it('still names an author to someone who answered their withdrawn work, and to nobody who never read it', async () => {
+    const work = await linsWork()
+    const published = await lin.publish({ root: work.claim })
+    if (!published.ok) throw new Error(published.refusal.message)
+    // Wei answers Lin's claim with a claim of their own, without citing it.
+    const answer = (await wei.addNode({ label: 'Positions can be learned', kind: 'claim' })).nodeId
+    await wei.link(answer, work.claim, EDGE.contradicts)
+    const mei = owner.forActor('actor_human_mei', 'Mei')
+
+    expect((await lin.withdrawPublication(published.publication.id)).ok).toBe(true)
+    expect(wei.citedAuthors()).toEqual(['actor_human_lin'])
+    expect(mei.citedAuthors()).toEqual([])
+    expect(lin.citedAuthors()).toEqual([])
   })
 })
 
