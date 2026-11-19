@@ -8,6 +8,10 @@
  *
  *   pnpm exec tsc -b && node scripts/host-e2e.mjs --scene service
  *   pnpm exec tsc -b && node scripts/host-e2e.mjs --scene hypothesis
+ *   pnpm exec tsc -b && node scripts/host-e2e.mjs --host opencode --model magpie/auto/deepseek-v4.1-flash
+ *
+ * The host is Claude Code (`claude -p`) by default, or OpenCode with `--host opencode`, which takes its model provider
+ * from the person's own OpenCode configuration; nothing about a gateway is written here (scripts/opencode-host.mjs).
  *
  * Spends real model budget: at most --budget dollars per session (default 0.3), with a time limit on each. Content is
  * synthetic. Prints a JSON report; the transcript of MCP calls goes to the temporary directory it names.
@@ -20,11 +24,13 @@ import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { hypothesisProfile } from '../apps/hypothesis/dist/index.js'
 import { defaultProfile, startService } from '../apps/service/dist/index.js'
+import { openCodeTurn, writeOpenCodeConfig } from './opencode-host.mjs'
 
 const { values } = parseArgs({
   options: {
     scene: { type: 'string', default: 'service' },
-    model: { type: 'string', default: 'haiku' },
+    host: { type: 'string', default: 'claude' },
+    model: { type: 'string' },
     budget: { type: 'string', default: '0.3' },
     'timeout-ms': { type: 'string', default: '240000' },
   },
@@ -46,6 +52,14 @@ const SCENES = {
 }
 const scene = SCENES[values.scene]
 if (scene === undefined) throw new Error(`unknown scene "${values.scene}"`)
+if (values.host !== 'claude' && values.host !== 'opencode') {
+  throw new Error(`unknown host "${values.host}": claude or opencode`)
+}
+if (values.host === 'opencode' && values.model === undefined) {
+  throw new Error('--host opencode needs --model provider/model from your OpenCode configuration')
+}
+const model = values.model ?? 'haiku'
+const MAX_TURNS = 8
 
 const directory = mkdtempSync(join(tmpdir(), 'episteme-host-e2e-'))
 const transcript = join(directory, 'mcp-calls.jsonl')
@@ -56,7 +70,7 @@ const service = await startService({
 })
 const target = new URL(service.mcpUrl)
 
-const seen = { client: undefined, tools: [], methods: new Set() }
+const seen = { client: undefined, tools: [], results: [], methods: new Set() }
 
 /** Passes everything through with the Host the service expects, and notes what the client said. */
 const proxy = createServer((incoming, outgoing) => {
@@ -90,7 +104,24 @@ const proxy = createServer((incoming, outgoing) => {
       },
       (answer) => {
         outgoing.writeHead(answer.statusCode ?? 502, answer.headers)
-        answer.pipe(outgoing)
+        // What each tool call answered, so "it called recall" and "recall returned it" can be told apart.
+        const parts = []
+        answer.on('data', (part) => {
+          parts.push(part)
+          outgoing.write(part)
+        })
+        answer.on('end', () => {
+          outgoing.end()
+          if (call?.method !== 'tools/call') return
+          const text = Buffer.concat(parts).toString('utf8')
+          seen.results.push({
+            tool: call.params?.name,
+            status: answer.statusCode,
+            isError: /"isError":\s*true/.test(text),
+            mentionsExpected: text.toLowerCase().includes(scene.expect),
+          })
+          appendFileSync(transcript, `${JSON.stringify({ answered: call.params?.name, text })}\n`)
+        })
       },
     )
     forwarded.on('error', () => outgoing.destroy())
@@ -98,18 +129,10 @@ const proxy = createServer((incoming, outgoing) => {
   })
 })
 await new Promise((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+const proxied = `http://127.0.0.1:${proxy.address().port}${target.pathname}`
 const config = join(directory, 'mcp.json')
-writeFileSync(
-  config,
-  JSON.stringify({
-    mcpServers: {
-      episteme: {
-        type: 'http',
-        url: `http://127.0.0.1:${proxy.address().port}${target.pathname}`,
-      },
-    },
-  }),
-)
+writeFileSync(config, JSON.stringify({ mcpServers: { episteme: { type: 'http', url: proxied } } }))
+if (values.host === 'opencode') writeOpenCodeConfig(directory, proxied)
 
 const person = async (path, body) => {
   const response = await fetch(`${service.apiUrl}${path}`, {
@@ -129,15 +152,33 @@ const hostEnvironment = Object.fromEntries(
   ),
 )
 
-/** One whole host session in an empty directory, so nothing but MCP can tell it anything. */
-const hostSession = (prompt) =>
+let sessions = 0
+
+/** The same session through OpenCode, with the same step limit and budget, stopped from here (see opencode-host.mjs). */
+const openCodeSession = async (prompt) => {
+  sessions += 1
+  const turn = await openCodeTurn({
+    cwd: directory,
+    model,
+    prompt,
+    maxSteps: MAX_TURNS,
+    budgetUsd: Number(values.budget),
+    timeoutMs: Number(values['timeout-ms']),
+    env: hostEnvironment,
+  })
+  writeFileSync(join(directory, `opencode-session-${sessions}.jsonl`), turn.raw)
+  const { raw: _raw, texts: _texts, ...kept } = turn
+  return { ...kept, costBasis: 'opencode-estimate' }
+}
+
+const claudeSession = (prompt) =>
   new Promise((resolve, reject) => {
     const child = spawn(
       'claude',
       [
         '-p',
         '--model',
-        values.model,
+        model,
         '--max-budget-usd',
         values.budget,
         '--output-format',
@@ -154,7 +195,7 @@ const hostSession = (prompt) =>
         '--allowedTools',
         'mcp__episteme',
         '--max-turns',
-        '8',
+        String(MAX_TURNS),
       ],
       { cwd: directory, shell: true, env: hostEnvironment, stdio: ['pipe', 'pipe', 'pipe'] },
     )
@@ -185,7 +226,11 @@ const hostSession = (prompt) =>
     child.stdin.end(prompt)
   })
 
-const report = { scene: values.scene, model: values.model, directory }
+/** One whole host session in an empty directory, so nothing but MCP can tell it anything. */
+const hostSession = (prompt) =>
+  values.host === 'opencode' ? openCodeSession(prompt) : claudeSession(prompt)
+
+const report = { scene: values.scene, host: values.host, model, directory }
 try {
   report.first = await hostSession(
     [
@@ -216,6 +261,7 @@ try {
   report.recalled = report.second.text?.toLowerCase().includes(scene.expect) === true
   report.client = seen.client
   report.toolCalls = seen.tools
+  report.toolResults = seen.results
   report.methods = [...seen.methods]
 } finally {
   await service.close()
