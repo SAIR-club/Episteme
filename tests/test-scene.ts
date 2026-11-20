@@ -100,10 +100,6 @@ const EVALUATION: EvaluationPolicy = {
     }
     return EVALUATION.isSettled?.(dimensions) === true ? 'settled' : 'shaky'
   },
-  progressLine(touched, settled) {
-    if (touched === 0) return '你还没有记录过任何理解'
-    return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
-  },
 }
 
 export const testScene: SessionScene = {

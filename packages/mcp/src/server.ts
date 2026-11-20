@@ -617,7 +617,11 @@ function proposalFrom(input: ProposeInput): Proposal | string {
 
 function describeRecall(recalled: RecallResult): string {
   if (recalled.known.length === 0 && recalled.ranked.length === 0) {
-    return 'Nothing in this person’s graph bears on that question yet. Establish the ground; there is nothing recorded to build on.'
+    const nothing =
+      'Nothing in this person’s graph bears on that question yet. Establish the ground; there is nothing recorded to build on.'
+    return recalled.semanticUnavailable === undefined
+      ? nothing
+      : `${nothing}\n\n${withoutMeaning(recalled.semanticUnavailable)}`
   }
 
   const lines: string[] = []
@@ -649,7 +653,14 @@ function describeRecall(recalled: RecallResult): string {
       `- ${entry.label} [${entry.nodeId}]${entry.kept ? ' kept,' : ''} score ${entry.score.toFixed(2)}${reasons.length === 0 ? '' : ` (${reasons.join(', ')})`}`,
     )
   }
+  if (recalled.semanticUnavailable !== undefined)
+    lines.push('', withoutMeaning(recalled.semanticUnavailable))
   return lines.join('\n')
+}
+
+/** Said whenever a recall went without the embedding provider, so a missing item is not read as absent. */
+function withoutMeaning(reason: string): string {
+  return `The embedding provider failed (${reason}), so this ranking is by words, links and recorded understanding only; something phrased differently may be missing.`
 }
 
 function describeDistilled(outcome: Extract<DistillOutcome, { ok: true }>): string {
@@ -859,7 +870,10 @@ function describeSummary(summary: RecallSummary): string {
       }${entry.inScope === true ? ' — in scope' : ''}`,
   )
   if (summary.truncated > 0) lines.push(`${summary.truncated} more left out by the budget.`)
-  return lines.length === 0 ? 'Nothing relevant is recorded yet.' : lines.join('\n')
+  if (lines.length === 0) lines.push('Nothing relevant is recorded yet.')
+  if (summary.semanticUnavailable !== undefined)
+    lines.push(withoutMeaning(summary.semanticUnavailable))
+  return lines.join('\n')
 }
 
 function result(text: string, structured: object): CallToolResult {
