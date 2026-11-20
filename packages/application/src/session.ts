@@ -1665,14 +1665,23 @@ export class CognitiveSession {
   }
 
   /**
-   * The people whose publications this person cited, including ones since withdrawn: they read the author's name
-   * when they cited it, and what they cited still says whose it was.
+   * The people whose publications this person cited or answered, including ones since withdrawn: they read the
+   * author's name when they did, and what they kept still says whose it was. An answer is a relation of theirs to a
+   * node someone else published.
    */
   citedAuthors(): readonly string[] {
     const authors = new Set<string>()
     for (const id of this.#adopted()) {
       const author = this.#episteme.log.publications.get(id)?.actorId
       if (author !== undefined) authors.add(author)
+    }
+    const published = new Set<string>(
+      this.#episteme.log.publications.all().flatMap((publication) => publication.members),
+    )
+    for (const edge of this.#episteme.graph.listEdges()) {
+      if (edge.actorId !== this.#actor || !published.has(edge.to)) continue
+      const author = this.#episteme.graph.getNode(edge.to)?.actorId
+      if (author !== undefined && author !== this.#actor) authors.add(author)
     }
     return [...authors]
   }
