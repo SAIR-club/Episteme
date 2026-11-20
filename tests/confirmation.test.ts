@@ -23,7 +23,7 @@ let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-confirm-'))
-  filePath = join(directory, 'learn.jsonl')
+  filePath = join(directory, 'learn.db')
   session = await CognitiveSession.open({ filePath })
   await seedTopic(session)
 })

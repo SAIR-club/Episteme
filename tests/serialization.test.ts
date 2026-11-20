@@ -12,7 +12,7 @@ import {
   deserializeRecord,
   serializeRecord,
   type PersistedRecord,
-} from '@episteme/storage-local'
+} from '@episteme/storage-sqlite'
 import { describe, expect, it } from 'vitest'
 import { DIMENSION, NODE, learnTags } from './fixtures.js'
 import { createFixture, dimensions, level } from './fixtures.js'
@@ -165,8 +165,8 @@ describe('serialization contract', () => {
   })
 
   it('refuses a record it cannot understand rather than guessing', () => {
-    expect(() => deserializeRecord('not json at all', 4)).toThrow(/line 4 is not valid JSON/)
-    expect(() => deserializeRecord('"a string"', 2)).toThrow(/line 2 is not an object/)
+    expect(() => deserializeRecord('not json at all', 4)).toThrow(/record 4 is not valid JSON/)
+    expect(() => deserializeRecord('"a string"', 2)).toThrow(/record 2 is not an object/)
     expect(() => deserializeRecord(JSON.stringify({ schemaVersion: 99, kind: 'node' }), 7)).toThrow(
       /schema version 99/,
     )

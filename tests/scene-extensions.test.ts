@@ -171,7 +171,7 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-scene-'))
   service = await startService({
     port: 0,
-    graph: join(directory, 'debate.jsonl'),
+    graph: join(directory, 'debate.db'),
     profile: debateProfile(),
   })
   agent = mcpWire(() => service.mcpUrl, { name: 'Scene Agent', version: '1' })
@@ -334,7 +334,7 @@ describe('what a view reads of two people on one graph', () => {
 
   beforeEach(async () => {
     shared = await mkdtemp(join(tmpdir(), 'episteme-scene-view-'))
-    owner = await CognitiveSession.open({ filePath: join(shared, 'shared.jsonl'), sharing: true })
+    owner = await CognitiveSession.open({ filePath: join(shared, 'shared.db'), sharing: true })
     lin = owner.forActor('actor_human_lin', 'Lin')
     wei = owner.forActor('actor_human_wei', 'Wei')
   })
@@ -481,7 +481,7 @@ describe('a publication read through a view, on a shared service', () => {
     people = { lin: await person('Lin'), wei: await person('Wei'), qin: await person('Qin') }
     sharedService = await startService({
       port: 0,
-      graph: join(sharedDirectory, 'shared.jsonl'),
+      graph: join(sharedDirectory, 'shared.db'),
       mode: 'shared',
       users,
       publicOrigin: 'https://episteme.example.edu',
@@ -556,7 +556,7 @@ describe('a publication read through a view, on a shared service', () => {
 
 describe('a profile that cannot be served', () => {
   it('is refused at start without keeping the graph', async () => {
-    const graph = join(directory, 'clash.jsonl')
+    const graph = join(directory, 'clash.db')
     await expect(
       startService({
         port: 0,

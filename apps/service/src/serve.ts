@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import {
-  GraphCopyInProgressError,
-  GraphLockedError,
-  UnfinishedGraphCopyError,
-  copyGraph,
-  isSqliteGraph,
-} from '@episteme/application'
+import { GraphLockedError } from '@episteme/application'
 import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
 import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
@@ -35,8 +29,7 @@ if (argv.includes('--help') || argv.includes('-h')) {
     `EPISTEME · 服务 —— 一个图谱的唯一持有者\n` +
       `\n  用法：pnpm serve [选项]\n` +
       `\n  选项：\n` +
-      `    -g, --graph <路径>      指定图谱文件（默认 ${DEFAULT_GRAPH}；--file / -f 等效）\n` +
-      `                            以 .db / .sqlite / .sqlite3 结尾的路径用 SQLite 保存，其他用 JSONL\n` +
+      `    -g, --graph <路径>      指定图谱文件，一个 SQLite 数据库（默认 ${DEFAULT_GRAPH}；--file / -f 等效）\n` +
       `    -p, --port <端口>       监听端口（默认 4321）\n` +
       `    -t, --topic <路径>      首次启动时载入你自己的主题文件，而不是内置的示例主题\n` +
       `        --blank             从空图谱开始，什么都不载入\n` +
@@ -52,9 +45,6 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `    pnpm serve users add <名字>\n` +
       `    pnpm serve tokens add <actorId> --kind human|agent --label <用途，例如 claude-code>\n` +
       `    pnpm serve tokens revoke <令牌 id>\n` +
-      `\n  在 JSONL 和 SQLite 之间搬图谱（连同旁边的建议、材料、对话和场景记录文件；原文件不动）：\n` +
-      `    pnpm serve graph import <旧图谱.jsonl> <新图谱.db>\n` +
-      `    pnpm serve graph export <图谱.db> <新图谱.jsonl>\n` +
       `\n  环境变量：EPISTEME_FILE 与 --graph 等效，PORT 与 --port 等效；命令行参数优先。\n` +
       `\n  本地模式只监听本机回环地址。确认建议、记录理解需要你本人的令牌：托管的 Workspace 会自动带上，\n` +
       `  其他客户端用启动时打印的令牌。它能防止误操作，但挡不住以你的身份运行、能用 shell 的 agent。\n\n`,
@@ -83,70 +73,18 @@ function optionValue(args: readonly string[], ...names: readonly string[]): stri
 
 /** Why the graph could not be opened, in words a person can act on, or `undefined` for any other failure. */
 function refusalMessage(error: unknown): string | undefined {
-  if (error instanceof GraphLockedError) return lockedMessage(error)
-  if (error instanceof GraphCopyInProgressError) {
-    return `正在有一次复制写入这个图谱，等它结束后再试：\n  ${error.graphPath}`
-  }
-  if (error instanceof UnfinishedGraphCopyError) {
-    return (
-      `这个图谱是一次没有完成的复制的目标，可能缺少记录或附属文件，所以不会打开：\n  ${error.graphPath}\n` +
-      `请重新运行 graph import / graph export 复制到这里，它会先清掉上次写了一半的文件再重来。原图谱不受影响。`
-    )
+  if (error instanceof GraphLockedError) {
+    return `这个图谱已经被另一个进程打开了，比如正在运行的 Episteme 服务：\n  ${error.graphPath}\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
   }
   return undefined
 }
 
-/** Why the graph is locked, in words a person can act on. */
-function lockedMessage(error: GraphLockedError): string {
-  if (error.holderRunning) {
-    const holder = error.holderPid === undefined ? '' : `（PID ${error.holderPid}）`
-    return `这个图谱已经被另一个进程${holder}打开了，比如正在运行的 Episteme 服务或 Learn 终端。\n请直接使用那个进程，或者先把它停掉。一个图谱同时只能有一个进程写入。`
-  }
-  return (
-    `这个图谱被一个锁占着，但持有它的${error.holderPid === undefined ? '进程无法识别' : `进程（PID ${error.holderPid}）已经不在运行了`}。\n` +
-    `这通常是上次被强行结束留下的。如果确定没有别的程序在用这个图谱，删除下面这个文件后再试：\n  ${error.lockPath}`
-  )
-}
-
 const usersPath = optionValue(argv, '--users') ?? process.env.EPISTEME_USERS ?? DEFAULT_USERS
 
-// Moving a graph, and administration of people and tokens: one command, then exit. Nothing here starts the service.
-if (argv[0] === 'graph') {
-  try {
-    await moveGraph(argv)
-  } catch (error) {
-    process.stderr.write(`${refusalMessage(error) ?? (error as Error).message}\n`)
-    process.exit(1)
-  }
-  process.exit(0)
-}
+// Administration of people and tokens: one command, then exit. Nothing here starts the service.
 if (argv[0] === 'users' || argv[0] === 'tokens') {
   await administer(argv)
   process.exit(0)
-}
-
-/** `graph import` and `graph export`: copies a graph between JSONL and SQLite, leaving the original as it is. */
-async function moveGraph(args: readonly string[]): Promise<void> {
-  const [, action, from, to] = args
-  if ((action !== 'import' && action !== 'export') || from === undefined || to === undefined) {
-    throw new Error(
-      '用法：graph import <旧图谱.jsonl> <新图谱.db> | graph export <图谱.db> <新图谱.jsonl>',
-    )
-  }
-  const toSqlite = action === 'import'
-  if (isSqliteGraph(from) === toSqlite || isSqliteGraph(to) !== toSqlite) {
-    throw new Error(
-      toSqlite
-        ? 'import 是从 JSONL 搬到 SQLite：第一个路径不能以 .db / .sqlite / .sqlite3 结尾，第二个必须以它们之一结尾。'
-        : 'export 是从 SQLite 搬到 JSONL：第一个路径必须以 .db / .sqlite / .sqlite3 结尾，第二个不能。',
-    )
-  }
-  const copied = await copyGraph(from, to)
-  process.stdout.write(
-    `已复制 ${copied.records} 条记录：${from} → ${to}\n` +
-      copied.companions.map((path) => `  连同 ${path}\n`).join('') +
-      `原图谱没有改动。确认新图谱没问题后，用 --graph ${to} 启动。\n`,
-  )
 }
 
 /** `users add`, `tokens add` and `tokens revoke`, on the user file. A token is printed once and never again. */

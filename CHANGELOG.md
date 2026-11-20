@@ -2,6 +2,13 @@
 
 本文件记录 Episteme 各版本中使用者能感知到的变化。版本号遵循语义化版本，目前处于 0.x 阶段：次版本号带来新能力，修订号只用于修复。条目依据 `git log` 整理，详细说明见各版本的发布说明。
 
+## [Unreleased]
+
+### 不兼容的变化
+
+- **存储只用 SQLite**（[ADR 0018](docs/decisions/0018-sqlite-only.md)）：一个图谱就是一个 SQLite 文件，旁边的建议、材料、对话和场景记录也存在这个文件里，不再有 `.jsonl` 文件和 `.lock` 文件。`@episteme/storage-local`（JSONL）已删除，`graph import` / `graph export` 一并删除；旧的 JSONL 图谱不能再打开，也没有导入工具。默认图谱改为 `~/.episteme/learn.db`。
+- **需要 Node 22 或更高版本**：Node 20 已于 2026 年 4 月停止维护；SQLite 驱动升级到 `better-sqlite3` 13。
+
 ## [0.1.0] - 2026-10-09
 
 **First Real Learning Loop**，第一个开发预览版（Developer Preview），不是面向普通用户的稳定版本。发布说明见 [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)。

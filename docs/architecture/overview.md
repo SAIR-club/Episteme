@@ -219,7 +219,6 @@ anyway. `tests/critical-loop.test.ts` is that proof; it is the test to keep gree
 
 ## Known limitations
 
-- Storage is in-memory only, so a process restart loses the graph. `storage-local` is planned.
 - No access-control enforcement yet: the privacy default is expressed in the model (`Actor.shareByDefault`,
   per-actor state) but not enforced by a policy layer.
 - No identity/authentication layer; actor ids are supplied by the caller.
@@ -233,5 +232,5 @@ anyway. `tests/critical-loop.test.ts` is that proof; it is the test to keep gree
 - Projection and retrieval are full scans with in-memory adjacency. Adequate for v0 graphs, and the
   storage port is where an index would go.
 - Nothing records which retrieved context actually helped, so there is no relevance feedback yet.
-- `packages/sdk`, `packages/domain-forum`, `packages/storage-local`, `packages/logic-bridge` and
+- `packages/sdk`, `packages/domain-forum`, `packages/logic-bridge` and
   `apps/` are placeholders, not implementations.

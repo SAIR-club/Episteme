@@ -15,7 +15,7 @@ let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-conflict-'))
-  session = await CognitiveSession.open({ filePath: join(directory, 'graph.jsonl') })
+  session = await CognitiveSession.open({ filePath: join(directory, 'graph.db') })
 })
 
 afterEach(async () => {
