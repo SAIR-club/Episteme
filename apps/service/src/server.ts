@@ -1,11 +1,12 @@
+import { getRequestListener } from '@hono/node-server'
 import { existsSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
+import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
 import { createMcpEndpoint, type McpActivity } from '@episteme/mcp'
-import { API_PREFIX, handleApi, operationOf, sendJson } from './api.js'
+import { API_PREFIX, createApiApp } from './api.js'
 import { boundaryRefusal } from './boundary.js'
 import {
   embeddingAdapter,
@@ -15,10 +16,11 @@ import {
 import {
   accessRefusal,
   BrowserSessions,
-  credentialOf,
   Directory,
+  resolveCaller,
   type Caller,
   type DeploymentMode,
+  type Operation,
 } from './identity.js'
 import { assertSceneRoutes, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
@@ -79,6 +81,24 @@ export interface EpistemeService {
 
 export const DEFAULT_GRAPH = join(homedir(), '.episteme', 'learn.db')
 const MCP_PATH = '/mcp'
+
+/** A JSON response for a request handled at the socket, outside the Hono app: the boundary, MCP and the notice. */
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body)
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(text),
+  })
+  response.end(text)
+}
+
+/** A failure outside a handler that answers its own refusals: reported as 500, never swallowed. */
+function fail(response: ServerResponse, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
+  if (!response.headersSent) sendJson(response, 500, { error: message, code: 'internal' })
+  else response.end()
+}
 
 /**
  * Starts the Episteme service: the single owner of one graph, serving MCP to agents and REST to
@@ -206,6 +226,19 @@ async function serve(
     ...(options.publicOrigin === undefined ? {} : { allowedOrigins: [options.publicOrigin] }),
     ...(options.onMcpActivity === undefined ? {} : { onActivity: options.onMcpActivity }),
   })
+  const api = createApiApp({
+    session,
+    profile,
+    seeded,
+    directory,
+    browsers,
+    mode,
+  })
+  const apiListener = getRequestListener((request) => api.fetch(request), {
+    // The runtime's own Request and Response are what the rest of the service uses; the adapter does not need
+    // to replace them to serve one app.
+    overrideGlobalObjects: false,
+  })
   const workspace = options.workspace
 
   // Known once the socket is bound. No request can arrive before then.
@@ -225,58 +258,46 @@ async function serve(
     const path = new URL(request.url ?? '/', 'http://localhost').pathname
     const method = request.method ?? 'GET'
 
-    // Who the request is for, from its credential and nothing else (ADR 0012). A Bearer token that does not
-    // resolve is refused; a stale cookie, such as one from the previous run, counts as no credential.
-    const credential = credentialOf(request.headers)
-    let caller: Caller | undefined
-    if (credential !== undefined && 'token' in credential) {
-      caller = directory.resolve(credential.token)
-      if (caller === undefined) {
-        sendJson(response, 401, { error: 'this token is not valid', code: 'unauthenticated' })
-        return
-      }
-    } else if (credential !== undefined) {
-      caller = browsers.resolve(credential.session)
-      // A session ends with the token that opened it: once that is revoked, the cookie counts as no credential.
-      if (caller !== undefined && !directory.isLive(caller.credentialId)) caller = undefined
+    if (path === `${API_PREFIX}/session` && method === 'POST') {
+      signIn(request, response).catch((error: unknown) => fail(response, error))
+      return
     }
 
-    const handled =
-      path === `${API_PREFIX}/session` && method === 'POST'
-        ? signIn(request, response)
-        : path === MCP_PATH
-          ? authorized(response, caller, 'read', () => mcp.handle(request, response, caller))
-          : path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)
-            ? authorized(response, caller, operationOf(method, path, profile), () =>
-                handleApi(request, response, path, {
-                  // Each person reads and writes through their own session over the one graph (ADR 0014).
-                  session: caller === undefined ? session : session.forActor(caller.actorId),
-                  profile,
-                  seeded,
-                  caller,
-                  people,
-                }),
-              )
-            : workspace !== undefined
-              ? method === 'GET' || method === 'HEAD'
-                ? serveWorkspace(workspace, path, response, pageHeaders())
-                : Promise.resolve(sendJson(response, 405, { error: 'read only', code: 'no_route' }))
-              : Promise.resolve(notice(response, path))
-    handled.catch((error: unknown) => {
-      // Bad input is answered inside each handler, so a rejection here is a bug rather than a refusal.
-      // Reported as 500 with the message, never swallowed: a service that fails quietly is worse than one
-      // that fails visibly.
-      const message = error instanceof Error ? error.message : String(error)
-      if (!response.headersSent) sendJson(response, 500, { error: message, code: 'internal' })
-      else response.end()
-    })
+    if (path === MCP_PATH) {
+      const resolved = resolveCaller(request.headers, directory, browsers)
+      if (!resolved.ok) {
+        sendJson(response, 401, { error: resolved.message, code: 'unauthenticated' })
+        return
+      }
+      authorized(response, resolved.caller, 'read', () =>
+        mcp.handle(request, response, resolved.caller),
+      ).catch((error: unknown) => fail(response, error))
+      return
+    }
+
+    if (path === API_PREFIX || path.startsWith(`${API_PREFIX}/`)) {
+      apiListener(request, response).catch((error: unknown) => fail(response, error))
+      return
+    }
+
+    if (workspace !== undefined) {
+      if (method === 'GET' || method === 'HEAD') {
+        serveWorkspace(workspace, path, response, pageHeaders()).catch((error: unknown) =>
+          fail(response, error),
+        )
+      } else {
+        sendJson(response, 405, { error: 'read only', code: 'no_route' })
+      }
+      return
+    }
+    notice(response, path)
   })
 
   /** Runs `serve` only when the caller may perform `operation`; otherwise answers why not. */
   function authorized(
-    response: Parameters<typeof sendJson>[0],
+    response: ServerResponse,
     caller: Caller | undefined,
-    operation: ReturnType<typeof operationOf>,
+    operation: Operation,
     serve: () => Promise<void>,
   ): Promise<void> {
     const refused = accessRefusal(mode, caller, operation)
@@ -293,7 +314,7 @@ async function serve(
   /** Exchanges a person's own token for a session cookie (ADR 0012, decision 2). */
   async function signIn(
     request: Parameters<typeof mcp.handle>[0],
-    response: Parameters<typeof sendJson>[0],
+    response: ServerResponse,
   ): Promise<void> {
     const chunks: Buffer[] = []
     let size = 0
@@ -336,7 +357,7 @@ async function serve(
     response.end(JSON.stringify({ actorId: person.actorId, label: person.label }))
   }
 
-  function notice(response: Parameters<typeof sendJson>[0], path: string): void {
+  function notice(response: ServerResponse, path: string): void {
     if (path !== '/') {
       sendJson(response, 404, { error: `nothing is served at ${path}`, code: 'no_route' })
       return
