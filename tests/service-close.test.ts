@@ -11,6 +11,8 @@ it('closes without waiting for a connection that never asked anything', async ()
   const socket = connect(service.port, '127.0.0.1')
   socket.on('error', () => undefined)
   await new Promise((resolve) => socket.once('connect', resolve))
+  // Let the server register the connection before shutdown asks for idle ones.
+  await new Promise((resolve) => setTimeout(resolve, 25))
   const hungUp = new Promise((resolve) => socket.once('close', resolve))
 
   await service.close()
