@@ -55,6 +55,8 @@ import { readFile } from 'node:fs/promises'
 import { openEpi, outlineView, timelineView } from '@episteme/epi-reader'
 
 const epi = openEpi(await readFile('graph.epi', 'utf8'))
+// Hash integrity only: the bytes are the ones that were written. This does not re-derive the
+// projection — see "Two different verifications" below.
 epi.verifyIntegrity() // re-checks the checksums; throws EpiFileError on mismatch
 
 epi.format                 // 'episteme-knowledge'
@@ -70,6 +72,27 @@ timelineView(epi)          // another: the revision thread, in the archive's com
 
 Views are derived presentation: they reference the file's own stable ids, copy no knowledge, and
 rebuild identically from the knowledge section alone.
+
+## Two different verifications
+
+Checksums and replay prove different things, and neither stands in for the other:
+
+- `readEpiFile` and `epi.verifyIntegrity()` check **hash integrity**: the bytes are the ones that
+  were written, and the receipt names inputs the file actually carries. A tamperer who edits the
+  knowledge section and recomputes its checksum passes every hash.
+- `verifyEpiProjection(epi)` in `@episteme/storage-sqlite` checks **replay consistency**: it refolds
+  the carried archive history through Core, under the manifest and filter the file itself declares,
+  and refuses as `projection_mismatch` unless the result is exactly the knowledge section the file
+  carries.
+
+```ts
+import { verifyEpiProjection } from '@episteme/storage-sqlite'
+
+verifyEpiProjection(epi) // throws EpiFileError('projection_mismatch') on a forged projection
+```
+
+A knowledge-only file carries no history, so there is nothing to replay: it is refused rather than
+waved through with an unverified claim.
 
 ## Publish: share one publication, not the whole graph
 
@@ -103,7 +126,7 @@ Reading a file that claims more than it proves is a refusal, never a warning
 | `invalid_profiles` | `profiles` is empty, or names an unknown profile twice |
 | `missing_section` | a claimed profile's section is absent |
 | `damaged` | a checksum failed, a section is unreadable, a time is not ISO 8601 UTC |
-| `projection_mismatch` | the knowledge receipt names a history or ontology this file does not carry |
+| `projection_mismatch` | the receipt names a history or ontology this file does not carry, or a refold of the carried history does not reproduce the knowledge section |
 
 Storage-level refusals (`GraphExportError`): `target_exists`, `no_graph`, `no_publication`,
 `ambiguous_publication`, `withdrawn_publication`, `unsafe_publication`, and the v1 codes.
