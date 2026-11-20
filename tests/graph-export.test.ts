@@ -84,6 +84,34 @@ describe('exporting and importing a graph', () => {
     expect(again.sha256).toBe(first.sha256)
   }, 60_000)
 
+  it('writes a large graph a piece at a time, as the same file serializing it whole would give', async () => {
+    // Several megabytes of conversation, so the file is written over many pieces.
+    const opened = await CognitiveSession.open({ filePath: graph, scene: testScene })
+    try {
+      const thread = await opened.openThread({ title: '长对话' })
+      const line = '位置编码把序列的顺序告诉模型，没有它注意力看不出词的先后。'.repeat(60)
+      for (let turn = 0; turn < 2_000; turn += 1) {
+        await opened.appendTurn(thread.id, { speaker: 'learner', text: `第 ${turn} 轮：${line}` })
+      }
+    } finally {
+      await opened.close()
+    }
+    const head = await exportGraph(graph, archive, OPTIONS)
+    const text = await readFile(archive, 'utf8')
+    expect(text.length).toBeGreaterThan(3 * (1 << 20))
+    expect(text).toBe(JSON.stringify(JSON.parse(text)))
+    // What it returns is the file's own head, without carrying the graph back in memory.
+    const read = await readGraphExport(archive)
+    expect(head).toEqual({ ...read, records: undefined, companions: undefined })
+    expect(Object.keys(head)).not.toContain('records')
+
+    const restored = join(directory, 'restored.db')
+    await importGraph(archive, restored)
+    const again = join(directory, 'again.episteme.json')
+    await exportGraph(restored, again, { ...OPTIONS, now: () => new Date(head.exportedAt) })
+    expect((await readGraphExport(again)).sha256).toBe(head.sha256)
+  }, 120_000)
+
   // Windows ignores the mode, and CI's Linux runners are what check it.
   it.skipIf(process.platform === 'win32')(
     'writes a file only its owner can read, whatever the umask allows',
