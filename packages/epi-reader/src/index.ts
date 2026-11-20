@@ -122,7 +122,7 @@ export interface EpiKnowledgeFile {
    * second authority. An empty array for a knowledge-only file.
    */
   historyOf(nodeId: string): readonly EpiRevisionClue[]
-  /** Re-checks every checksum the file carries. Throws `EpiFileError` on the first mismatch. */
+  /** Re-checks the file's checksums; throws EpiFileError on the first mismatch. */
   verifyIntegrity(): void
 }
 
