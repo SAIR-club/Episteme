@@ -20,7 +20,12 @@ graph, so the terminal surface cannot open the same file.
 | `recall`  | the learner's prior understanding relevant to a question, with why each item was retrieved                                                      | no               |
 | `propose` | keeps a claim, a link or a state change as a pending suggestion, or refuses it with the reason                                                  | no               |
 | `reflect` | what the learner has recorded, grouped by what needs attention next, and how many are pending                                                   | no               |
-| `distill` | distils learning material into pending suggestions, each with its words: read by Episteme, or by the host's model and verified (ADR 0009, 0011) | no               |
+| `distill` | distils material into pending suggestions, each with its words: read by Episteme, or by the host's model and verified (ADR 0009, 0011)         | no               |
+| `expand` | one recalled node in full: its words, what is recorded about it, its neighbours and where it came from | no |
+| `thread_open` | opens a conversation thread | the thread only |
+| `thread_append` | adds a turn to a thread | the thread only |
+| `thread_summarize` | gives a turn in fewer words, quoting the person's own | the thread only |
+| `thread_fork` | starts a new line of the conversation from an earlier turn; the original stays as it was | the thread only |
 
 There is no tool that confirms a suggestion and none that writes a node, an edge or a state event. An agent
 that could confirm would be confirming itself. A suggestion is accepted through the one human-decision path,
@@ -140,6 +145,6 @@ stdio shim, if one is ever built. The v1 `@modelcontextprotocol/sdk` is not used
 
 | File              | Contents                                                              |
 | ----------------- | --------------------------------------------------------------------- |
-| `src/server.ts`   | the four tools, their input schemas and the agent identity            |
+| `src/server.ts`   | the tools, their input schemas and the agent identity            |
 | `src/confirm.ts`  | the decision form, the sealed state, and reading the learner's answer |
 | `src/endpoint.ts` | the HTTP endpoint: Host and Origin checks, `node:http` bridge         |

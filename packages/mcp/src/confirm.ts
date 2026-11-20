@@ -22,7 +22,7 @@ import {
 import type { McpCaller } from './server.js'
 
 /**
- * Asking the learner directly, through the agent's host (ADR 0008).
+ * Asking the person directly, through the agent's host (ADR 0008).
  *
  * MCP 2026-07-28 elicitation is a multi-round-trip: `propose` keeps the draft and returns `inputRequired`, a
  * form the host shows the user, plus a `requestState` naming the draft. The host retries the original call
@@ -83,7 +83,7 @@ interface DecisionContent {
 /**
  * The form for one suggestion: the three choices, and the one field a modification of this kind changes.
  *
- * The same schema validates the answer, so what the learner can submit and what is accepted cannot differ.
+ * The same schema validates the answer, so what the person can submit and what is accepted cannot differ.
  */
 function decisionSchema(proposal: Proposal, dimensions: readonly RecordableDimension[]) {
   // Titled options are `oneOf` with `const` and `title`, the form the elicitation spec defines.
@@ -135,7 +135,7 @@ function decisionSchema(proposal: Proposal, dimensions: readonly RecordableDimen
   }
 }
 
-/** Puts a freshly kept draft in front of the learner, through the host. */
+/** Puts a freshly kept draft in front of the person, through the host. */
 export async function askLearner(
   session: CognitiveSession,
   suggestion: Suggestion,
@@ -154,7 +154,7 @@ export async function askLearner(
 }
 
 /**
- * Reads the learner's answer on a retried call and hands it to the shared decision path.
+ * Reads the person's answer on a retried call and hands it to the shared decision path.
  *
  * Anything short of a valid answer leaves the draft pending: a declined or cancelled form, a retry without an
  * answer, content that fails the form's schema, or a modification without the value it modifies.
@@ -175,7 +175,7 @@ export async function resolveAnswer(
   const view = inputResponse(context.mcpReq.inputResponses, DECISION_KEY)
   if (view.kind !== 'elicit' || view.action !== 'accept') {
     return answer(
-      `The learner did not decide on ${suggestion.id}; it stays pending in their review queue. Do not ask again unprompted.`,
+      `The person did not decide on ${suggestion.id}; it stays pending in their review queue. Do not ask again unprompted.`,
       { status: 'pending', suggestion },
     )
   }
@@ -188,7 +188,7 @@ export async function resolveAnswer(
   const decision = content === undefined ? undefined : decisionFrom(content, suggestion.proposal)
   if (decision === undefined) {
     return answer(
-      `The learner's answer on ${suggestion.id} was not a complete decision; it stays pending in their review queue.`,
+      `The person's answer on ${suggestion.id} was not a complete decision; it stays pending in their review queue.`,
       { status: 'pending', suggestion },
     )
   }
@@ -209,7 +209,7 @@ export async function resolveAnswer(
       content: [
         {
           type: 'text',
-          text: `The learner's decision on ${suggestion.id} could not be recorded (${result.refusal.code}): ${result.refusal.message}. It stays pending.`,
+          text: `The person's decision on ${suggestion.id} could not be recorded (${result.refusal.code}): ${result.refusal.message}. It stays pending.`,
         },
       ],
       structuredContent: { status: 'refused', ...result.refusal, suggestionId: suggestion.id },
@@ -217,9 +217,9 @@ export async function resolveAnswer(
     }
   }
   const told = {
-    accepted: 'The learner accepted it. It is now part of their understanding, confirmed by them.',
-    modified: 'The learner recorded their own version instead. Build on theirs, not on yours.',
-    dismissed: 'The learner dismissed it. Nothing was recorded.',
+    accepted: 'The person accepted it. It is now part of their understanding, confirmed by them.',
+    modified: 'The person recorded their own version instead. Build on theirs, not on yours.',
+    dismissed: 'The person dismissed it. Nothing was recorded.',
   }[result.outcome]
   return answer(told, { status: result.outcome, result })
 }
@@ -245,7 +245,7 @@ function decisionFrom(content: DecisionContent, proposal: Proposal): Decision | 
   }
 }
 
-/** The form's message, in the learner's language: what is proposed, by whom, and why. */
+/** The form's message, in the person's language: what is proposed, by whom, and why. */
 function describeForLearner(session: CognitiveSession, suggestion: Suggestion): string {
   // An end may be a node suggested alongside this one, named `cand:<id>`; it is shown by what it proposes.
   const label = (id: string): string => {
@@ -291,7 +291,7 @@ function describeForLearner(session: CognitiveSession, suggestion: Suggestion): 
 /** Decided meanwhile, for example in the review queue. The first decision stands. */
 function alreadyDecided(suggestionId: string): CallToolResult {
   return answer(
-    `Suggestion ${suggestionId} is no longer pending; the learner already decided on it.`,
+    `Suggestion ${suggestionId} is no longer pending; the person already decided on it.`,
     { status: 'not_pending', suggestionId },
   )
 }

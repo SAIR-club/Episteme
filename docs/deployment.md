@@ -130,6 +130,11 @@ read it. Stop the service to copy it; on a clean stop the write-ahead log is fol
 These files hold students' conversations and understanding unencrypted (roadmap, Phase 4). Keep backups as
 private as the server.
 
+`pnpm workbench export <file> --graph <graph>` is an operator's whole-graph backup too, not a student's own export:
+the file holds every student's data, in plain JSON, and whoever can read `graph.db` can run it, with no token. Do not
+hand one to a student. Per-person export does not exist yet. Its checksum catches damage, not editing, so restore only
+files you trust.
+
 ## 6. Connect a host
 
 Claude Code, with the student's agent token:
