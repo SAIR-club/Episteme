@@ -122,13 +122,7 @@ export interface EpiKnowledgeFile {
    * second authority. An empty array for a knowledge-only file.
    */
   historyOf(nodeId: string): readonly EpiRevisionClue[]
-  /**
-   * Re-checks every checksum the file carries: hash integrity only — the bytes are the ones that
-   * were written, and the receipt names inputs the file actually carries. It does not re-derive
-   * the knowledge section, so an edited projection with a recomputed checksum passes here; replay
-   * verification is `verifyEpiProjection` in `@episteme/storage-sqlite`, where Core is available.
-   * Throws `EpiFileError` on the first mismatch.
-   */
+  /** Re-checks the file's checksums; throws EpiFileError on the first mismatch. */
   verifyIntegrity(): void
 }
 

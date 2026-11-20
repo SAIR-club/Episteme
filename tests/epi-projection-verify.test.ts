@@ -23,16 +23,6 @@ afterEach(async () => {
   await import('node:fs/promises').then((fs) => fs.rm(directory, { recursive: true, force: true }))
 })
 
-/** The refusal code a refused verification carries, or a marker when nothing was refused. */
-function codeOf(run: () => void): string {
-  try {
-    run()
-  } catch (error) {
-    return (error as { code?: string }).code ?? 'no code'
-  }
-  return 'no refusal'
-}
-
 function exportedArchive(graph: string): EpiFile {
   return buildEpiFile(graph, { build: BUILD, packs: PACKS, now: NOW })
 }
@@ -70,7 +60,9 @@ describe('replay verification of an archive knowledge projection', () => {
     }
     expect(() => readEpiFile(JSON.stringify(resealed))).not.toThrow()
     expect(() => verifyEpiProjection(resealed)).toThrow(EpiFileError)
-    expect(codeOf(() => verifyEpiProjection(resealed))).toBe('projection_mismatch')
+    expect(() => verifyEpiProjection(resealed)).toThrow(
+      expect.objectContaining({ code: 'projection_mismatch' }),
+    )
   })
 
   it('refuses to replay-verify a knowledge-only file, which carries no history', async () => {
@@ -80,7 +72,9 @@ describe('replay verification of an archive knowledge projection', () => {
     const knowledgeOnly: EpiFile = { ...epi, profiles: ['knowledge'] }
     delete (knowledgeOnly as { archive?: unknown }).archive
     expect(() => verifyEpiProjection(knowledgeOnly)).toThrow(EpiFileError)
-    expect(codeOf(() => verifyEpiProjection(knowledgeOnly))).toBe('missing_section')
+    expect(() => verifyEpiProjection(knowledgeOnly)).toThrow(
+      expect.objectContaining({ code: 'missing_section' }),
+    )
     expect(() => verifyEpiProjection(knowledgeOnly)).toThrow(/no history/)
   })
 })
