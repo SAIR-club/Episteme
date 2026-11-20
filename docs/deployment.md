@@ -148,6 +148,8 @@ Other hosts that speak MCP over Streamable HTTP need the same two things: the `/
 for Codex or WorkBuddy yet.
 
 The Workspace signs in with the student's `human` token at `POST /api/v1/session`, which sets a session cookie.
+When `--public-origin` starts with `https://`, the cookie is `Secure`, so browsers only send it over HTTPS: reach
+the service through the proxy, not at `http://<server>:4321` directly.
 
 ## 7. Smoke test
 
