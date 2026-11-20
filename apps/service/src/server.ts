@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
+import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
@@ -178,6 +179,9 @@ async function serve(
   let boundPort = 0
   let origin = ''
 
+  // A browser preconnect asks nothing, and Node 22 keeps it open past the headers timeout.
+  const unasked = new Set<Socket>()
+
   const server: Server = createServer((request, response) => {
     // One boundary for everything served: the Workspace, the API and the MCP endpoint alike.
     const refusal = boundaryRefusal(request, boundPort, options.publicOrigin)
@@ -313,6 +317,11 @@ async function serve(
 
   const port = options.port ?? 4321
   const host = options.host ?? '127.0.0.1'
+  server.on('connection', (socket) => {
+    unasked.add(socket)
+    socket.once('close', () => unasked.delete(socket))
+  })
+  server.on('request', (request) => unasked.delete(request.socket))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, host, () => {
@@ -341,6 +350,8 @@ async function serve(
       await mcp.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
+        server.closeIdleConnections()
+        for (const socket of unasked) socket.destroy()
       })
       await session.close()
     },
