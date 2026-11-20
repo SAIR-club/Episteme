@@ -372,13 +372,5 @@ function stringOf(record: Record<string, unknown>, key: string): string {
   return value
 }
 
-// Re-exported so a consumer needs exactly one package to read and to refuse.
-export { EpiFileError, readEpiEnvelope, readEpiFile } from '@episteme/epi-format'
-export type {
-  EpiFile,
-  EpiFileProblem,
-  KnowledgeSection,
-  OntologyManifest,
-} from '@episteme/epi-format'
 export { mapView, outlineView, timelineView } from './views.js'
 export type { MapView, OutlineGroup, OutlineNode, TimelineEntry } from './views.js'
