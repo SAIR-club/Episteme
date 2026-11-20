@@ -132,6 +132,83 @@ describe('propose with a scope', () => {
   })
 })
 
+describe('filing a draft made outside any scope', () => {
+  async function unscoped(label = 'Order matters') {
+    const proposed = await session.propose({ kind: 'claim', label }, AGENT)
+    if (!proposed.ok) throw new Error(proposed.refusal.message)
+    return proposed.suggestion
+  }
+
+  it('files it in the scope the person names when accepting', async () => {
+    const id = await nodeOf(await unscoped(), { action: 'accept', scope: 'workbench:space_a' })
+    expect(tagsOf(id)).toContain('scope:workbench:space_a')
+  })
+
+  it('files a reworded one too', async () => {
+    const id = await nodeOf(await unscoped(), {
+      action: 'modify',
+      scope: 'workbench:space_a',
+      proposal: { kind: 'claim', label: 'Word order matters' },
+    })
+    expect(session.graph.getNode(id)?.label).toBe('Word order matters')
+    expect(tagsOf(id)).toContain('scope:workbench:space_a')
+  })
+
+  it('refuses to move a draft that already has a scope, deciding nothing', async () => {
+    const proposed = await session.propose(
+      { kind: 'claim', label: 'Order matters' },
+      { ...AGENT, scope: 'ml-2026' },
+    )
+    if (!proposed.ok) throw new Error(proposed.refusal.message)
+    const decided = await session.decide(
+      proposed.suggestion.id,
+      { action: 'accept', scope: 'stats-101' },
+      'review',
+    )
+    expect(decided).toMatchObject({ ok: false, refusal: { code: 'scope_fixed' } })
+    expect(session.pendingSuggestions().map((each) => each.id)).toContain(proposed.suggestion.id)
+  })
+
+  it('refuses a bad scope, deciding nothing', async () => {
+    const suggestion = await unscoped()
+    for (const scope of ['', '*', 'a\nb']) {
+      const decided = await session.decide(suggestion.id, { action: 'accept', scope }, 'review')
+      expect(decided).toMatchObject({ ok: false, refusal: { code: 'invalid_scope' } })
+    }
+    expect(session.pendingSuggestions().map((each) => each.id)).toContain(suggestion.id)
+  })
+
+  it('refuses a scope for a relation, which is never filed', async () => {
+    const a = await session.addNode({ label: 'A', kind: 'claim' })
+    const b = await session.addNode({ label: 'B', kind: 'claim' })
+    const proposed = await session.propose(
+      { kind: 'link', from: a.nodeId, to: b.nodeId, relation: 'supports' },
+      AGENT,
+    )
+    if (!proposed.ok) throw new Error(proposed.refusal.message)
+    const decided = await session.decide(
+      proposed.suggestion.id,
+      { action: 'accept', scope: 'ml-2026' },
+      'review',
+    )
+    expect(decided).toMatchObject({ ok: false, refusal: { code: 'invalid_scope' } })
+  })
+
+  it('files nothing on its own: accepted without a scope, it stays without one', async () => {
+    const tags = tagsOf(await nodeOf(await unscoped(), { action: 'accept' }))
+    expect(tags.some((tag) => tag.startsWith('scope:'))).toBe(false)
+  })
+
+  it('keeps the chosen scope across a restart that finishes the decision', async () => {
+    const suggestion = await unscoped()
+    const id = await nodeOf(suggestion, { action: 'accept', scope: 'workbench:space_a' })
+    await session.close()
+    session = await openTestSession({ filePath: join(directory, 'graph.db') })
+    expect(tagsOf(id)).toContain('scope:workbench:space_a')
+    expect(session.pendingSuggestions()).toEqual([])
+  })
+})
+
 describe('distill with a scope', () => {
   it('tags every node accepted from it', async () => {
     const outcome = await session.distill({ text: DIALOGUE }, { scope: 'ml-2026' })

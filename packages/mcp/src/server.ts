@@ -794,6 +794,8 @@ function registerThreadTools(
             speaker,
             text,
             by: agentActorFor(access.caller?.label ?? clientNameOf(context)),
+            // Whatever token it holds, a host is relaying: the person did not type this into Episteme (ADR 0021).
+            writtenWith: 'agent',
           }),
         }),
         () => 'Turn recorded.',

@@ -9,7 +9,7 @@ export type {
   SeedTopic,
   SeedNode,
 } from './profile.js'
-export type { SceneTool, SceneToolAnswer, SceneToolContext } from '@episteme/mcp'
+export type { McpActivity, SceneTool, SceneToolAnswer, SceneToolContext } from '@episteme/mcp'
 export { boundaryRefusal } from './boundary.js'
 export {
   accessRefusal,
