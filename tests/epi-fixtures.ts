@@ -28,6 +28,19 @@ export const PACKS = [
 ]
 export const HUMAN = 'actor_human'
 
+/** Runs `refuse` and returns the error it threw, so a test can assert on its code and message. */
+export function refusalOf(refuse: () => unknown): {
+  readonly code?: string
+  readonly message?: string
+} {
+  try {
+    refuse()
+  } catch (error) {
+    return error as { readonly code?: string; readonly message?: string }
+  }
+  throw new Error('expected a refusal')
+}
+
 /** Builds the learning fixture into `graph`, optionally publishing the positional-encoding claim. */
 export async function learningGraph(
   graph: string,
