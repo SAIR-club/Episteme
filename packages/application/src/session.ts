@@ -3250,15 +3250,12 @@ export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
  */
 export type LegacyDecisionChannel = 'learn-review'
 
-/** The names earlier builds wrote, and what each is called now. Records keep the old name; reading maps it. */
-const RENAMED_CHANNELS: Readonly<Record<string, DecisionChannel>> = { 'learn-review': 'review' }
-
 /**
  * The current name of a decision channel, for a record written under an earlier name or a filter that uses one.
  * Records on disk are never rewritten, so every comparison of a channel goes through this.
  */
 export function currentChannel(channel: string): string {
-  return RENAMED_CHANNELS[channel] ?? channel
+  return channel === 'learn-review' ? 'review' : channel
 }
 
 /** What a human decided about a pending suggestion. */
