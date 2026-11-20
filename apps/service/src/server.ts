@@ -188,7 +188,6 @@ async function serve(
     session,
     profile,
     seeded,
-    people,
     directory,
     browsers,
     mode,

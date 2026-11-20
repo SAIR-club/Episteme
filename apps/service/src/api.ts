@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
 import {
   accessRefusal,
@@ -48,7 +48,7 @@ const DECISION_PATTERNS: readonly RegExp[] = [
 ]
 
 /** What a request to the API asks to do. */
-export function operationOf(method: string, path: string): Operation {
+function operationOf(method: string, path: string): Operation {
   const route = `${method} ${path}`
   return DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))
     ? 'decide'
@@ -60,8 +60,6 @@ export interface ApiContext {
   readonly profile: SceneProfile
   /** Whether this start seeded the profile's topic, or found it already there. */
   readonly seeded: boolean
-  /** The people of a shared deployment and their tokens; `undefined` in local mode, which has no user file. */
-  readonly people: Directory | undefined
   /** The user file, or the one in-memory person of local mode. */
   readonly directory: Directory
   readonly browsers: BrowserSessions
@@ -121,14 +119,6 @@ function refusal(status: number, code: string, message: string): Response {
   return json(status, { error: message, code })
 }
 
-/** Where a request came from, as far as these helpers need it. */
-interface RequestContext {
-  readonly req: {
-    readonly raw: Request
-    header(name: string): string | undefined
-  }
-}
-
 /**
  * A malformed percent escape is malformed input, not a route that happens not to exist.
  *
@@ -142,7 +132,7 @@ function assertPathEncoding(path: string): void {
 }
 
 /** Reads a JSON body, bounded so a malformed or hostile request cannot exhaust memory. */
-async function readJson(context: RequestContext): Promise<Record<string, unknown>> {
+async function readJson(context: Context<ApiEnv>): Promise<Record<string, unknown>> {
   const declared = context.req.header('content-length')
   if (declared !== undefined && Number(declared) > 1_000_000) {
     throw new RequestError('request body too large')
@@ -385,14 +375,15 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
   const selfService = (
     caller: Caller | undefined,
   ): { readonly caller: Caller; readonly people: Directory } | Response => {
-    if (context.people === undefined || !context.people.selfService || caller === undefined) {
+    const people = context.mode === 'shared' ? context.directory : undefined
+    if (people === undefined || !people.selfService || caller === undefined) {
       return refusal(
         422,
         'not_available_in_local_mode',
         'local mode has no user file: agents need no token here, and the person’s token is minted at each start',
       )
     }
-    return { caller, people: context.people }
+    return { caller, people }
   }
   app.get(`${API_PREFIX}/tokens`, (c) => {
     const access = selfService(c.get('caller'))
