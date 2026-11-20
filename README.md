@@ -68,7 +68,7 @@ scripted MCP clients. It has **not yet been tried with a real Claude Code host a
 several protections are still missing; see [Limitations](#limitations-in-v010). The release notes say exactly
 what is proven and what is not: [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
 
-**`pnpm serve`** starts the Episteme service and a local interface where a learner asks a question in their
+**`pnpm serve --scene <path>`** starts the Episteme service and a local interface where a learner asks a question in their
 own words, sees which of their own prior understanding was retrieved **and why**, records what they now
 understand, reviews what agents suggested, and watches what is recalled next change because of it. Agents
 reach the same graph over MCP: they can recall, propose and submit readings of material, and MCP gives them no
@@ -93,20 +93,18 @@ not an accident of the current state: it is the project's own claim being demons
 ```bash
 pnpm install
 pnpm check              # typecheck + lint + tests
-pnpm serve              # use it, in a browser at http://127.0.0.1:4321
-# or
-pnpm learn              # the same loop in a terminal
+pnpm serve --scene ./my-scene.js   # use it, in a browser at http://127.0.0.1:4321
 # and the phase demos:
 pnpm demo && pnpm demo:persistent && pnpm demo:semantic && pnpm demo:distill
 ```
 
-`pnpm learn --help` and `pnpm serve --help` list the options, including `--file` and `--graph` to choose the
+`pnpm serve --help` lists the options, including `--scene` to choose the scene and `--graph` to choose the
 graph.
-The default is `~/.episteme/learn.db`, seeded with a demonstration topic. For your own learning, keep a graph
-of its own outside the repository and start it empty:
+The default graph is `~/.episteme/learn.db`. A scene module exports the profile Episteme composes with;
+there is no built-in scene. For your own graph, start it empty:
 
 ```bash
-pnpm serve --graph "$HOME/.episteme/my-topic.db" --blank
+pnpm serve --scene ./my-scene.js --graph "$HOME/.episteme/my-topic.db" --blank
 ```
 
 ## Connecting an agent

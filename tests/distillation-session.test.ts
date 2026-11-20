@@ -1,12 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  CognitiveSession,
-  MAX_MATERIAL,
-  type DistillOutcome,
-  type Suggestion,
-} from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { MAX_MATERIAL, type DistillOutcome, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type NodeId } from '@episteme/core'
 import { SqliteStorageAdapter } from '@episteme/storage-sqlite'
@@ -31,7 +28,7 @@ let session: CognitiveSession
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-distil-'))
   filePath = join(directory, 'learn.db')
-  session = await CognitiveSession.open({ filePath })
+  session = await openTestSession({ filePath })
   await seedTopic(session)
 })
 
@@ -72,7 +69,7 @@ describe('distilling material', () => {
   it('keeps the material beside the graph and records nothing in it', async () => {
     await session.close()
     const graphBefore = storedRecords(filePath)
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     const outcome = await distilled()
 
     expect(outcome.episodes).toBe(1)
@@ -93,7 +90,7 @@ describe('distilling material', () => {
     await session.close()
     expect(storedRecords(filePath)).toEqual(graphBefore)
     expect(storedText(filePath, 'sources')).toContain(outcome.sourceId)
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
   })
 
   it('gives every suggestion the words it came from, and says who proposed it and who asked', async () => {
@@ -268,7 +265,7 @@ describe('deciding what was distilled', () => {
     await session.decide(find(outcome, nodeNamed(QUESTION)).id, { action: 'accept' }, 'review')
     await session.close()
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.sources().map((source) => source.id)).toEqual([outcome.sourceId])
     expect(session.pendingSuggestions()).toHaveLength(8)
     const state = find({ suggestions: session.pendingSuggestions() }, stateChange)

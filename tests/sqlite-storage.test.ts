@@ -1,12 +1,13 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CognitiveSession, GraphLockedError } from '@episteme/application'
+import { GraphLockedError } from '@episteme/application'
 import { EpistemeError } from '@episteme/core'
-import { startService } from '@episteme/service'
 import {
   SQLITE_FORMAT_VERSION,
   SqliteStorageAdapter,
@@ -34,7 +35,7 @@ afterEach(async () => {
 
 /** Opens a session over `path`, adds one claim and records it, then closes. Returns the claim's id. */
 async function writeClaim(path: string, label: string): Promise<string> {
-  const session = await CognitiveSession.open({ filePath: path })
+  const session = await openTestSession({ filePath: path })
   const node = await session.addNode({ label, kind: 'claim' })
   await session.record(node.nodeId, { confidence: 'medium' })
   await session.close()
@@ -45,7 +46,7 @@ describe('a graph kept in SQLite', () => {
   it('survives a restart: what was recorded is read back by a new session', async () => {
     const nodeId = await writeClaim(graph, 'Attention needs position information')
 
-    const reopened = await CognitiveSession.open({ filePath: graph })
+    const reopened = await openTestSession({ filePath: graph })
     expect(reopened.listNodes().map((node) => node.nodeId)).toContain(nodeId)
     expect(reopened.progress().items.find((item) => item.nodeId === nodeId)?.dimensions).toEqual([
       { id: 'confidence', level: 'medium' },
@@ -54,17 +55,15 @@ describe('a graph kept in SQLite', () => {
   })
 
   it('has one owner: a second session, or a service, over the same file is refused', async () => {
-    const first = await CognitiveSession.open({ filePath: graph })
+    const first = await openTestSession({ filePath: graph })
 
-    const refusal = await CognitiveSession.open({ filePath: graph }).catch(
-      (error: unknown) => error,
-    )
+    const refusal = await openTestSession({ filePath: graph }).catch((error: unknown) => error)
     expect(refusal).toBeInstanceOf(GraphLockedError)
     expect((refusal as GraphLockedError).graphPath).toBe(graph)
-    await expect(startService({ port: 0, graph })).rejects.toBeInstanceOf(GraphLockedError)
+    await expect(startTestService({ port: 0, graph })).rejects.toBeInstanceOf(GraphLockedError)
 
     await first.close()
-    const second = await CognitiveSession.open({ filePath: graph })
+    const second = await openTestSession({ filePath: graph })
     await second.close()
   })
 
@@ -72,7 +71,9 @@ describe('a graph kept in SQLite', () => {
     const tests = fileURLToPath(new URL('.', import.meta.url))
     const script = [
       "import { CognitiveSession } from '@episteme/application'",
-      `const session = await CognitiveSession.open({ filePath: ${JSON.stringify(graph)} })`,
+      `const { defineDomainPack } = await import('@episteme/core')
+        const scene = { name: 'lock-test', packs: [defineDomainPack('lock-test', { nodeTypes: [{ id: 'claim', label: 'Claim' }], tagNamespaces: [{ namespace: 'topic', label: 'Topic' }, { namespace: 'scene', label: 'Scene' }, { namespace: 'state', label: 'State' }] })], distillationPolicy: { id: 'lock-test', nodeTypes: {}, edgeTypes: {}, stateDimensions: {}, limits: { perEpisode: 0, perRun: 0 } }, recordableDimensions: [] }
+        const session = await CognitiveSession.open({ filePath: ${JSON.stringify(graph)}, scene })`,
       "const node = await session.addNode({ label: 'Saved before the kill', kind: 'claim' })",
       'process.stdout.write(`ready ${node.nodeId}\\n`)',
       'setInterval(() => {}, 1000)',
@@ -89,15 +90,13 @@ describe('a graph kept in SQLite', () => {
       child.on('exit', (code) => reject(new Error(`the child exited early with ${String(code)}`)))
     })
     // While it runs, it owns the graph.
-    await expect(CognitiveSession.open({ filePath: graph })).rejects.toBeInstanceOf(
-      GraphLockedError,
-    )
+    await expect(openTestSession({ filePath: graph })).rejects.toBeInstanceOf(GraphLockedError)
 
     const exited = new Promise((resolve) => child.once('exit', resolve))
     child.kill('SIGKILL')
     await exited
 
-    const session = await CognitiveSession.open({ filePath: graph })
+    const session = await openTestSession({ filePath: graph })
     expect(session.listNodes().map((node) => node.nodeId)).toContain(nodeId)
     await session.close()
   })

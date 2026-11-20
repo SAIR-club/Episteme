@@ -1,7 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Proposal, type Suggestion } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { type Proposal, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -24,7 +26,7 @@ let session: CognitiveSession
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-confirm-'))
   filePath = join(directory, 'learn.db')
-  session = await CognitiveSession.open({ filePath })
+  session = await openTestSession({ filePath })
   await seedTopic(session)
 })
 
@@ -195,7 +197,7 @@ describe('a decision', () => {
     await session.decide(suggestion.id, { action: 'accept' }, 'review')
     await session.close()
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'medium' }])
     expect(session.pendingSuggestions()).toHaveLength(0)
   })

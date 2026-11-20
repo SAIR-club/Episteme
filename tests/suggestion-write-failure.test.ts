@@ -1,7 +1,8 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, SuggestionStore } from '@episteme/application'
+import { SuggestionStore } from '@episteme/application'
 import { CompanionLog, openSqliteStorage } from '@episteme/storage-sqlite'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -112,7 +113,7 @@ describe('the drafts store when a write fails', () => {
 describe('a decision whose completing write fails', () => {
   it('reports the failure, keeps the draft on record, and settles it once on the next decision', async () => {
     const filePath = join(directory, 'learn.db')
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     await seedTopic(session)
     const proposed = await session.propose({ kind: 'claim', label: 'committed once' }, agent)
     if (!proposed.ok) throw new Error(proposed.refusal.message)
@@ -142,7 +143,7 @@ describe('a decision whose completing write fails', () => {
     )
     await session.close()
 
-    const reopened = await CognitiveSession.open({ filePath })
+    const reopened = await openTestSession({ filePath })
     expect(reopened.recovered).toEqual([])
     expect(reopened.listNodes().filter((node) => node.label === 'committed once')).toHaveLength(1)
     await reopened.close()

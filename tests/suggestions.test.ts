@@ -1,7 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, SuggestionStore, type Proposal } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { SuggestionStore, type Proposal } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { storedRecords, storedText, withCompanion, writeStoredRecords } from './stored.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -24,7 +26,7 @@ let session: CognitiveSession
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-suggest-'))
   filePath = join(directory, 'learn.db')
-  session = await CognitiveSession.open({ filePath })
+  session = await openTestSession({ filePath })
   await seedTopic(session)
 })
 
@@ -87,11 +89,11 @@ describe('proposing', () => {
   it('keeps drafts across a restart, beside the graph rather than in it', async () => {
     await session.close()
     const graphBefore = storedRecords(filePath)
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     await propose({ kind: 'state', target: 'c_rope', dimension: 'articulation', level: 'low' })
     await session.close()
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.pendingSuggestions()).toHaveLength(1)
     expect(session.pendingSuggestions()[0]?.proposal).toEqual({
       kind: 'state',
@@ -104,7 +106,7 @@ describe('proposing', () => {
     expect(storedRecords(filePath)).toEqual(graphBefore)
     expect(storedText(filePath)).not.toContain('"articulation"')
     expect(storedText(filePath, 'suggestions')).toContain('"articulation"')
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
   })
 })
 
@@ -185,7 +187,7 @@ describe('the draft log', () => {
     })
     expect(storedRecords(filePath, 'suggestions')).toEqual([])
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.pendingSuggestions()).toHaveLength(0)
   })
 
@@ -193,16 +195,16 @@ describe('the draft log', () => {
     await session.close()
     await writeStoredRecords(filePath, { logs: { suggestions: ['{"schemaVersion":99}'] } })
 
-    await expect(CognitiveSession.open({ filePath })).rejects.toThrow(
+    await expect(openTestSession({ filePath })).rejects.toThrow(
       /not a suggestions record this build reads/,
     )
     // Opening the graph again, to clear the damaged log, shows the failed open let go of it.
     await writeStoredRecords(filePath, { logs: { suggestions: [] } })
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
   })
 
   it('works in memory for a session without a file', async () => {
-    const inMemory = await CognitiveSession.open()
+    const inMemory = await openTestSession()
     await seedTopic(inMemory)
     const result = await inMemory.propose(
       { kind: 'state', target: 'c_rope', dimension: 'confidence', level: 'low' },

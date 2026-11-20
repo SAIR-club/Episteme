@@ -77,7 +77,6 @@ import {
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './scene-records.js'
 import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
-import { learnScene } from './learn-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
 import { openSqliteStorage } from '@episteme/storage-sqlite'
 
@@ -510,9 +509,9 @@ export interface SessionOptions {
   readonly weights?: ConstructorParameters<typeof HybridRetriever>[4]
   /**
    * The scene the session serves: its packs, distillation policy and recordable dimensions (ADR 0013).
-   * Without one, the deprecated built-in Learn scene, for one release.
+   * Required: the application holds no scene of its own.
    */
-  readonly scene?: SessionScene
+  readonly scene: SessionScene
   /**
    * Whether people may publish (ADR 0014). Off by default: a graph that holds a publication cannot be opened by
    * a build from before publications, so turning it on is a deliberate choice.
@@ -609,10 +608,10 @@ export class CognitiveSession {
    * The ordering — load, then compose — is the rule `@episteme/sdk` exists to hold, so this does not
    * repeat it.
    */
-  static async open(options: SessionOptions = {}): Promise<CognitiveSession> {
+  static async open(options: SessionOptions): Promise<CognitiveSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
-    const scene = options.scene ?? learnScene
+    const scene = options.scene
     const packs = [applicationPack, ...(options.packs ?? scene.packs)]
 
     // One embedding cache for every person's retriever: what a text means does not depend on who asks.

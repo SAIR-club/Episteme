@@ -1,7 +1,8 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { isOpenConflict } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -15,7 +16,7 @@ let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-conflict-'))
-  session = await CognitiveSession.open({ filePath: join(directory, 'graph.db') })
+  session = await openTestSession({ filePath: join(directory, 'graph.db') })
 })
 
 afterEach(async () => {

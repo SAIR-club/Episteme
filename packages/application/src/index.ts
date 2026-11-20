@@ -3,7 +3,6 @@ export * from './scene.js'
 export * from './scene-view.js'
 export * from './threads.js'
 export * from './scene-records.js'
-export * from './learn-scene.js'
 export * from './suggestions.js'
 export * from './sources.js'
 /** What the surfaces need to refuse a file this build cannot read, and to carry an older graph into a new one. */
