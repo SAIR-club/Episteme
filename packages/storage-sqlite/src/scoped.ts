@@ -23,14 +23,8 @@ import {
 } from '@episteme/epi-format'
 import type { GraphEdge, GraphNode } from '@episteme/core'
 import { deserializeRecord } from './records.js'
-import { GraphExportError, exportFromGraph, type GraphExportProblem } from './portable.js'
-import { ontologyManifestOf, writeEpiFile, type EpiPackDefinitions } from './knowledge.js'
-
-/** Publication-related refusals, carried by `GraphExportError` alongside the v1 export codes. */
-export type ScopedExportProblem = Extract<
-  GraphExportProblem,
-  'no_publication' | 'ambiguous_publication' | 'withdrawn_publication' | 'unsafe_publication'
->
+import { GraphExportError, exportFromGraph } from './portable.js'
+import { byKeys, ontologyManifestOf, writeEpiFile, type EpiPackDefinitions } from './knowledge.js'
 
 export interface ScopedExportOptions {
   readonly build: string
@@ -188,17 +182,6 @@ function knowledgeOf(
   manifest: OntologyManifest,
   derivedAt: string,
 ): KnowledgeSection {
-  const byKeys =
-    <T>(key: (entry: T) => readonly (string | number)[]) =>
-    (left: T, right: T): number => {
-      const a = key(left)
-      const b = key(right)
-      for (let index = 0; index < a.length; index += 1) {
-        if (a[index] !== b[index]) return (a[index] ?? 0) < (b[index] ?? 0) ? -1 : 1
-      }
-      return 0
-    }
-
   const payload = {
     // No historySha256: there is no archive section, so the receipt pins what the projection
     // actually derives from — the ontology and the named whitelist.

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import { existsSync, rmSync } from 'node:fs'
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { historyDigestOf } from '@episteme/epi-format'
 import Database from 'better-sqlite3'
 import { SERIALIZATION_SCHEMA_VERSION, deserializeRecord } from './records.js'
 import { GraphLockedError, SQLITE_FORMAT_VERSION, openSqliteStorage } from './index.js'
@@ -69,10 +69,6 @@ export class GraphExportError extends Error {
   }
 }
 
-function digestOf(records: GraphExport['records'], companions: GraphExport['companions']): string {
-  return createHash('sha256').update(JSON.stringify({ records, companions })).digest('hex')
-}
-
 /**
  * Reads the whole graph out of its file, under an exclusive hold, as a portable export object.
  *
@@ -116,7 +112,7 @@ export function exportFromGraph(
       exportedAt: (options.now?.() ?? new Date()).toISOString(),
       source: { file: basename(graph), build: options.build },
       storedAs: { sqliteFormat, recordSchema: SERIALIZATION_SCHEMA_VERSION },
-      sha256: digestOf(records, companions),
+      sha256: historyDigestOf({ records, companions }),
       counts: { records: records.length, companions: counted },
       records,
       companions,
@@ -171,7 +167,7 @@ export async function readGraphExport(file: string): Promise<GraphExport> {
       `"${file}" was written in a format this build does not read`,
     )
   }
-  if (digestOf(parsed.records, parsed.companions) !== parsed.sha256) {
+  if (historyDigestOf(parsed as Pick<GraphExport, 'records' | 'companions'>) !== parsed.sha256) {
     throw new GraphExportError('damaged', `"${file}" does not match its checksum`)
   }
   return parsed as GraphExport

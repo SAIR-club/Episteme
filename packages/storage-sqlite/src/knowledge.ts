@@ -44,6 +44,20 @@ import {
   type GraphExport,
 } from './portable.js'
 
+/** Stable comparison by successive keys, with the id as the final tie-breaker. */
+export function byKeys<T>(
+  key: (entry: T) => readonly (string | number)[],
+): (left: T, right: T) => number {
+  return (left, right) => {
+    const a = key(left)
+    const b = key(right)
+    for (let index = 0; index < a.length; index += 1) {
+      if (a[index] !== b[index]) return (a[index] ?? 0) < (b[index] ?? 0) ? -1 : 1
+    }
+    return 0
+  }
+}
+
 /**
  * The `.epi` v2 knowledge file (ADR 0023): the v1 portable export carried intact as the restorable
  * archive, beside an ontology manifest and a knowledge projection derived from the very history the
@@ -207,17 +221,6 @@ function deriveKnowledge(
   // Ids may be content-independent UUIDs (edges, branches, publications), so the primary sort
   // keys must be stable fields; the id only breaks ties within one input. Same history and
   // ontology in, same normalized projection out — across runs.
-  const byKeys =
-    <T>(key: (entry: T) => readonly (string | number)[]) =>
-    (left: T, right: T): number => {
-      const a = key(left)
-      const b = key(right)
-      for (let index = 0; index < a.length; index += 1) {
-        if (a[index] !== b[index]) return (a[index] ?? 0) < (b[index] ?? 0) ? -1 : 1
-      }
-      return 0
-    }
-
   const actors = [...new Set(history.events.map(actorOf))].sort()
   const state = actors.flatMap((actor) =>
     view.nodes
