@@ -12,6 +12,7 @@ import {
   readGraphExport,
 } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { testScene } from './test-scene.js'
 
 /**
  * Backing up means nothing until coming back works, so these go all the way: a conversation written through a
@@ -29,7 +30,7 @@ describe('exporting and importing a graph', () => {
 
   /** What a person has after a short session: a conversation with one turn. */
   const session = async (): Promise<void> => {
-    const opened = await CognitiveSession.open({ filePath: graph })
+    const opened = await CognitiveSession.open({ filePath: graph, scene: testScene })
     try {
       const thread = await opened.openThread({ title: '位置编码' })
       await opened.appendTurn(thread.id, { speaker: 'learner', text: NOTES })
@@ -39,7 +40,7 @@ describe('exporting and importing a graph', () => {
   }
 
   const conversations = async (file: string): Promise<unknown> => {
-    const opened = await CognitiveSession.open({ filePath: file })
+    const opened = await CognitiveSession.open({ filePath: file, scene: testScene })
     try {
       const view = sceneViewOf(opened)
       return view

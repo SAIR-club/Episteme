@@ -1,7 +1,5 @@
 import {
   SessionRefusal,
-  defaultDistillationPolicy,
-  defaultSessionPack,
   recordableDimensions,
   type SessionScene,
 } from '@episteme/application'
@@ -9,6 +7,8 @@ import {
   asId,
   defineDomainPack,
   type DimensionId,
+  type EdgeTypeId,
+  type NodeTypeId,
   type StateDimensionDefinition,
 } from '@episteme/core'
 import { BLANK_TOPIC, type SceneProfile, type SceneRoute } from '@episteme/service'
@@ -27,10 +27,48 @@ const CREDENCE: StateDimensionDefinition = {
   levels: ['doubtful', 'open', 'likely', 'established'],
 }
 
+const CLAIM = asId<NodeTypeId>('claim')
+const EVIDENCE = asId<NodeTypeId>('evidence')
+const SUPPORTS = asId<EdgeTypeId>('supports')
+const CONTRADICTS = asId<EdgeTypeId>('contradicts')
+
+const HYPOTHESIS_PACK = defineDomainPack('hypothesis', {
+  tagNamespaces: [
+    { namespace: 'scene', label: 'Scene' },
+    { namespace: 'topic', label: 'Topic' },
+    { namespace: 'state', label: 'State' },
+    { namespace: 'actor', label: 'Actor' },
+    { namespace: 'system', label: 'System' },
+  ],
+  nodeTypes: [
+    { id: CLAIM, label: 'Claim' },
+    { id: EVIDENCE, label: 'Evidence' },
+  ],
+  edgeTypes: [
+    { id: SUPPORTS, label: 'supports', category: 'epistemic', from: [CLAIM, EVIDENCE], to: [CLAIM] },
+    {
+      id: CONTRADICTS,
+      label: 'contradicts',
+      category: 'epistemic',
+      from: [CLAIM, EVIDENCE],
+      to: [CLAIM],
+    },
+  ],
+  stateDimensions: [CREDENCE],
+})
+
+const POLICY = {
+  id: 'hypothesis',
+  nodeTypes: { claim: CLAIM, evidence: EVIDENCE, thought: CLAIM },
+  edgeTypes: { supports: SUPPORTS, contradicts: CONTRADICTS, about: SUPPORTS },
+  stateDimensions: { credence: ['doubtful', 'open', 'likely', 'established'] },
+  limits: { perEpisode: 12, perRun: 60 },
+}
+
 export const hypothesisScene: SessionScene = {
   name: 'hypothesis',
-  packs: [defaultSessionPack, defineDomainPack('hypothesis', { stateDimensions: [CREDENCE] })],
-  distillationPolicy: defaultDistillationPolicy,
+  packs: [HYPOTHESIS_PACK],
+  distillationPolicy: POLICY,
   recordableDimensions: recordableDimensions(
     [CREDENCE],
     [
