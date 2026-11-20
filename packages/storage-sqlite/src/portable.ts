@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { existsSync, rmSync } from 'node:fs'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { closeSync, existsSync, openSync, rmSync, writeSync } from 'node:fs'
+import { readFile, rename } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import { SERIALIZATION_SCHEMA_VERSION, deserializeRecord } from './records.js'
@@ -41,6 +41,9 @@ export interface GraphExport {
   }[]
 }
 
+/** What an export says about itself: everything but the records and companions it carries. */
+export type GraphExportHead = Omit<GraphExport, 'records' | 'companions'>
+
 export type GraphExportProblem =
   | 'no_graph'
   | 'target_exists'
@@ -59,25 +62,29 @@ export class GraphExportError extends Error {
   }
 }
 
-function digestOf(records: GraphExport['records'], companions: GraphExport['companions']): string {
-  return createHash('sha256').update(JSON.stringify({ records, companions })).digest('hex')
-}
+/** How much an export gathers before writing it out. */
+const WRITE_CHUNK = 1 << 20
 
 /**
  * Writes the graph to `target`. Refuses while anything holds the graph, because a copy of a graph in use could be a
  * state that never existed, and refuses to replace an existing file.
+ *
+ * Row by row, never the whole graph at once: one pass to count and checksum, one to write, both inside the same
+ * exclusive transaction so they read the same graph. The file is byte for byte what serializing it whole would give,
+ * which no single string could hold once a graph passes about half a gigabyte.
  */
 export async function exportGraph(
   graph: string,
   target: string,
   options: { readonly build: string; readonly now?: () => Date },
-): Promise<GraphExport> {
+): Promise<GraphExportHead> {
   if (!existsSync(graph)) throw new GraphExportError('no_graph', `no graph at "${graph}"`)
   if (existsSync(target)) {
     throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
   }
   const db = new Database(graph, { timeout: 0, fileMustExist: true })
-  let exported: GraphExport
+  let file: number | undefined
+  let written = false
   try {
     db.pragma('locking_mode = EXCLUSIVE')
     try {
@@ -93,33 +100,75 @@ export async function exportGraph(
         `"${graph}" has format version ${sqliteFormat}; this build reads version ${SQLITE_FORMAT_VERSION}`,
       )
     }
-    const records = (
-      db.prepare('SELECT body FROM records ORDER BY seq').all() as { body: string }[]
-    ).map((row) => row.body)
-    const companions = db
-      .prepare('SELECT name, seq, body FROM companions ORDER BY name, seq')
-      .all() as { name: string; seq: number; body: string }[]
-    db.exec('COMMIT')
+    const records = db.prepare('SELECT body FROM records ORDER BY seq').pluck()
+    const companions = db.prepare('SELECT name, seq, body FROM companions ORDER BY name, seq')
+    /** The two arrays as `JSON.stringify` writes them, a piece at a time. */
+    const each = (emit: (piece: string) => void): void => {
+      let first = true
+      for (const body of records.iterate() as IterableIterator<string>) {
+        emit(`${first ? '' : ','}${JSON.stringify(body)}`)
+        first = false
+      }
+      emit('],"companions":[')
+      first = true
+      for (const row of companions.iterate() as IterableIterator<{
+        name: string
+        seq: number
+        body: string
+      }>) {
+        emit(
+          `${first ? '' : ','}${JSON.stringify({ name: row.name, seq: row.seq, body: row.body })}`,
+        )
+        first = false
+      }
+    }
+
+    const hash = createHash('sha256').update('{"records":[')
+    each((piece) => hash.update(piece))
+    hash.update(']}')
+    const recordCount = db.prepare('SELECT count(*) FROM records').pluck().get() as number
     const counted: Record<string, number> = {}
-    for (const { name } of companions) counted[name] = (counted[name] ?? 0) + 1
-    exported = {
+    for (const { name, count } of db
+      .prepare('SELECT name, count(*) AS count FROM companions GROUP BY name ORDER BY name')
+      .all() as { name: string; count: number }[]) {
+      counted[name] = count
+    }
+    const head: GraphExportHead = {
       format: GRAPH_EXPORT_FORMAT,
       version: GRAPH_EXPORT_VERSION,
       exportedAt: (options.now?.() ?? new Date()).toISOString(),
       source: { file: basename(graph), build: options.build },
       storedAs: { sqliteFormat, recordSchema: SERIALIZATION_SCHEMA_VERSION },
-      sha256: digestOf(records, companions),
-      counts: { records: records.length, companions: counted },
-      records,
-      companions,
+      sha256: hash.digest('hex'),
+      counts: { records: recordCount, companions: counted },
     }
+
+    // `wx`: a file that appeared in the meantime is still not replaced. `0o600`: the file holds everyone's private
+    // material, so only its owner reads it. Windows ignores the mode and the file takes its folder's permissions.
+    file = openSync(target, 'wx', 0o600)
+    const opened = file
+    let pending = ''
+    const flush = (): void => {
+      if (pending !== '') writeSync(opened, pending, null, 'utf8')
+      pending = ''
+    }
+    const write = (piece: string): void => {
+      pending += piece
+      if (pending.length >= WRITE_CHUNK) flush()
+    }
+    write(`${JSON.stringify(head).slice(0, -1)},"records":[`)
+    each(write)
+    write(']}')
+    flush()
+    db.exec('COMMIT')
+    written = true
+    return head
   } finally {
+    if (file !== undefined) closeSync(file)
+    // Half a file is no export: nothing is left at `target` unless all of it was written.
+    if (file !== undefined && !written) rmSync(target, { force: true })
     db.close()
   }
-  // `wx`: a file that appeared in the meantime is still not replaced. `0o600`: the file holds everyone's private
-  // material, so only its owner reads it. Windows ignores the mode and the file takes its folder's permissions.
-  await writeFile(target, JSON.stringify(exported), { encoding: 'utf8', flag: 'wx', mode: 0o600 })
-  return exported
 }
 
 /** Reads and checks an export without touching any graph. */
@@ -147,7 +196,10 @@ export async function readGraphExport(file: string): Promise<GraphExport> {
       `"${file}" was written in a format this build does not read`,
     )
   }
-  if (digestOf(parsed.records, parsed.companions) !== parsed.sha256) {
+  const digest = createHash('sha256')
+    .update(JSON.stringify({ records: parsed.records, companions: parsed.companions }))
+    .digest('hex')
+  if (digest !== parsed.sha256) {
     throw new GraphExportError('damaged', `"${file}" does not match its checksum`)
   }
   return parsed as GraphExport
