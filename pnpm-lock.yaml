@@ -104,6 +104,14 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/epi-format: {}
+
+  packages/epi-reader:
+    dependencies:
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../epi-format
+
   packages/mcp:
     dependencies:
       '@episteme/application':
@@ -133,6 +141,12 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../epi-format
+      '@episteme/storage-memory':
+        specifier: workspace:*
+        version: link:../storage-memory
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -158,6 +172,12 @@ importers:
       '@episteme/embeddings-http':
         specifier: workspace:*
         version: link:../packages/embeddings-http
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../packages/epi-format
+      '@episteme/epi-reader':
+        specifier: workspace:*
+        version: link:../packages/epi-reader
       '@episteme/hypothesis':
         specifier: workspace:*
         version: link:../apps/hypothesis

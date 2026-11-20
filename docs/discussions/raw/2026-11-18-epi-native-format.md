@@ -1,7 +1,9 @@
 # .epi native knowledge format (v2) — design draft
 
-Date: 2026-11-18. Status: **draft for discussion**; nothing here is implemented. Related:
-[ADR 0022](../decisions/0022-epi-file-format.md) (proposed), [ADR 0018](../decisions/0018-sqlite-only.md),
+Date: 2026-11-18. Status: **first cut implemented**; see [ADR 0023](../decisions/0023-epi-knowledge-format.md)
+for the contract that landed (`packages/epi-format`, `buildEpiFile` in `@episteme/storage-sqlite`).
+This draft stays as the discussion record; where it and ADR 0023 differ, the ADR is the contract.
+Related: [ADR 0022](../decisions/0022-epi-file-format.md) (proposed), [ADR 0018](../decisions/0018-sqlite-only.md),
 [ADR 0013](../decisions/0013-repository-boundary.md), [ADR 0014](../decisions/0014-publication-and-reuse.md).
 
 ## Goal
@@ -46,15 +48,19 @@ v2 keeps the `.epi` type and the v1 object intact, nested. One format family, on
   "version": 2,
   "exportedAt": "…",
   "source": { "file": "graph.db", "build": "…" },
+  // Two capabilities, named, never confused. A knowledge-only file (sharing shape) omits "archive"
+  // and stays honest about not being restorable.
+  "profiles": ["archive", "knowledge"],
 
-  // The v1 export object, byte-for-byte, with its own sha256. A v2 reader reuses the v1 checks on it;
-  // a v1 reader refuses the whole file as unsupported_version, which is the established behaviour.
-  "history": { "…exactly the v1 GraphExport…": "…" },
+  // The v1 export object, byte-for-byte, under its own key with its own sha256. A v2 reader reuses
+  // the v1 checks on it; a v1 reader refuses the whole file as unsupported_version, which is the
+  // established behaviour — no file is ever silently misread.
+  "archive": { "history": { "…exactly the v1 GraphExport…": "…" } },
 
   // What the writer had registered, so type ids can be interpreted without Episteme's packs.
   "ontology": { "…": "…" },
 
-  // Derived, optional, verifiable: the graph as nodes, edges, folded state — not the storage records.
+  // Derived, verifiable, never authoritative: the graph as nodes, edges, folded state.
   "knowledge": { "…": "…" },
 
   // Named, derived presentation over the knowledge section: outline, map — never a second truth.
@@ -62,8 +68,9 @@ v2 keeps the `.epi` type and the v1 object intact, nested. One format family, on
 }
 ```
 
-Sections other than `history` are optional and marked with a `profiles` list in the header, so a small
-export can be history-only and a shared one can be publication-only.
+Sections other than `archive` are optional and gated by the `profiles` list in the header. A claimed
+profile whose section is missing, a failing checksum, or an unknown profile is a refusal
+(`missing_section`, `damaged`, `invalid_profiles`) — never a warning.
 
 ## Schema example (abridged)
 
@@ -71,15 +78,17 @@ export can be history-only and a shared one can be publication-only.
 {
   "format": "episteme-knowledge",
   "version": 2,
-  "profiles": ["history", "ontology", "knowledge"],
+  "profiles": ["archive", "knowledge"],
 
-  "history": {
-    "format": "episteme-graph-export",
-    "version": 1,
-    "sha256": "…over the records and companions below…",
-    "storedAs": { "sqliteFormat": 2, "recordSchema": 1 },
-    "records": [ "…every persisted record, exact string…" ],
-    "companions": [ { "name": "threads", "seq": 1, "body": "…" } ]
+  "archive": {
+    "history": {
+      "format": "episteme-graph-export",
+      "version": 1,
+      "sha256": "…over the records and companions below…",
+      "storedAs": { "sqliteFormat": 2, "recordSchema": 1 },
+      "records": [ "…every persisted record, exact string…" ],
+      "companions": [ { "name": "threads", "seq": 1, "body": "…" } ]
+    }
   },
 
   "ontology": {
@@ -97,11 +106,11 @@ export can be history-only and a shared one can be publication-only.
         }
       }
     ],
-    "sha256": "…over packs in order…"
+    "sha256": "…over the canonical JSON of packs…"
   },
 
   "knowledge": {
-    "derivedFrom": { "historySha256": "…", "ontologySha256": "…" },
+    "derivedFrom": { "historySha256": "…", "ontologySha256": "…", "filter": { "…": "…" } },
     "derivedAt": "…",
     "nodes": [ { "id": "…", "type": "claim", "text": "…", "tags": ["topic:transformer"], "…": "…" } ],
     "edges": [ { "id": "…", "from": "…", "to": "…", "type": "supports" } ],
@@ -109,7 +118,8 @@ export can be history-only and a shared one can be publication-only.
     "state": [ { "target": "…", "actor": "…",
                  "dimensions": { "confidence": { "level": "high" } } } ],
     "publications": [ { "…": "…" } ],
-    "sha256": "…over the canonical serialization of the sections above…"
+    "sources": [],
+    "sha256": "…over the canonical JSON of the section without this field…"
   },
 
   "views": [
@@ -130,14 +140,14 @@ carries whatever a scene's packs register, and a scene that needs finer vocabula
 
 ## Read and write flows
 
-**Write (v2):** export the graph exactly as v1 does (exclusive hold, whole history) → wrap the v1
-object under `history` → derive the knowledge section by loading the records, applying the packs'
-*definitions* (not their guards' behaviour) and folding → canonicalize (below) → checksum each
-section → write once, `0o600`, never over an existing file.
+**Write (v2):** export the graph exactly as v1 does (exclusive hold, whole history) → nest the v1
+object under `archive.history` → derive the knowledge section by loading the records, applying the
+packs' *definitions* (not their guards' behaviour), folding and projecting → canonicalize (below) →
+checksum each section → write once, `0o600`, never over an existing file.
 
-**Full read (Episteme):** check the envelope, check `history` with the v1 rules, import into a new
-graph; the knowledge section is ignored for correctness — it is a claim about the history, verified
-on demand.
+**Full read (Episteme):** check the envelope, check `archive.history` with the v1 rules, import into
+a new graph; the knowledge section is ignored for correctness — it is a claim about the history,
+verified on demand.
 
 **Light read (third party):** read header → `ontology` → `knowledge`. No service, no SQLite, no
 packs. A reader that also wants to trust what it read refolds: deserialize `history.records`, apply
@@ -152,14 +162,21 @@ The event log gives this almost for free, and the remaining requirements are exp
 - **Order is total.** Records commit in order and export reads them `ORDER BY seq`; `foldEvents` is a
   pure reduce. Refolding the same records in the same order yields the same state — this is already
   pinned by the byte-stable round-trip test.
-- **Canonical serialization must be specified.** Node, edge and state maps are built in insertion
-  order, which a file cannot guarantee to a *reader* that rebuilds them in memory. v2 defines one
-  canonical order (sort nodes and edges by id, states by target then actor, dimensions by the
-  manifest's registration order) and checksums the canonical form, so any correct reader produces
-  the same bytes.
+- **Canonical serialization is specified and implemented** (ADR 0023). Canonical JSON follows RFC 8785
+  (JCS) where JSON has one answer: UTF-8 without BOM, no insignificant whitespace, object keys sorted
+  by UTF-16 code units, strings escaped per RFC 8785's rules. Array order is part of the contract,
+  because the history's `seq` order is what folding depends on and the history section must stay
+  byte-compatible with v1's `JSON.stringify` digest rule. Projection ordering uses stable fields:
+  nodes, branches and publications by `[createdAt, id]`, edges by `[type, from, to, createdAt, id]`,
+  state by target then actor with dimensions sorted by name. Sorting by id alone was tried and
+  rejected: edge, branch and publication ids are content-independent UUIDs, so id-first order makes
+  the same history produce different bytes across runs — caught by cross-run testing, fixed in
+  `knowledge.ts`.
 - **The projection names its inputs.** `derivedFrom` pins the history checksum, the ontology checksum
-  and the filter; a projection is verifiable exactly when its inputs match. A fork does not weaken
-  this: branches are records, and folding is per branch with `forkedFrom` linking lines of inquiry.
+  and the filter; a projection is verifiable exactly when its inputs match, and a file whose receipt
+  names inputs it does not carry is refused as `projection_mismatch` by `readEpiFile`. A fork does not
+  weaken this: branches are records, and folding is per branch with `forkedFrom` linking lines of
+  inquiry.
 - **Revocations apply in order**, like every event; nothing is ever removed from the file.
 
 ## Consistency between events and projection
@@ -168,7 +185,7 @@ The knowledge section is a cache with a receipt. Three rules keep it honest:
 
 1. It is never required for import; the history alone restores the graph.
 2. It carries `derivedFrom`, so staleness is detectable, never silent.
-3. A writer may omit it (history-only profile); a reader may refuse to trust it; nothing may write
+3. A writer may omit it (archive-only profile); a reader may refuse to trust it; nothing may write
    into it that contradicts a refold and still claim to be verified.
 
 ## External references
@@ -182,6 +199,26 @@ Sources keep their bodies out of the graph (ADR 0009), and a `.epi` file keeps t
   published subgraph's nodes and edges in `knowledge`, with the rest of the graph still in
   `history` — which is why **scoped export** (below) is a v2 deliverable, not an afterthought.
 
+## Scoped export is whitelist-first, and refuses rather than redacts
+
+The privacy failure mode of an export-then-hide design is structural: the private material is already
+in the bytes, and every section is another place it can leak — raw history, companion logs, source
+metadata, identifiers. The scoped export therefore computes its inclusion set **before**
+serialization, from Publication records and the visibility rules, and never writes what was not
+included:
+
+- The inclusion set is a whitelist: a node is in only if it is reachable from the publication root
+  through the author's own edges, is the author's own non-draft work, and every dependency it needs
+  to be intelligible is itself published. A private or draft dependency that cannot be shown to be
+  safe is a **refusal** with a named reason, never a silent omission.
+- A scoped export ships the **knowledge-only profile** — ontology + knowledge, no `archive` — because
+  a cropped history is not a restorable archive and must not pretend to be one. Restorable archives
+  and knowledge publications stay two different behaviours.
+- Every section the file does carry is leak-scanned in tests: the private fixture's strings must be
+  absent from `ontology`, `knowledge` (nodes, edges, state, publications, sources) and the header.
+- State is per actor; a scoped export carries only the actors whose understanding is deliberately
+  included, never a second actor's private state by adjacency.
+
 ## Size, permissions, versions
 
 - Growth is additive: append-only history grows monotonically, so v2 adds section-level `profiles`
@@ -189,11 +226,10 @@ Sources keep their bodies out of the graph (ADR 0009), and a `.epi` file keeps t
   its size answer. JSON stays the reference form.
 - Permissions stay as v1: owner-only (`0o600`), one owner, write-once. Encryption is out of scope
   for v2's first cut and would be a version bump with its own ADR.
-- Backward compatibility: a v2 build reads v1 (it is the nested `history` section); a v1 build
-  refuses v2 files as `unsupported_version` — the same refusal any build gives a newer format, so
-  no file is ever silently misread. Writers choose the profile; old builds keep opening history-only
-  v2 exports? No — they refuse all of them; that is the price of an honest version gate, and the
-  migration tool is the same one that carries older graphs forward today.
+- Backward compatibility: a v2 build reads v1 (v1 nests as a v2 file's `archive.history`, and a v1
+  file is its own format string that v2 builds accept unchanged); a v1 build refuses v2 files as
+  `unsupported_version` — the same refusal any build gives a newer format, so no file is ever
+  silently misread. The migration tool is the same one that carries older graphs forward today.
 
 ## Application boundary
 
@@ -215,9 +251,15 @@ live graph.
 ## Open questions
 
 1. Does `knowledge` include per-dimension **event pointers** (which events set each value), so a
-   reader can show "why this level" without refolding? Cost: size; benefit: explainability.
+   reader can show "why this level" without refolding? Cost: size; benefit: explainability. —
+   Still open; the archive's raw history already carries the evidence for a full reader.
 2. Canonical JSON (sorted keys, fixed separators) for section checksums — worth adopting a formal
-   canonicalization (e.g. JCS) or pinning our own ordering rules?
+   canonicalization (e.g. JCS) or pinning our own ordering rules? — **Resolved:** a pinned JCS
+   subset, as ADR 0023 records; full RFC 8785 number handling was evaluated and the subset covers
+   everything the format writes while keeping the history section byte-compatible with v1.
 3. Should scoped export refuse rather than redact when a published node's neighbourhood reaches
-   private material?
-4. One `.epi` per actor or one per graph? State is per actor; a shared export carries whose state?
+   private material? — **Resolved: refuse.** Whitelist-first with named refusals; see the section
+   above.
+4. One `.epi` per actor or one per graph? State is per actor; a shared export carries whose state? —
+   Still open for scoped export: the draft's working answer is "only the actors deliberately included
+   in the whitelist", decided when G4 lands.
