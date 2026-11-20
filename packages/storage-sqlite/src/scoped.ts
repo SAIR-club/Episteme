@@ -23,8 +23,19 @@ import {
 } from '@episteme/epi-format'
 import type { GraphEdge, GraphNode } from '@episteme/core'
 import { deserializeRecord } from './records.js'
-import { GraphExportError, exportFromGraph } from './portable.js'
+import {
+  GraphExportError,
+  exportFromGraph,
+  type GraphExport,
+  type GraphExportProblem,
+} from './portable.js'
 import { byKeys, ontologyManifestOf, writeEpiFile, type EpiPackDefinitions } from './knowledge.js'
+
+/** Publication-related refusals, carried by `GraphExportError` alongside the v1 export codes. */
+export type ScopedExportProblem = Extract<
+  GraphExportProblem,
+  'no_publication' | 'ambiguous_publication' | 'withdrawn_publication' | 'unsafe_publication'
+>
 
 export interface ScopedExportOptions {
   readonly build: string
@@ -47,7 +58,15 @@ export function buildPublishedEpi(graph: string, options: ScopedExportOptions): 
     build: options.build,
     ...(options.now === undefined ? {} : { now: options.now }),
   })
+  return publishedEpiOf(exported, options)
+}
 
+/**
+ * `buildPublishedEpi` without the graph read: the publication's rules re-verified against records
+ * that are already in hand. Exposed on its own so hostile or damaged records can be tested without
+ * a database — the same records reach the exporter from a graph file, whatever wrote it.
+ */
+export function publishedEpiOf(exported: GraphExport, options: ScopedExportOptions): EpiFile {
   let publication:
     | {
         readonly id: string
@@ -99,7 +118,14 @@ export function buildPublishedEpi(graph: string, options: ScopedExportOptions): 
   const unsafe = (why: string): GraphExportError => new GraphExportError('unsafe_publication', why)
 
   // Re-verify the publication's own rules (ADR 0014) against the persisted records: membership is a
-  // whitelist, and a member that cannot be proven safe refuses the whole export.
+  // whitelist, and a member that cannot be proven safe refuses the whole export. The root is a
+  // member too: a record that names a root outside the whitelist would make the file describe a
+  // subgraph it does not carry.
+  if (!publication.members.includes(publication.root)) {
+    throw unsafe(
+      `root "${publication.root}" of publication "${publication.id}" is not among its members`,
+    )
+  }
   const members = new Set<string>(publication.members)
   const nodesOut: GraphNode[] = []
   for (const id of publication.members) {
@@ -120,6 +146,11 @@ export function buildPublishedEpi(graph: string, options: ScopedExportOptions): 
     const edge = edges.get(id)
     if (edge === undefined || edge.revoked === true) {
       throw unsafe(`edge "${id}" of publication "${publication.id}" is not a readable record`)
+    }
+    if (edge.actorId !== publication.actorId) {
+      throw unsafe(
+        `edge "${id}" of publication "${publication.id}" was written by someone else; it can be linked to, never published`,
+      )
     }
     for (const endpoint of [edge.from, edge.to]) {
       if (members.has(endpoint)) continue
