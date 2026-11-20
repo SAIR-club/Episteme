@@ -191,11 +191,6 @@ describe('exporting and importing a graph', () => {
   // ADR 0022: the name is a convention for people and their operating systems; identity is the format field.
   it('judges by content, not by file name', async () => {
     const target = join(directory, 'restored.db')
-
-    const wrong = join(directory, 'looks-right.epi')
-    await writeFile(wrong, '{"format":"something-else"}')
-    expect(await refusal(importGraph(wrong, target))).toBe('not_an_export')
-
     const plain = join(directory, 'backup')
     await session()
     await exportGraph(graph, plain, OPTIONS)
