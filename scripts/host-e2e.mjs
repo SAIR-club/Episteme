@@ -152,11 +152,8 @@ const hostEnvironment = Object.fromEntries(
   ),
 )
 
-let sessions = 0
-
-/** The same session through OpenCode, with the same step limit and budget, stopped from here (see opencode-host.mjs). */
+/** One OpenCode turn, with the same step limit and budget, stopped from here (see opencode-host.mjs). */
 const openCodeSession = async (prompt) => {
-  sessions += 1
   const turn = await openCodeTurn({
     cwd: directory,
     model,
@@ -166,8 +163,7 @@ const openCodeSession = async (prompt) => {
     timeoutMs: Number(values['timeout-ms']),
     env: hostEnvironment,
   })
-  writeFileSync(join(directory, `opencode-session-${sessions}.jsonl`), turn.raw)
-  const { raw: _raw, texts: _texts, ...kept } = turn
+  const { texts: _texts, ...kept } = turn
   return { ...kept, costBasis: 'opencode-estimate' }
 }
 

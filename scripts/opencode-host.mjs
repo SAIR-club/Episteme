@@ -20,16 +20,14 @@ const callsOf = (part) =>
     status: call.status,
   }))
 
-/** With no `mcpUrl`, the host gets no MCP server at all, as a baseline without Episteme needs. */
+/** The host reads the person's global configuration for the model provider, but only this MCP server. */
 export function writeOpenCodeConfig(directory, mcpUrl) {
   writeFileSync(
     join(directory, 'opencode.json'),
     JSON.stringify(
       {
         $schema: 'https://opencode.ai/config.json',
-        ...(mcpUrl === undefined
-          ? {}
-          : { mcp: { servers: { episteme: { type: 'remote', url: mcpUrl } } } }),
+        mcp: { servers: { episteme: { type: 'remote', url: mcpUrl } } },
         permission: { bash: 'deny', edit: 'deny', webfetch: 'deny' },
       },
       null,
@@ -38,31 +36,16 @@ export function writeOpenCodeConfig(directory, mcpUrl) {
   )
 }
 
-/**
- * @param options.session an OpenCode session id to continue; omitted, a new session starts and its id is returned
- */
-export function openCodeTurn({ cwd, model, prompt, session, maxSteps, budgetUsd, timeoutMs, env }) {
+export function openCodeTurn({ cwd, model, prompt, maxSteps, budgetUsd, timeoutMs, env }) {
   return new Promise((done, failed) => {
     const child = spawn(
       'opencode',
-      [
-        'run',
-        '--standalone',
-        '--format',
-        'json',
-        '--archived',
-        '--auto',
-        '-m',
-        model,
-        ...(session === undefined ? [] : ['--session', session]),
-        prompt,
-      ],
+      ['run', '--standalone', '--format', 'json', '--archived', '--auto', '-m', model, prompt],
       { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
     )
     const turn = {
       host: 'opencode',
       model,
-      session,
       steps: 0,
       costUsd: 0,
       tokens: { input: 0, output: 0, reasoning: 0 },
@@ -81,7 +64,6 @@ export function openCodeTurn({ cwd, model, prompt, session, maxSteps, budgetUsd,
       }
     }
     const timer = setTimeout(() => stop(`timeout after ${timeoutMs} ms`), timeoutMs)
-    let out = ''
     let pending = ''
     let err = ''
     const read = (line) => {
@@ -113,7 +95,6 @@ export function openCodeTurn({ cwd, model, prompt, session, maxSteps, budgetUsd,
       }
     }
     child.stdout.on('data', (chunk) => {
-      out += chunk
       pending += chunk
       const lines = pending.split('\n')
       pending = lines.pop() ?? ''
@@ -130,7 +111,6 @@ export function openCodeTurn({ cwd, model, prompt, session, maxSteps, budgetUsd,
         text: turn.texts.at(-1),
         costUsd: Number(turn.costUsd.toFixed(6)),
         stderr: err.slice(0, 2000),
-        raw: out,
       })
     })
   })
