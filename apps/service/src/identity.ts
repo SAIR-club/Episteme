@@ -24,7 +24,10 @@ export interface Caller {
 /** `local` serves one person on loopback; `shared` serves the people in a user file, behind a proxy. */
 export type DeploymentMode = 'local' | 'shared'
 
-/** What a request asks to do. `decide` covers everything only a person may do (ADR 0012, decision 3). */
+/**
+ * What a request asks to do. `decide` covers everything only a person may do (ADR 0012, decision 3), including every
+ * `POST` of a scene that its profile does not name as only proposing (ADR 0020).
+ */
 export type Operation = 'read' | 'decide'
 
 export interface AccessRefusal {
@@ -201,6 +204,12 @@ export class Directory {
       return caller
     }
     return undefined
+  }
+
+  /** What a person is called, for showing who wrote something. `undefined` for anyone not in this directory. */
+  nameOf(actorId: string): string | undefined {
+    this.#reloadIfChanged()
+    return this.#people.find((person) => person.actorId === actorId)?.displayName
   }
 
   /** Whether people manage their own tokens here: only with a user file, that is, in shared mode. */

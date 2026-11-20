@@ -530,6 +530,8 @@ export interface SessionOptions {
  */
 /** What every person's session over one graph shares: one mutation queue, one revision, one lifetime. */
 interface SharedState {
+  /** A scene's logs, for a session with no file to keep them in. */
+  readonly memoryLogs: Map<string, SceneLog>
   /** The tail of the mutation queue. See `#exclusive`. */
   mutations: Promise<unknown>
   /** See `revision`. Advanced only by `#exclusive`. */
@@ -704,6 +706,7 @@ export class CognitiveSession {
       epoch: randomUUID(),
       recovered: [],
       people: new Map(),
+      memoryLogs: new Map(),
     }
     const session = new CognitiveSession(parts, HUMAN, shared)
     shared.people.set(HUMAN, session)
@@ -1637,6 +1640,11 @@ export class CognitiveSession {
     }
   }
 
+  /** Whether this service allows publishing at all (ADR 0014), so a page can leave it out when it does not. */
+  get sharingAllowed(): boolean {
+    return this.#parts.sharing
+  }
+
   #sharingRefusal(): MutationRefusal | undefined {
     if (this.#parts.sharing) return undefined
     return {
@@ -1694,6 +1702,7 @@ export class CognitiveSession {
       readonly speaker: 'learner' | 'user' | 'human' | 'agent'
       readonly text: string
       readonly by?: string
+      readonly writtenWith?: 'person' | 'agent'
     },
   ): Promise<Turn> {
     return this.#exclusive(async () => {
@@ -1707,6 +1716,7 @@ export class CognitiveSession {
         speaker: input.speaker,
         text,
         by: input.by ?? this.#actor,
+        ...(input.writtenWith === undefined ? {} : { writtenWith: input.writtenWith }),
         at: systemClock.now(),
       }
       await this.#parts.threads.addTurn(turn)
@@ -1869,6 +1879,21 @@ export class CognitiveSession {
   /** This person's latest records in a scene's namespace. */
   sceneRecords(namespace: string, prefix = ''): readonly SceneRecord[] {
     return this.#parts.records.list(namespace, this.#actor, prefix)
+  }
+
+  /**
+   * A named log of this session's scene, beside the graph and in its file (ADR 0018). In memory when the session is.
+   * Names take the same form as a companion log's, and are kept apart from the graph's own stores and other scenes'.
+   */
+  sceneLog(name: string): SceneLog {
+    const scoped = `scene-${this.#scene.name}-${name}`
+    if (this.#parts.store !== undefined) return this.#parts.store.companion(scoped)
+    let log = this.#shared.memoryLogs.get(scoped)
+    if (log === undefined) {
+      log = memoryLog()
+      this.#shared.memoryLogs.set(scoped, log)
+    }
+    return log
   }
 
   /** Writes the next version of one of this person's records. `null` removes it, keeping its history. */
@@ -2037,6 +2062,21 @@ export class CognitiveSession {
   }
 
   /**
+   * The candidate refs of a keyed submission (ADR 0011 §5) this person made under `submissionId`, by `by`, that
+   * landed: every ref it sent, kept or refused, as its receipt names them. That is the submission `distill` would
+   * answer from what it stored if the same payload came again, and refuse as `submission_conflict` if another did,
+   * so a host can tell a retry from a new request and send the candidates it sent then. `undefined` when there is
+   * none, or when its drafts never landed: `distill` reads such an attempt again. Reads only.
+   */
+  submittedRefs(by: string, submissionId: string): readonly string[] | undefined {
+    const earlier = this.#sources.submission(this.#actor, by, submissionId)
+    if (earlier === undefined) return undefined
+    if (this.#suggestions.landing(this.#actor, by, submissionId) === undefined) return undefined
+    const { kept, refused } = earlier.submission.receipt
+    return [...new Set([...kept.map(({ ref }) => ref), ...refused.map(({ ref }) => ref)])]
+  }
+
+  /**
    * Applies the learner's decision on a pending suggestion: the one path from a human decision to the graph
    * (ADR 0008).
    *
@@ -2121,6 +2161,34 @@ export class CognitiveSession {
     const proposal = resolved
     const refusal = this.#contentRefusalOf(proposal)
     if (refusal !== undefined) return { ok: false, refusal }
+    // A draft made outside any scope may be filed in one by the person who decides it, and only by them, only
+    // now, and only into a scope they name: it is never put anywhere on its own, and a draft that has a scope
+    // keeps it.
+    const placed = decision.scope
+    if (placed !== undefined) {
+      const problem = scopeProblem(placed)
+      if (problem !== undefined) {
+        return { ok: false, refusal: { code: 'invalid_scope', message: problem } }
+      }
+      if (suggestion.scope !== undefined) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'scope_fixed',
+            message: `suggestion "${suggestion.id}" was made in scope "${suggestion.scope}" and stays there`,
+          },
+        }
+      }
+      if (proposal.kind !== 'node' && proposal.kind !== 'claim') {
+        return {
+          ok: false,
+          refusal: {
+            code: 'invalid_scope',
+            message: `a ${proposal.kind} suggestion is not filed in a scope; only a node or a claim is`,
+          },
+        }
+      }
+    }
 
     // Recorded before anything is committed, with the ids it will create, so a crash at any point after this
     // leaves enough behind to tell whether the decision landed.
@@ -2132,6 +2200,7 @@ export class CognitiveSession {
       proposal,
       planned: this.#plan(proposal, operationId),
       channel,
+      ...(placed === undefined ? {} : { scope: placed.trim() }),
       owner: this.#actor,
       ...(reviewer === undefined ? {} : { reviewer }),
     }
@@ -2250,6 +2319,8 @@ export class CognitiveSession {
   #commitDecided(resolution: Resolution, suggestion: Suggestion): Committed | MutationRefusal {
     const { proposal, planned } = resolution
     const confirmed = resolution.outcome === 'accepted'
+    // Where it is filed: the scope it was made in, or, for a draft made in none, the one the person chose.
+    const filed = suggestion.scope ?? resolution.scope
     // A distilled suggestion's basis goes with it, so an agent's reading is never recorded as the learner's words.
     const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})${suggestion.basis === undefined ? '' : `, basis ${suggestion.basis}`}`
     switch (proposal.kind) {
@@ -2290,7 +2361,7 @@ export class CognitiveSession {
           tier: this.#tierOf(proposal.nodeType),
           source,
           // The scope the suggestion was made in, kept whoever decides it and however it is worded then.
-          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
+          ...(filed === undefined ? {} : { scope: filed }),
           // The text follows the label as decided, so a learner who puts it in their own words is not left
           // with the distiller's wording underneath.
           properties: {
@@ -2308,7 +2379,7 @@ export class CognitiveSession {
           type: NODE.claim,
           tier: 'thought',
           source,
-          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
+          ...(filed === undefined ? {} : { scope: filed }),
           properties: provenanceOf(suggestion),
         })
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
@@ -3045,8 +3116,8 @@ export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
 
 /** What a human decided about a pending suggestion. */
 export type Decision =
-  | { readonly action: 'accept' }
-  | { readonly action: 'modify'; readonly proposal: Proposal }
+  | { readonly action: 'accept'; readonly scope?: string }
+  | { readonly action: 'modify'; readonly proposal: Proposal; readonly scope?: string }
   | { readonly action: 'dismiss' }
 
 /** What a decision committed: one state event, one edge, or one claim node. */
@@ -3318,10 +3389,33 @@ function normalized(proposal: Proposal): Proposal {
 
 /** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
 interface Store {
+  companion(name: string): SceneLog
   save(state?: unknown): Promise<void>
   close(): Promise<void>
   /** Copies the graph as last saved, in its own format. */
   backUp(target: string): Promise<void>
+}
+
+/** A named log kept beside the graph. Each line is one record; `replace` swaps all of them at once. */
+export interface SceneLog {
+  read(): Promise<readonly string[]>
+  append(body: string): Promise<void>
+  replace(bodies: readonly string[]): Promise<void>
+}
+
+function memoryLog(): SceneLog {
+  let lines: readonly string[] = []
+  return {
+    read: () => Promise.resolve(lines),
+    append: (body) => {
+      lines = [...lines, body]
+      return Promise.resolve()
+    },
+    replace: (bodies) => {
+      lines = [...bodies]
+      return Promise.resolve()
+    },
+  }
 }
 
 /** Turns the retrieval's recorded contributions into something a view can render. */

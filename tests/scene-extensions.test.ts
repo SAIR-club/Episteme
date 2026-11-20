@@ -290,6 +290,7 @@ describe('what an extension is handed', () => {
       expect(Object.keys(view).sort()).toEqual([
         'browsePublications',
         'distill',
+        'expand',
         'historyOf',
         'listNodes',
         'pendingSuggestions',
@@ -299,10 +300,13 @@ describe('what an extension is handed', () => {
         'recall',
         'recordableDimensions',
         'records',
+        'reviews',
         'sceneName',
+        'submittedRefs',
         'threadView',
         'threads',
         'understandingOf',
+        'updates',
         'vocabulary',
       ])
       for (const forbidden of [
