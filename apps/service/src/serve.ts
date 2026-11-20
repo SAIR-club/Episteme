@@ -111,11 +111,17 @@ if (argv[0] === 'users' || argv[0] === 'tokens') {
 if (argv[0] === 'graph') {
   const [, action, from, to] = argv
   if (action !== 'convert' || from === undefined || to === undefined) {
-    process.stderr.write('用法：pnpm serve graph convert <旧图谱> <新图谱>\n')
+    process.stderr.write('用法：pnpm serve graph convert <旧图谱> <新图谱> --scene <路径>\n')
+    process.exit(1)
+  }
+  const scenePath = optionValue(argv, '--scene')
+  if (scenePath === undefined) {
+    process.stderr.write('必须用 --scene <路径> 指定导出 profile 的场景模块。\n')
     process.exit(1)
   }
   try {
-    const done = await convertGraph(from, to)
+    const profile = await loadProfile(scenePath)
+    const done = await convertGraph(from, to, profile.scene)
     const counts = (found: Readonly<Record<string, number | undefined>>): string =>
       Object.entries(found)
         .map(([name, count]) => `${name} ${count ?? 0}`)

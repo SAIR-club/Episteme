@@ -154,7 +154,7 @@ describe('a graph kept in SQLite', () => {
     const older = join(directory, 'learn.jsonl')
     await writeFile(older, '{"schemaVersion":1}\n', 'utf8')
 
-    await expect(startService({ port: 0, graph: join(directory, 'learn.db') })).rejects.toThrow(
+    await expect(startTestService({ port: 0, graph: join(directory, 'learn.db') })).rejects.toThrow(
       /older graph/,
     )
 
