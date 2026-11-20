@@ -1,5 +1,13 @@
 import { Hono, type Context } from 'hono'
-import { isRefusal, sceneViewOf, type CognitiveSession, type Decision } from '@episteme/application'
+import {
+  currentChannel,
+  isRefusal,
+  sceneViewOf,
+  sceneWritesOf,
+  type CognitiveSession,
+  type Decision,
+} from '@episteme/application'
+import { agentActorFor } from '@episteme/mcp'
 import {
   accessRefusal,
   resolveCaller,
@@ -47,15 +55,31 @@ const DECISION_PATTERNS: readonly RegExp[] = [
   /^POST \/api\/v1\/tokens\/[^/]+\/revoke$/,
 ]
 
-/** What a request to the API asks to do. */
-function operationOf(method: string, path: string): Operation {
+/**
+ * What a request to the API asks to do.
+ *
+ * A scene's route that changes anything is the person's unless its profile names it as only proposing (ADR 0020), so
+ * a route nobody thought about is closed, and so is a path that matches no route.
+ */
+function operationOf(
+  method: string,
+  path: string,
+  profile: Pick<SceneProfile, 'name' | 'proposingRoutes' | 'privateRoutes'>,
+): Operation {
   const route = `${method} ${path}`
-  return DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))
-    ? 'decide'
-    : 'read'
+  if (DECISION_ROUTES.includes(route) || DECISION_PATTERNS.some((pattern) => pattern.test(route))) {
+    return 'decide'
+  }
+  const scene = `${API_PREFIX}/scene/${profile.name}`
+  if (!path.startsWith(`${scene}/`)) return 'read'
+  if (method === 'GET') {
+    // Only the person's own credential reads these, as only it decides.
+    return profile.privateRoutes?.includes(path.slice(scene.length)) === true ? 'decide' : 'read'
+  }
+  return profile.proposingRoutes?.includes(path.slice(scene.length)) === true ? 'read' : 'decide'
 }
 
-export interface ApiContext {
+interface ApiContext {
   readonly session: CognitiveSession
   readonly profile: SceneProfile
   /** Whether this start seeded the profile's topic, or found it already there. */
@@ -132,9 +156,12 @@ function assertPathEncoding(path: string): void {
 }
 
 /** Reads a JSON body, bounded so a malformed or hostile request cannot exhaust memory. */
-async function readJson(context: Context<ApiEnv>): Promise<Record<string, unknown>> {
+async function readJson(
+  context: Context<ApiEnv>,
+  limit = 1_000_000,
+): Promise<Record<string, unknown>> {
   const declared = context.req.header('content-length')
-  if (declared !== undefined && Number(declared) > 1_000_000) {
+  if (declared !== undefined && Number(declared) > limit) {
     throw new RequestError('request body too large')
   }
   const stream = context.req.raw.body
@@ -148,7 +175,7 @@ async function readJson(context: Context<ApiEnv>): Promise<Record<string, unknow
     const value = chunk.value
     if (value === undefined) continue
     size += value.byteLength
-    if (size > 1_000_000) {
+    if (size > limit) {
       await reader.cancel()
       throw new RequestError('request body too large')
     }
@@ -195,7 +222,11 @@ function asObject(value: unknown, field: string): Record<string, unknown> {
  */
 function decisionFrom(body: Record<string, unknown>): Decision {
   const action = body['action']
-  if (action === 'accept' || action === 'dismiss') return { action }
+  if (action === 'dismiss') return { action }
+  // A space named for a candidate proposed without one. It is the person's choice, made here; the application
+  // refuses it for a candidate that already has a space and never fills one in on its own.
+  const placed = body['scope'] === undefined ? {} : { scope: asString(body['scope'], 'scope') }
+  if (action === 'accept') return { action, ...placed }
   if (action !== 'modify') {
     throw new RequestError('"action" must be one of accept, modify, dismiss')
   }
@@ -206,6 +237,7 @@ function decisionFrom(body: Record<string, unknown>): Decision {
       const properties = fields['properties']
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'node',
           nodeType: text('nodeType'),
@@ -226,6 +258,7 @@ function decisionFrom(body: Record<string, unknown>): Decision {
       }
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'claim',
           label: text('label'),
@@ -236,11 +269,13 @@ function decisionFrom(body: Record<string, unknown>): Decision {
     case 'link':
       return {
         action,
+        ...placed,
         proposal: { kind: 'link', from: text('from'), to: text('to'), relation: text('relation') },
       }
     case 'state':
       return {
         action,
+        ...placed,
         proposal: {
           kind: 'state',
           target: text('target'),
@@ -287,7 +322,11 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
     }
     const caller = resolved.caller
 
-    const refused = accessRefusal(context.mode, caller, operationOf(c.req.method, path))
+    const refused = accessRefusal(
+      context.mode,
+      caller,
+      operationOf(c.req.method, path, context.profile),
+    )
     if (refused !== undefined) {
       return json(refused.status, { error: refused.message, code: refused.code })
     }
@@ -298,6 +337,29 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
       caller === undefined ? context.session : context.session.forActor(caller.actorId),
     )
     return await next()
+  })
+
+  // Who is signed in, and what to call the people whose work they can read. Only those people: everyone else in
+  // the user file stays out of it, since being on a service does not make someone's name public.
+  app.get(`${API_PREFIX}/me`, (c) => {
+    const session = c.get('session')
+    const people = context.mode === 'shared' ? context.directory : undefined
+    const names: Record<string, string> = {}
+    // and of those whose work they cited, which keeps its author's name after the author withdraws it.
+    for (const id of [
+      session.actorId,
+      ...session.browsePublications().map((publication) => publication.author),
+      ...session.citedAuthors(),
+    ]) {
+      const name = people?.nameOf(id)
+      if (name !== undefined) names[id] = name
+    }
+    return json(200, {
+      actorId: session.actorId,
+      mode: context.mode,
+      sharing: session.sharingAllowed,
+      names,
+    })
   })
 
   // The whole surface state in one read, so a Workspace renders from a single revision rather than from
@@ -337,7 +399,9 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
   // Every decision, dismissals included, with its channel and credential: for finding one after the fact.
   app.get(`${API_PREFIX}/reviews`, (c) => {
     const session = c.get('session')
-    const channel = c.req.query('channel')
+    const asked = c.req.query('channel')
+    // An earlier name asks for the same channel: `learn-review` finds what `review` finds, and the reverse.
+    const channel = asked === undefined ? undefined : currentChannel(asked)
     return json(200, {
       ...at(session),
       reviews: session
@@ -449,9 +513,15 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
     const id = asString(body['id'], 'id')
     const caller = c.get('caller')
     const userAgent = c.req.header('user-agent')
+    const decision = decisionFrom(body)
+    // A space the scene owns must be one this person can open, or the node would land where no page shows it.
+    const filing = decision.action === 'dismiss' ? undefined : decision.scope
+    if (filing !== undefined && context.profile.checkFiling !== undefined) {
+      context.profile.checkFiling(sceneViewOf(session), filing)
+    }
     const result = await session.decide(
       id,
-      decisionFrom(body),
+      decision,
       'review',
       caller === undefined
         ? undefined
@@ -633,6 +703,7 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
   })
   app.post(`${API_PREFIX}/threads/:id/turns`, async (c) => {
     const session = c.get('session')
+    const caller = c.get('caller')
     const body = await readJson(c)
     const speaker = body['speaker']
     if (speaker !== 'learner' && speaker !== 'agent') {
@@ -641,6 +712,12 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
     const turn = await session.appendTurn(c.req.param('id'), {
       speaker,
       text: asString(body['text'], 'text'),
+      // From the credential, never the body (ADR 0021). With none, nobody knows who wrote it, so nothing is said.
+      ...(caller === undefined
+        ? {}
+        : caller.kind === 'agent'
+          ? { by: agentActorFor(caller.label), writtenWith: 'agent' as const }
+          : { writtenWith: 'person' as const }),
     })
     return json(200, { ...at(session), turn })
   })
@@ -783,12 +860,17 @@ export function createApiApp(context: ApiContext): Hono<ApiEnv> {
     const path = `${API_PREFIX}/scene/${context.profile.name}${route.path}`
     app.on(route.method, path, async (c) => {
       const session = c.get('session')
-      const body = route.method === 'POST' ? await readJson(c) : {}
+      const body = route.method === 'POST' ? await readJson(c, route.maxBodyBytes) : {}
       const query = new URLSearchParams()
       for (const [name, values] of Object.entries(c.req.queries())) {
         for (const value of values) query.append(name, value)
       }
-      const answer = await route.handle({ view: sceneViewOf(session), body, query })
+      const answer = await route.handle({
+        view: sceneViewOf(session),
+        writes: sceneWritesOf(session),
+        body,
+        query,
+      })
       return json(200, { ...at(session), ...answer })
     })
   }

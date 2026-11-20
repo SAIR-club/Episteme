@@ -12,6 +12,7 @@ import {
   type DomainPack,
   type ActorId,
   type DimensionId,
+  type DimensionIndex,
   type EdgeId,
   type EdgeTypeId,
   type MutationRefusal,
@@ -25,7 +26,9 @@ import {
   type Tag,
 } from '@episteme/core'
 import {
+  EmbeddingError,
   HybridRetriever,
+  type RankSignal,
   retrieveWith,
   visibleTo,
   type GraphReadView,
@@ -201,6 +204,11 @@ export interface RankedView {
   readonly type: string
   readonly score: number
   readonly origin: 'match' | 'neighbor'
+  /**
+   * In this person's own graph, because they wrote or accepted it. Says they hold these words, and nothing about how
+   * well: a host told only "nothing recorded" treated an accepted claim as stray text and refused to build on it.
+   */
+  readonly kept: boolean
   readonly matchedTerms: readonly string[]
   /** The contributions that produced the score, largest first. */
   readonly reasons: readonly ReasonView[]
@@ -234,11 +242,28 @@ export interface UnderstandingView {
 export interface RecallResult {
   readonly question: string
   readonly retriever: string
+  /** One line on what the person has recorded about the retrieved items, in English. */
   readonly summary: string
+  /** The same line in Simplified Chinese, for a surface that shows Chinese. */
+  readonly summaryZh: string
   readonly known: readonly UnderstandingView[]
   readonly ranked: readonly RankedView[]
   readonly rules: readonly RankRule[]
+  /**
+   * Present only when the embedding provider failed for this recall: why. The ranking then rests on words, links,
+   * the person's understanding and recency, without closeness in meaning.
+   */
+  readonly semanticUnavailable?: string
 }
+
+/** One retrieval, and whether it had to go without the embedding provider. */
+interface Retrieved {
+  readonly context: RelevantContext
+  readonly semanticUnavailable?: string
+}
+
+/** Every ranking signal but closeness in meaning, for when the embedding provider fails. */
+const WITHOUT_MEANING: readonly RankSignal[] = ['lexical', 'graph', 'cognitive', 'recency']
 
 export interface AskResult extends RecallResult {
   readonly answer: string
@@ -308,8 +333,10 @@ export interface ProgressSummary {
   readonly totalNodes: number
   /** Most in need of attention first. */
   readonly items: readonly ProgressItem[]
-  /** One readable line, so a surface does not have to compose the numbers itself. */
+  /** One readable line in English, so a surface does not have to compose the numbers itself. */
   readonly summary: string
+  /** The same line in Simplified Chinese. */
+  readonly summaryZh: string
 }
 
 /** How a thread's speakers are written when its turns become material to distil. */
@@ -435,6 +462,8 @@ export interface RecallSummaryEntry {
   readonly score: number
   /** What this person recorded about it, compactly. */
   readonly state?: string
+  /** See {@link RankedView.kept}. */
+  readonly kept?: true
   readonly openConflict?: true
   readonly inScope?: true
 }
@@ -446,6 +475,8 @@ export interface RecallSummary {
   /** How many retrieved items the budget left out. */
   readonly truncated: number
   readonly budget: number
+  /** As in `RecallResult`: present only when this recall went without the embedding provider. */
+  readonly semanticUnavailable?: string
 }
 
 export interface ExpandedNode {
@@ -530,6 +561,8 @@ export interface SessionOptions {
  */
 /** What every person's session over one graph shares: one mutation queue, one revision, one lifetime. */
 interface SharedState {
+  /** A scene's logs, for a session with no file to keep them in. */
+  readonly memoryLogs: Map<string, SceneLog>
   /** The tail of the mutation queue. See `#exclusive`. */
   mutations: Promise<unknown>
   /** See `revision`. Advanced only by `#exclusive`. */
@@ -704,6 +737,7 @@ export class CognitiveSession {
       epoch: randomUUID(),
       recovered: [],
       people: new Map(),
+      memoryLogs: new Map(),
     }
     const session = new CognitiveSession(parts, HUMAN, shared)
     shared.people.set(HUMAN, session)
@@ -779,10 +813,13 @@ export class CognitiveSession {
    * two cannot disagree.
    */
   async ask(question: string): Promise<AskResult> {
-    const context = await this.#retrieve(question)
-    const response = await this.#agent.respond({ text: question }, toAgentContext(context))
+    const retrieved = await this.#retrieve(question)
+    const response = await this.#agent.respond(
+      { text: question },
+      toAgentContext(retrieved.context),
+    )
     return {
-      ...this.#recallView(question, context),
+      ...this.#recallView(question, retrieved),
       answer: response.text,
       usedContext: response.usedContext,
     }
@@ -834,6 +871,7 @@ export class CognitiveSession {
         ...(known === undefined
           ? {}
           : { state: known.dimensions.map((d) => `${d.id}=${d.level}`).join(', ') }),
+        ...(item.kept ? { kept: true as const } : {}),
         ...(known !== undefined && known.openConflicts.length > 0 ? { openConflict: true } : {}),
         ...(inScope.has(item.nodeId) ? { inScope: true } : {}),
       }
@@ -848,6 +886,9 @@ export class CognitiveSession {
       entries,
       truncated: full.ranked.length - entries.length,
       budget,
+      ...(full.semanticUnavailable === undefined
+        ? {}
+        : { semanticUnavailable: full.semanticUnavailable }),
     }
   }
 
@@ -899,21 +940,80 @@ export class CognitiveSession {
     )
   }
 
-  #retrieve(question: string, limit = RECALL_LIMIT): Promise<RelevantContext> {
-    return retrieveWith(this.#retriever, this.#seen, this.#episteme.log, question, {
+  /**
+   * Retrieves with every signal, or, when the embedding provider fails, with every signal but meaning.
+   *
+   * A recall that failed outright because a configured provider is down would lose the person's own words too, and
+   * one that quietly dropped meaning would read as "nothing close in meaning". So it falls back, and says so.
+   */
+  async #retrieve(question: string, limit = RECALL_LIMIT): Promise<Retrieved> {
+    const options = {
       actorId: this.#actor,
       depth: 1,
       limit,
-    })
+      isSettled: (state: DimensionIndex) => this.#isSettled(state),
+    }
+    try {
+      return {
+        context: await retrieveWith(
+          this.#retriever,
+          this.#seen,
+          this.#episteme.log,
+          question,
+          options,
+        ),
+      }
+    } catch (error) {
+      if (!(error instanceof EmbeddingError)) throw error
+      const context = await retrieveWith(
+        this.#retriever,
+        this.#seen,
+        this.#episteme.log,
+        question,
+        {
+          ...options,
+          signals: WITHOUT_MEANING,
+        },
+      )
+      return { context, semanticUnavailable: `${error.kind}: ${error.message}` }
+    }
   }
 
-  #recallView(question: string, context: RelevantContext): RecallResult {
+  /**
+   * Whether the person's state on a node is firm enough to build on, by the scene's evaluation policy.
+   *
+   * Recall and progress both read this one predicate, so a node is never buildable to an agent and shaky on the
+   * person's own progress page.
+   */
+  #isSettled(state: DimensionIndex): boolean {
+    const dimensions = dimensionLevels(state)
+    const policy = this.#scene.evaluationPolicy
+    return policy?.isSettled ? policy.isSettled(dimensions) : defaultIsSettled(dimensions)
+  }
+
+  #recallView(question: string, { context, semanticUnavailable }: Retrieved): RecallResult {
+    const ranked = toRankedView(
+      context,
+      (nodeId) => this.#seen.getNode(nodeId)?.actorId === this.#actor,
+    )
+    // Decided here so every surface reads the same and no view invents its own wording for "nothing recorded".
+    // A scene may be English or Chinese, so both are given; when something is recorded, both carry Core's line.
+    const kept = ranked.some((entry) => entry.kept)
     return {
       question,
       retriever: context.retriever,
-      // The Chinese display form, decided here so every surface reads the same and no view invents its own
-      // wording for "nothing recorded". `contextSummary` is the English one, used by the English demos.
-      summary: context.summary === '' ? '关于这个，你还没有记录过任何东西' : context.summary,
+      summary:
+        context.summary !== ''
+          ? context.summary
+          : kept
+            ? 'you kept related items but have recorded no level of understanding for them yet'
+            : 'nothing is recorded about this yet',
+      summaryZh:
+        context.summary !== ''
+          ? context.summary
+          : kept
+            ? '你保存过相关内容，但还没有标记理解程度'
+            : '关于这个，你还没有记录过任何东西',
       known: context.known.map((entry) => ({
         nodeId: entry.nodeId,
         label: entry.label,
@@ -926,8 +1026,9 @@ export class CognitiveSession {
           }))
           .sort((left, right) => (left.id < right.id ? -1 : 1)),
       })),
-      ranked: toRankedView(context),
+      ranked,
       rules: this.rules,
+      ...(semanticUnavailable === undefined ? {} : { semanticUnavailable }),
     }
   }
 
@@ -978,6 +1079,7 @@ export class CognitiveSession {
           ]),
         ),
         ...(options.reason === undefined ? {} : { reason: options.reason }),
+        // Earlier builds wrote 'learn-surface' here. Those events keep it: a source is provenance, never rewritten.
         source: options.source ?? 'session',
       })
       await this.#persist()
@@ -1226,17 +1328,13 @@ export class CognitiveSession {
       const state = this.#episteme.log.stateOf(asId<NodeId>(node.nodeId), this.#actor)
       if (state.size === 0) continue // Untouched reference material is not progress.
 
-      const dimensions = [...state]
-        .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
-        .sort((left, right) => (left.id < right.id ? -1 : 1))
-
+      const dimensions = dimensionLevels(state)
       const openConflicts = dimensions
         .filter((entry) => entry.id === DIMENSION.conflict && isOpenConflict(entry.level))
         .map((entry) => entry.level)
 
-      const settled = policy?.isSettled
-        ? policy.isSettled(dimensions)
-        : defaultIsSettled(dimensions)
+      // The predicate recall hands to retrieval as well, so both say the same about this node.
+      const settled = this.#isSettled(state)
 
       const attention = (
         policy?.evaluateAttention
@@ -1282,6 +1380,7 @@ export class CognitiveSession {
       summary: policy?.progressLine
         ? policy.progressLine(items.length, settledCount)
         : progressLine(items.length, settledCount),
+      summaryZh: progressLineZh(items.length, settledCount),
     }
   }
 
@@ -1445,7 +1544,20 @@ export class CognitiveSession {
   browsePublications(
     query: { readonly author?: string; readonly scope?: string; readonly q?: string } = {},
   ): readonly PublicationSummary[] {
-    const text = query.q?.trim().toLowerCase()
+    // Every word has to appear somewhere in it: its root, a member or the author's note. Width and case do not count.
+    const folded = (words: string): string => words.normalize('NFKC').toLowerCase()
+    const terms = folded(query.q ?? '')
+      .split(/\s+/u)
+      .filter((term) => term !== '')
+    const matches = (publication: Publication, root: GraphNode | undefined): boolean => {
+      if (terms.length === 0) return true
+      const texts = [
+        root?.label ?? '',
+        publication.note ?? '',
+        ...publication.members.map((id) => this.#episteme.graph.getNode(id)?.label ?? ''),
+      ].map(folded)
+      return terms.every((term) => texts.some((each) => each.includes(term)))
+    }
     return this.publications()
       .filter((publication) => query.author === undefined || publication.actorId === query.author)
       .map((publication) => ({ publication, root: this.#episteme.graph.getNode(publication.root) }))
@@ -1453,15 +1565,7 @@ export class CognitiveSession {
         ({ root }) =>
           query.scope === undefined || root?.tags.includes(`scope:${query.scope}`) === true,
       )
-      .filter(
-        ({ publication, root }) =>
-          text === undefined ||
-          text === '' ||
-          (root?.label.toLowerCase().includes(text) ?? false) ||
-          publication.members.some((id) =>
-            this.#episteme.graph.getNode(id)?.label.toLowerCase().includes(text),
-          ),
-      )
+      .filter(({ publication, root }) => matches(publication, root))
       .map(({ publication, root }) => ({
         id: publication.id,
         author: publication.actorId,
@@ -1535,16 +1639,8 @@ export class CognitiveSession {
    * changed between the two. Nothing changes for them until they decide.
    */
   updates(): readonly PublicationUpdate[] {
-    const adopted = new Set<string>()
-    for (const node of this.#seen.listNodes()) {
-      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
-        if (event.source?.startsWith('publication:') === true) {
-          adopted.add(event.source.slice('publication:'.length))
-        }
-      }
-    }
     const updates: PublicationUpdate[] = []
-    for (const id of adopted) {
+    for (const id of this.#adopted()) {
       const versions = this.#versionsOf(id)
       const newest = versions[versions.length - 1]
       if (newest === undefined || newest === id || !this.#episteme.log.publications.isLive(newest))
@@ -1559,6 +1655,32 @@ export class CognitiveSession {
       })
     }
     return updates
+  }
+
+  /**
+   * The people whose publications this person cited, including ones since withdrawn: they read the author's name
+   * when they cited it, and what they cited still says whose it was.
+   */
+  citedAuthors(): readonly string[] {
+    const authors = new Set<string>()
+    for (const id of this.#adopted()) {
+      const author = this.#episteme.log.publications.get(id)?.actorId
+      if (author !== undefined) authors.add(author)
+    }
+    return [...authors]
+  }
+
+  /** The publications this person adopted from, live or not. */
+  #adopted(): ReadonlySet<string> {
+    const adopted = new Set<string>()
+    for (const node of this.#seen.listNodes()) {
+      for (const event of this.#episteme.log.history({ target: node.id, actorId: this.#actor })) {
+        if (event.source?.startsWith('publication:') === true) {
+          adopted.add(event.source.slice('publication:'.length))
+        }
+      }
+    }
+    return adopted
   }
 
   /** A publication's version chain, oldest first: what it supersedes, back to the first, then what supersedes it. */
@@ -1637,6 +1759,11 @@ export class CognitiveSession {
     }
   }
 
+  /** Whether this service allows publishing at all (ADR 0014), so a page can leave it out when it does not. */
+  get sharingAllowed(): boolean {
+    return this.#parts.sharing
+  }
+
   #sharingRefusal(): MutationRefusal | undefined {
     if (this.#parts.sharing) return undefined
     return {
@@ -1694,6 +1821,7 @@ export class CognitiveSession {
       readonly speaker: 'learner' | 'user' | 'human' | 'agent'
       readonly text: string
       readonly by?: string
+      readonly writtenWith?: 'person' | 'agent'
     },
   ): Promise<Turn> {
     return this.#exclusive(async () => {
@@ -1707,6 +1835,7 @@ export class CognitiveSession {
         speaker: input.speaker,
         text,
         by: input.by ?? this.#actor,
+        ...(input.writtenWith === undefined ? {} : { writtenWith: input.writtenWith }),
         at: systemClock.now(),
       }
       await this.#parts.threads.addTurn(turn)
@@ -1741,7 +1870,7 @@ export class CognitiveSession {
       if (isHuman && quotes.length === 0) {
         throw new SessionRefusal(
           'missing_quote',
-          'a summary of the human turn must quote at least some of their own words',
+          'a summary of the human turn must quote at least some of their own words: pass them in quotes, copied verbatim from the turn',
         )
       }
       for (const quote of quotes) {
@@ -1869,6 +1998,21 @@ export class CognitiveSession {
   /** This person's latest records in a scene's namespace. */
   sceneRecords(namespace: string, prefix = ''): readonly SceneRecord[] {
     return this.#parts.records.list(namespace, this.#actor, prefix)
+  }
+
+  /**
+   * A named log of this session's scene, beside the graph and in its file (ADR 0018). In memory when the session is.
+   * Names take the same form as a companion log's, and are kept apart from the graph's own stores and other scenes'.
+   */
+  sceneLog(name: string): SceneLog {
+    const scoped = `scene-${this.#scene.name}-${name}`
+    if (this.#parts.store !== undefined) return this.#parts.store.companion(scoped)
+    let log = this.#shared.memoryLogs.get(scoped)
+    if (log === undefined) {
+      log = memoryLog()
+      this.#shared.memoryLogs.set(scoped, log)
+    }
+    return log
   }
 
   /** Writes the next version of one of this person's records. `null` removes it, keeping its history. */
@@ -2015,9 +2159,18 @@ export class CognitiveSession {
     })
   }
 
-  /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
+  /**
+   * Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). A channel an earlier
+   * build named differently reads under its current name; the stored record keeps the name it was written with.
+   */
   reviews(): readonly Review[] {
-    return this.#suggestions.reviews().filter((review) => ownerOf(review) === this.#actor)
+    return this.#suggestions
+      .reviews()
+      .filter((review) => ownerOf(review) === this.#actor)
+      .map((review) => {
+        const channel = currentChannel(review.channel)
+        return channel === review.channel ? review : { ...review, channel }
+      })
   }
 
   /** The drafts proposed for this person. Another person's drafts are not theirs to see or decide. */
@@ -2034,6 +2187,21 @@ export class CognitiveSession {
   /** Every draft still waiting for the learner, oldest first. */
   pendingSuggestions(): readonly Suggestion[] {
     return this.#ownSuggestions()
+  }
+
+  /**
+   * The candidate refs of a keyed submission (ADR 0011 §5) this person made under `submissionId`, by `by`, that
+   * landed: every ref it sent, kept or refused, as its receipt names them. That is the submission `distill` would
+   * answer from what it stored if the same payload came again, and refuse as `submission_conflict` if another did,
+   * so a host can tell a retry from a new request and send the candidates it sent then. `undefined` when there is
+   * none, or when its drafts never landed: `distill` reads such an attempt again. Reads only.
+   */
+  submittedRefs(by: string, submissionId: string): readonly string[] | undefined {
+    const earlier = this.#sources.submission(this.#actor, by, submissionId)
+    if (earlier === undefined) return undefined
+    if (this.#suggestions.landing(this.#actor, by, submissionId) === undefined) return undefined
+    const { kept, refused } = earlier.submission.receipt
+    return [...new Set([...kept.map(({ ref }) => ref), ...refused.map(({ ref }) => ref)])]
   }
 
   /**
@@ -2059,13 +2227,14 @@ export class CognitiveSession {
   decide(
     suggestionId: string,
     decision: Decision,
-    channel: DecisionChannel,
+    channel: DecisionChannel | LegacyDecisionChannel,
     /** Who decided, as the caller's channel established it; kept in the review record (ADR 0012). */
     reviewer?: Reviewer,
   ): Promise<DecisionResult> {
+    const named = currentChannel(channel) as DecisionChannel
     // One decision at a time, from reading the draft to removing it: of two decisions on the same draft,
     // whichever is queued first wins, and the second finds it already decided.
-    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel, reviewer))
+    return this.#exclusive(() => this.#decideNow(suggestionId, decision, named, reviewer))
   }
 
   async #decideNow(
@@ -2121,6 +2290,34 @@ export class CognitiveSession {
     const proposal = resolved
     const refusal = this.#contentRefusalOf(proposal)
     if (refusal !== undefined) return { ok: false, refusal }
+    // A draft made outside any scope may be filed in one by the person who decides it, and only by them, only
+    // now, and only into a scope they name: it is never put anywhere on its own, and a draft that has a scope
+    // keeps it.
+    const placed = decision.scope
+    if (placed !== undefined) {
+      const problem = scopeProblem(placed)
+      if (problem !== undefined) {
+        return { ok: false, refusal: { code: 'invalid_scope', message: problem } }
+      }
+      if (suggestion.scope !== undefined) {
+        return {
+          ok: false,
+          refusal: {
+            code: 'scope_fixed',
+            message: `suggestion "${suggestion.id}" was made in scope "${suggestion.scope}" and stays there`,
+          },
+        }
+      }
+      if (proposal.kind !== 'node' && proposal.kind !== 'claim') {
+        return {
+          ok: false,
+          refusal: {
+            code: 'invalid_scope',
+            message: `a ${proposal.kind} suggestion is not filed in a scope; only a node or a claim is`,
+          },
+        }
+      }
+    }
 
     // Recorded before anything is committed, with the ids it will create, so a crash at any point after this
     // leaves enough behind to tell whether the decision landed.
@@ -2132,6 +2329,7 @@ export class CognitiveSession {
       proposal,
       planned: this.#plan(proposal, operationId),
       channel,
+      ...(placed === undefined ? {} : { scope: placed.trim() }),
       owner: this.#actor,
       ...(reviewer === undefined ? {} : { reviewer }),
     }
@@ -2250,6 +2448,8 @@ export class CognitiveSession {
   #commitDecided(resolution: Resolution, suggestion: Suggestion): Committed | MutationRefusal {
     const { proposal, planned } = resolution
     const confirmed = resolution.outcome === 'accepted'
+    // Where it is filed: the scope it was made in, or, for a draft made in none, the one the person chose.
+    const filed = suggestion.scope ?? resolution.scope
     // A distilled suggestion's basis goes with it, so an agent's reading is never recorded as the learner's words.
     const source = `suggestion ${suggestion.id} from ${suggestion.proposedBy}, ${resolution.outcome} via ${resolution.channel} (${resolution.operationId})${suggestion.basis === undefined ? '' : `, basis ${suggestion.basis}`}`
     switch (proposal.kind) {
@@ -2290,7 +2490,7 @@ export class CognitiveSession {
           tier: this.#tierOf(proposal.nodeType),
           source,
           // The scope the suggestion was made in, kept whoever decides it and however it is worded then.
-          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
+          ...(filed === undefined ? {} : { scope: filed }),
           // The text follows the label as decided, so a learner who puts it in their own words is not left
           // with the distiller's wording underneath.
           properties: {
@@ -2308,7 +2508,7 @@ export class CognitiveSession {
           type: NODE.claim,
           tier: 'thought',
           source,
-          ...(suggestion.scope === undefined ? {} : { scope: suggestion.scope }),
+          ...(filed === undefined ? {} : { scope: filed }),
           properties: provenanceOf(suggestion),
         })
         // An edge can only be checked once the claim exists. If one is refused, the claim is revoked, which
@@ -3043,10 +3243,25 @@ export class CognitiveSession {
 /** Where a human made a decision, recorded with whatever it committed. */
 export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
 
+/**
+ * A channel name an earlier build wrote. Still taken as input, and written as the name it now has.
+ *
+ * @deprecated Use `'review'`.
+ */
+export type LegacyDecisionChannel = 'learn-review'
+
+/**
+ * The current name of a decision channel, for a record written under an earlier name or a filter that uses one.
+ * Records on disk are never rewritten, so every comparison of a channel goes through this.
+ */
+export function currentChannel(channel: string): string {
+  return channel === 'learn-review' ? 'review' : channel
+}
+
 /** What a human decided about a pending suggestion. */
 export type Decision =
-  | { readonly action: 'accept' }
-  | { readonly action: 'modify'; readonly proposal: Proposal }
+  | { readonly action: 'accept'; readonly scope?: string }
+  | { readonly action: 'modify'; readonly proposal: Proposal; readonly scope?: string }
   | { readonly action: 'dismiss' }
 
 /** What a decision committed: one state event, one edge, or one claim node. */
@@ -3318,14 +3533,40 @@ function normalized(proposal: Proposal): Proposal {
 
 /** The part of the durable store a session uses: writing, and releasing the graph when it is done. */
 interface Store {
+  companion(name: string): SceneLog
   save(state?: unknown): Promise<void>
   close(): Promise<void>
   /** Copies the graph as last saved, in its own format. */
   backUp(target: string): Promise<void>
 }
 
+/** A named log kept beside the graph. Each line is one record; `replace` swaps all of them at once. */
+export interface SceneLog {
+  read(): Promise<readonly string[]>
+  append(body: string): Promise<void>
+  replace(bodies: readonly string[]): Promise<void>
+}
+
+function memoryLog(): SceneLog {
+  let lines: readonly string[] = []
+  return {
+    read: () => Promise.resolve(lines),
+    append: (body) => {
+      lines = [...lines, body]
+      return Promise.resolve()
+    },
+    replace: (bodies) => {
+      lines = [...bodies]
+      return Promise.resolve()
+    },
+  }
+}
+
 /** Turns the retrieval's recorded contributions into something a view can render. */
-function toRankedView(context: RelevantContext): readonly RankedView[] {
+function toRankedView(
+  context: RelevantContext,
+  isKept: (nodeId: string) => boolean,
+): readonly RankedView[] {
   const ranked: readonly RankedEntry[] = context.ranked ?? []
   const byId = new Map(context.nodes.map((node) => [node.id, node]))
 
@@ -3350,6 +3591,7 @@ function toRankedView(context: RelevantContext): readonly RankedView[] {
       type: node?.type ?? 'unknown',
       score: entry.score,
       origin: entry.origin,
+      kept: isKept(entry.nodeId),
       matchedTerms: entry.matchedTerms,
       reasons,
     }
@@ -3391,7 +3633,7 @@ function explainSignal(signal: string, value: number, matchedTerms: readonly str
         : 'is connected to what you asked about'
     case 'cognitive':
       return value === 0
-        ? 'you have not recorded anything about it'
+        ? 'you have recorded no level of understanding for it'
         : 'your own recorded understanding makes it worth resurfacing'
     case 'recency':
       return 'recently added or changed'
@@ -3466,8 +3708,20 @@ function defaultAttentionFor(
   return settled ? 'settled' : 'shaky'
 }
 
+/** A node's state as sorted `{ id, level }` pairs, the shape an evaluation policy reads. */
+function dimensionLevels(state: DimensionIndex): { readonly id: string; readonly level: string }[] {
+  return [...state]
+    .map(([id, value]) => ({ id, level: value.level ?? String(value.scalar ?? '?') }))
+    .sort((left, right) => (left.id < right.id ? -1 : 1))
+}
+
 /** One readable line, so every surface does not compose the same sentence differently. */
 function progressLine(touched: number, settled: number): string {
+  if (touched === 0) return 'you have recorded no understanding yet'
+  return `you have recorded understanding of ${touched} ${touched === 1 ? 'node' : 'nodes'}; ${settled} can be built on`
+}
+
+function progressLineZh(touched: number, settled: number): string {
   if (touched === 0) return '你还没有记录过任何理解'
   return `你为 ${touched} 个节点记录过理解，其中 ${settled} 个已经可以往下建`
 }

@@ -1,0 +1,22 @@
+{
+  "name": "@episteme/hypothesis",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal non-learning scene on Episteme: research hypotheses, weighed and revisited.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/application": "workspace:*",
+    "@episteme/core": "workspace:*",
+    "@episteme/service": "workspace:*"
+  }
+}

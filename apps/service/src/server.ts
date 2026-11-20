@@ -1,11 +1,18 @@
 import { getRequestListener } from '@hono/node-server'
+import { existsSync } from 'node:fs'
 import { createServer, type Server, type ServerResponse } from 'node:http'
+import type { Socket } from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
-import { createMcpEndpoint } from '@episteme/mcp'
+import { CognitiveSession, UnreadableGraphError } from '@episteme/application'
+import { createMcpEndpoint, type McpActivity } from '@episteme/mcp'
 import { API_PREFIX, createApiApp } from './api.js'
 import { boundaryRefusal } from './boundary.js'
+import {
+  embeddingAdapter,
+  embeddingsFromEnvironment,
+  type EmbeddingSettings,
+} from './embeddings.js'
 import {
   accessRefusal,
   BrowserSessions,
@@ -37,6 +44,16 @@ export interface ServiceOptions {
   readonly trustElicitation?: boolean
   /** Allow people to publish (ADR 0014). Off by default; the graph is copied aside before its first one. */
   readonly sharing?: boolean
+  /**
+   * Told of each MCP message that arrives, after the boundary and authorization have let it through: which client
+   * says it sent it, and what it asked. For showing the person which agents use the service. Never decides anything.
+   */
+  readonly onMcpActivity?: (activity: McpActivity) => void
+  /**
+   * The embedding endpoint for semantic recall. Without it, `EPISTEME_EMBEDDINGS_*` decides; `false` turns it off
+   * whatever the environment says. Off unless configured.
+   */
+  readonly embeddings?: EmbeddingSettings | false
 }
 
 export interface EpistemeService {
@@ -57,6 +74,8 @@ export interface EpistemeService {
    * in the person's name, so it is printed for them and never logged.
    */
   readonly humanToken: string | undefined
+  /** The embedding endpoint semantic recall uses, without its key; `undefined` when it is off. */
+  readonly embeddings: Omit<EmbeddingSettings, 'apiKey' | 'timeoutMs'> | undefined
   close(): Promise<void>
 }
 
@@ -90,21 +109,40 @@ function fail(response: ServerResponse, error: unknown): void {
  */
 export async function startService(options: ServiceOptions): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
+  // Graphs used to be JSONL beside this same name. Opening would start a new, empty one and read as lost work.
+  const older = graph.replace(/\.db$/, '.jsonl')
+  if (older !== graph && !existsSync(graph) && existsSync(older)) {
+    throw new UnreadableGraphError(
+      `found the older graph "${older}" and nothing at "${graph}". This build does not read JSONL and did not change it; keep it, and name another file to start a new graph. "graph convert" carries it into a new file.`,
+    )
+  }
   const profile = options.profile
   if (profile === undefined) throw new Error('startService requires a scene profile')
   // Checked before the graph is opened, so a profile or deployment that cannot be served never takes the
   // graph's lock.
   assertSceneRoutes(profile.routes ?? [])
   const people = await peopleFor(options)
+  // A malformed setting is refused here, before the graph is opened, rather than on the first recall.
+  const embeddings =
+    options.embeddings === undefined ? embeddingsFromEnvironment() : options.embeddings
   const session = await CognitiveSession.open({
     filePath: graph,
     scene: profile.scene,
     sharing: options.sharing === true,
+    ...(embeddings === undefined || embeddings === false
+      ? {}
+      : { adapter: embeddingAdapter(embeddings) }),
   })
   // From here the session owns the graph. Every path out of this function either hands that ownership to the
   // returned service or releases it, so a failed start cannot leave the graph locked.
   try {
-    return await serve(session, graph, profile, options, people)
+    return await serve(
+      session,
+      graph,
+      profile,
+      { ...options, embeddings: embeddings ?? false },
+      people,
+    )
   } catch (error) {
     await session.close()
     throw error
@@ -172,7 +210,10 @@ async function serve(
   const local = people === undefined ? Directory.single(session.actorId, 'you') : undefined
   const directory = people ?? local!.directory
   const localPerson = local === undefined ? undefined : directory.resolve(local.token)
-  const browsers = new BrowserSessions()
+  const browsers = new BrowserSessions({
+    secure:
+      options.publicOrigin !== undefined && new URL(options.publicOrigin).protocol === 'https:',
+  })
   const { seeded } = await seedTopicIfPresent(session, profile.seed)
   // The same session behind both protocols, so an agent reads and proposes against exactly the graph a
   // Workspace shows.
@@ -183,6 +224,7 @@ async function serve(
     elicitationDecisions: mode === 'local' || options.trustElicitation === true,
     ...(publicHost === undefined ? {} : { allowedHostnames: [publicHost] }),
     ...(options.publicOrigin === undefined ? {} : { allowedOrigins: [options.publicOrigin] }),
+    ...(options.onMcpActivity === undefined ? {} : { onActivity: options.onMcpActivity }),
   })
   const api = createApiApp({
     session,
@@ -202,6 +244,9 @@ async function serve(
   // Known once the socket is bound. No request can arrive before then.
   let boundPort = 0
   let origin = ''
+
+  // A browser preconnect asks nothing, and Node 22 keeps it open past the headers timeout.
+  const unasked = new Set<Socket>()
 
   const server: Server = createServer((request, response) => {
     // One boundary for everything served: the Workspace, the API and the MCP endpoint alike.
@@ -326,6 +371,11 @@ async function serve(
 
   const port = options.port ?? 4321
   const host = options.host ?? '127.0.0.1'
+  server.on('connection', (socket) => {
+    unasked.add(socket)
+    socket.once('close', () => unasked.delete(socket))
+  })
+  server.on('request', (request) => unasked.delete(request.socket))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, host, () => {
@@ -347,6 +397,14 @@ async function serve(
     graph,
     mode,
     humanToken: local?.token,
+    embeddings:
+      options.embeddings === undefined || options.embeddings === false
+        ? undefined
+        : {
+            model: options.embeddings.model,
+            protocol: options.embeddings.protocol,
+            baseUrl: options.embeddings.baseUrl,
+          },
     // In-flight agent exchanges first, since an open stream would hold the socket open; then the socket, so no
     // request arrives at a session that is closing; then the session, which writes what is pending and gives
     // up the graph.
@@ -354,6 +412,8 @@ async function serve(
       await mcp.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
+        server.closeIdleConnections()
+        for (const socket of unasked) socket.destroy()
       })
       await session.close()
     },

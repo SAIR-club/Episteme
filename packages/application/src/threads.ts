@@ -32,6 +32,11 @@ export interface Turn {
   readonly text: string
   /** Who sent it: the agent that relayed the turn, or the person. */
   readonly by: string
+  /**
+   * The credential the words arrived with (ADR 0021): the person's own, or an agent's, which is a relay whatever
+   * `speaker` says. Absent means nobody knows: a turn from before this was kept, or one sent with no credential.
+   */
+  readonly writtenWith?: 'person' | 'agent'
   readonly at: EpochMillis
 }
 

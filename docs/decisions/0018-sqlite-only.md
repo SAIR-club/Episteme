@@ -11,11 +11,14 @@ killed process leaves behind. It also left a graph's companion stores (drafts, s
 records) as four JSONL files beside the graph, outside the database's transactions. Copying a graph had to coordinate
 five files, which is what the `.copying` record, its file journal and its recovery existed for.
 
-Episteme has no deployed graphs to carry over, so keeping JSONL for compatibility buys nothing.
+Keeping JSONL as a live backend for compatibility costs more than it buys. But older graphs exist wherever an earlier
+build was used, and the only copy of someone's understanding must not be stranded by an upgrade: reading them is
+dropped, carrying them over is not.
 
 ## Decision
 
-**A graph is one SQLite file. JSONL is removed, with no compatibility path and no importer.**
+**A graph is one SQLite file. JSONL is removed as a backend. An older graph is carried into a new file by a one-way
+converter that only reads it.**
 
 1. **One backend.** `@episteme/storage-sqlite` is the only durable storage. `@episteme/storage-local` is
    removed. What ADR 0017 says about ownership (`locking_mode=EXCLUSIVE`, refused at once with
@@ -26,12 +29,18 @@ Episteme has no deployed graphs to carry over, so keeping JSONL for compatibilit
    files held. They share the graph's connection, so they have the graph's single owner by construction, and an
    append or a replacement is one durable transaction.
 3. **No copying machinery.** `copyGraph`, `graph import`, `graph export` and the `.copying` record are removed:
-   there is no second format to move between. A copy of a graph, everything in it, is SQLite's online backup
+   there is no second live format to move between. A copy of a graph, everything in it, is SQLite's online backup
    (`backUp`), which the session already takes before the first publication.
-4. **A new file format.** The format version (`user_version`) is 2. A file in any other format is refused, not
-   migrated: the only format-1 files were written by ADR 0017's backend, which nothing has used.
+4. **A new file format.** The format version (`user_version`) is 2. A file in any other format is refused, never
+   migrated in place, and comes out of the refusal as it went in: a look at a file with a log beside it happens on a
+   private copy, because opening it where it is would fold the log in.
 5. **Node 22 or later.** Node 20 left maintenance in April 2026. Dropping it lets the project use `better-sqlite3`
    13, which requires Node 22.
+
+6. **`graph convert <older> <new>`.** JSONL and format 1 graphs, with their companion files, are copied into a new
+   format 2 file, bodies as they are. The older files are never opened in place and are fingerprinted before and
+   after; the target must not exist and is built beside itself, checked against the source and opened by a session
+   before it is linked into place. There is no conversion back and no merging into an existing graph.
 
 ## Not in this decision
 

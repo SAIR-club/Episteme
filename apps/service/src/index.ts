@@ -9,7 +9,7 @@ export type {
   SeedTopic,
   SeedNode,
 } from './profile.js'
-export type { SceneTool, SceneToolAnswer, SceneToolContext } from '@episteme/mcp'
+export type { McpActivity, SceneTool, SceneToolAnswer, SceneToolContext } from '@episteme/mcp'
 export { boundaryRefusal } from './boundary.js'
 export {
   accessRefusal,
@@ -23,3 +23,9 @@ export {
 } from './identity.js'
 export { API_PREFIX, readSettled } from './api.js'
 export { workspaceFile } from './workspace.js'
+export {
+  describeEmbeddings,
+  embeddingsFromEnvironment,
+  EmbeddingSettingsError,
+  type EmbeddingSettings,
+} from './embeddings.js'

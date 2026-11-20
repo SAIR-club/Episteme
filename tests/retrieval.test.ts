@@ -202,6 +202,29 @@ describe('learner context retrieval', () => {
     expect(forAgent.summary).toBe('')
   })
 
+  it('judges settled by the rule the caller passes, when it passes one', async () => {
+    const context = createFixture()
+    seed(context)
+    context.log.commit({
+      target: asId<NodeId>('claim_order'),
+      actorId: context.humanId,
+      dimensions: dimensions([DIMENSION.confidence, level('high')]),
+      source: 'session:1',
+    })
+
+    const read = async (isSettled?: (state: ReadonlyMap<string, unknown>) => boolean) =>
+      (
+        await retrieveRelevantContext(context.graph, context.log, CLAIM_LABEL, {
+          actorId: context.humanId,
+          depth: 1,
+          ...(isSettled === undefined ? {} : { isSettled }),
+        })
+      ).known.find((entry) => entry.nodeId === 'claim_order')?.settled
+
+    expect(await read()).toBe(true)
+    expect(await read((state) => state.has(DIMENSION.articulation))).toBe(false)
+  })
+
   it('reports nothing recorded when the learner has no state, and never invents it', async () => {
     const context = createFixture()
     seed(context)

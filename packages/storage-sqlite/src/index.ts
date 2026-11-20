@@ -1,10 +1,13 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EpistemeError, type EventLogState } from '@episteme/core'
 import Database from 'better-sqlite3'
+import { hasLog, readThroughCopy } from './private-copy.js'
 import { RecordStorage, deserializeRecord, serializeRecord, type LoadedState } from './records.js'
 
+export * from './convert.js'
 export * from './records.js'
+export * from './portable.js'
 
 /**
  * The layout of the file, kept in SQLite's own `user_version`. 0 is a file this backend has never written, which it
@@ -28,6 +31,14 @@ export class GraphLockedError extends Error {
     )
     this.name = 'GraphLockedError'
     this.graphPath = graphPath
+  }
+}
+
+/** A file this build will not open as a graph: an older graph, or something else. It was left as it was. */
+export class UnreadableGraphError extends EpistemeError {
+  constructor(message: string) {
+    super('guard_rejected', message)
+    this.name = 'UnreadableGraphError'
   }
 }
 
@@ -75,9 +86,11 @@ export class SqliteStorageAdapter extends RecordStorage {
 
   #openNow(): LoadedState {
     mkdirSync(dirname(this.#filePath), { recursive: true })
+    this.#lookBeforeOpening()
     // `timeout: 0`: a held graph is refused at once rather than waited for.
     const db = new Database(this.#filePath, { timeout: 0 })
     try {
+      this.#refuseWhatIsNotAGraph(db)
       this.#take(db)
       const rows = db.prepare('SELECT seq, body FROM records ORDER BY seq').all() as {
         seq: number
@@ -151,6 +164,41 @@ export class SqliteStorageAdapter extends RecordStorage {
       )
     }
     return this.#db
+  }
+
+  /**
+   * A file with a log beside it can be changed by being opened, so the look happens on a copy.
+   */
+  #lookBeforeOpening(): void {
+    if (!existsSync(this.#filePath) || !hasLog(this.#filePath)) return
+    readThroughCopy(this.#filePath, (db) => {
+      this.#refuseWhatIsNotAGraph(db)
+    })
+  }
+
+  /**
+   * Looks before anything writes: taking the file changes its header, and laying it out adds tables. A file that is
+   * not ours, or is a graph from another build, must come out of a refusal byte for byte as it went in.
+   */
+  #refuseWhatIsNotAGraph(db: Database.Database): void {
+    let version: number
+    let tables: number
+    try {
+      version = db.pragma('user_version', { simple: true }) as number
+      tables = (db.prepare('SELECT COUNT(*) AS n FROM sqlite_master').get() as { n: number }).n
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'SQLITE_NOTADB') throw error
+      throw new UnreadableGraphError(
+        `storage "${this.#filePath}" is not a database, so not an Episteme graph. A JSONL graph from an older build is not read by this one; nothing was changed. "graph convert" carries an older graph into a new file.`,
+      )
+    }
+    if (version === 0 ? tables > 0 : version !== SQLITE_FORMAT_VERSION) {
+      throw new UnreadableGraphError(
+        version === 0
+          ? `storage "${this.#filePath}" is a SQLite file of something else, not an Episteme graph; nothing was changed`
+          : `storage "${this.#filePath}" has format version ${version}; this build reads version ${SQLITE_FORMAT_VERSION}; nothing was changed. "graph convert" carries an older graph into a new file.`,
+      )
+    }
   }
 
   /** Locks the file for this connection alone and lays it out if it is new. */

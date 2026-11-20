@@ -153,6 +153,8 @@ export interface Resolution {
   /** Ids chosen before committing, so the graph can be asked whether they are there. */
   readonly planned: { readonly nodeId?: string; readonly edgeIds: readonly string[] }
   readonly channel: string
+  /** The scope the person filed a draft in when deciding it, for a draft that was made outside any scope. */
+  readonly scope?: string
   /** Who decided, kept so the review record written when the decision lands can name them. */
   readonly reviewer?: Reviewer
   /** The person whose draft it decides; see `ownerOf`. */

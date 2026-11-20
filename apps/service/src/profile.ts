@@ -1,4 +1,4 @@
-import type { SceneView, SessionScene } from '@episteme/application'
+import type { SceneView, SceneWrites, SessionScene } from '@episteme/application'
 import type { SceneTool } from '@episteme/mcp'
 
 /**
@@ -39,11 +39,29 @@ export interface SceneProfile {
   readonly mcpTools?: readonly SceneTool[]
   /** Routes the scene adds to the REST API, served under `/api/v1/scene/<name>`. */
   readonly routes?: readonly SceneRoute[]
+  /**
+   * The paths of the `POST` routes an agent may also use, because all they do is add something for the person to look
+   * at, in nobody's voice (ADR 0020). Every other `POST` needs the person's own credential.
+   */
+  readonly proposingRoutes?: readonly string[]
+  /**
+   * The paths of the `GET` routes only the person may read, because they show what is on their computer outside the
+   * graph, such as their agents' settings and conversation records. Every other `GET` reads like the rest of the API.
+   */
+  readonly privateRoutes?: readonly string[]
+  /**
+   * Checks a scope a person names when filing a candidate that was made outside any scope, before anything is
+   * decided. A scene answers only for the scopes it owns, such as the workbench for `workbench:<space>`, and throws a
+   * refusal for one that names nothing this person can reach. Any other scope it leaves to the engine.
+   */
+  readonly checkFiling?: (view: SceneView, scope: string) => void
 }
 
 /** What a scene's route receives: a view of the session that cannot decide or write, and the request. */
 export interface SceneRouteContext {
   readonly view: SceneView
+  /** The caller's conversation and the scene's own logs. Never the graph. */
+  readonly writes: SceneWrites
   /** The JSON body of a `POST`, or an empty object. */
   readonly body: Readonly<Record<string, unknown>>
   readonly query: URLSearchParams
@@ -60,6 +78,8 @@ export interface SceneRoute {
   readonly method: 'GET' | 'POST'
   /** Starts with `/`, for example `/projects`. */
   readonly path: string
+  /** The largest JSON body it accepts, when the default 1 MB is not enough, as for an upload. */
+  readonly maxBodyBytes?: number
   readonly handle: (
     context: SceneRouteContext,
   ) => Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>
