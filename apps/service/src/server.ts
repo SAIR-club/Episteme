@@ -341,6 +341,7 @@ async function serve(
       await mcp.close()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)))
+        server.closeIdleConnections()
       })
       await session.close()
     },
