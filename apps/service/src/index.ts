@@ -23,3 +23,9 @@ export {
 } from './identity.js'
 export { API_PREFIX, readSettled } from './api.js'
 export { workspaceFile } from './workspace.js'
+export {
+  describeEmbeddings,
+  embeddingsFromEnvironment,
+  EmbeddingSettingsError,
+  type EmbeddingSettings,
+} from './embeddings.js'
