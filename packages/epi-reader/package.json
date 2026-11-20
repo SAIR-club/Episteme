@@ -1,0 +1,25 @@
+{
+  "name": "@episteme/epi-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A lightweight reader for .epi knowledge files: typed queries over nodes, relations, understanding state, ontology and visible revision clues. Depends only on @episteme/epi-format — no Core, no service, no storage.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@episteme/epi-format": "workspace:*"
+  }
+}
