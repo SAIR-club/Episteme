@@ -75,6 +75,7 @@ export {
   EdgeTypeRegistry,
   StateDimensionRegistry,
   TagNamespaceRegistry,
+  Registry,
 } from './graph/registry.js'
 export type {
   NodeTypeDefinition,
@@ -83,8 +84,18 @@ export type {
   StateDimensionDefinition,
   TagNamespaceDefinition,
 } from './graph/definitions.js'
+export type {
+  StreamDefinition,
+  ProjectionRuleDefinition,
+  RetrievalWeightsDefinition,
+} from './graph/registry.js'
 
-export { createRegistries, defineDomainPack, applyDomainPacks } from './graph/registries.js'
+export {
+  createRegistries,
+  defineDomainPack,
+  applyDomainPacks,
+  CANONICAL_STREAMS,
+} from './graph/registries.js'
 export type {
   Registries,
   DomainPack,

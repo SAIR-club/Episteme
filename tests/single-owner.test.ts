@@ -1,8 +1,9 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { GraphLockedError, CognitiveSession } from '@episteme/application'
-import { startService } from '@episteme/service'
+import { GraphLockedError } from '@episteme/application'
 import { openEpisteme } from '@episteme/sdk'
 import { openSqliteStorage } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -98,38 +99,38 @@ describe('the storage adapter', () => {
 
 describe('the surfaces', () => {
   it('lets one session own a graph at a time, and releases it on close', async () => {
-    const first = await CognitiveSession.open({ filePath })
-    await expect(CognitiveSession.open({ filePath })).rejects.toBeInstanceOf(GraphLockedError)
+    const first = await openTestSession({ filePath })
+    await expect(openTestSession({ filePath })).rejects.toBeInstanceOf(GraphLockedError)
 
     await first.close()
-    const second = await CognitiveSession.open({ filePath })
+    const second = await openTestSession({ filePath })
     await second.close()
   })
 
   it('will not start a web surface over a graph another surface owns', async () => {
-    const session = await CognitiveSession.open({ filePath })
-    await expect(startService({ port: 0, graph: filePath })).rejects.toBeInstanceOf(
+    const session = await openTestSession({ filePath })
+    await expect(startTestService({ port: 0, graph: filePath })).rejects.toBeInstanceOf(
       GraphLockedError,
     )
     await session.close()
   })
 
   it('gives the graph back when the web surface stops', async () => {
-    const server = await startService({ port: 0, graph: filePath })
+    const server = await startTestService({ port: 0, graph: filePath })
     await server.close()
 
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     await session.close()
   })
 
   it('gives the graph back when the web surface cannot start', async () => {
-    const running = await startService({ port: 0, graph: join(directory, 'running.db') })
+    const running = await startTestService({ port: 0, graph: join(directory, 'running.db') })
 
     // The port is taken, so this start fails after its session already owned the file.
-    await expect(startService({ port: running.port, graph: filePath })).rejects.toThrow(
+    await expect(startTestService({ port: running.port, graph: filePath })).rejects.toThrow(
       /EADDRINUSE/,
     )
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     await session.close()
 
     await running.close()

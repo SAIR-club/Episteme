@@ -13,7 +13,7 @@ import {
   type Caller,
   type DeploymentMode,
 } from './identity.js'
-import { assertSceneRoutes, learnProfile, type SceneProfile, type SeedTopic } from './profile.js'
+import { assertSceneRoutes, type SceneProfile, type SeedTopic } from './profile.js'
 import { noWorkspaceNotice, serveWorkspace } from './workspace.js'
 
 export interface ServiceOptions {
@@ -21,8 +21,8 @@ export interface ServiceOptions {
   readonly graph?: string
   readonly port?: number
   readonly host?: string
-  /** The scene the service is composed with. Defaults to the deprecated built-in Learn profile. */
-  readonly profile?: SceneProfile
+  /** The scene the service is composed with. Required: the infrastructure ships no default scene. */
+  readonly profile: SceneProfile
   /** A directory holding a prebuilt Workspace to serve at `/`. Without one, `/` says how to connect. */
   readonly workspace?: string
   /** `local` (the default) serves one person on loopback; `shared` serves the people in `users` (ADR 0012). */
@@ -68,9 +68,10 @@ const MCP_PATH = '/mcp'
  * The session is opened and seeded *before* the socket opens, so the first request cannot race the seeding
  * and see an empty graph.
  */
-export async function startService(options: ServiceOptions = {}): Promise<EpistemeService> {
+export async function startService(options: ServiceOptions): Promise<EpistemeService> {
   const graph = options.graph ?? process.env.EPISTEME_FILE ?? DEFAULT_GRAPH
-  const profile = options.profile ?? learnProfile()
+  const profile = options.profile
+  if (profile === undefined) throw new Error('startService requires a scene profile')
   // Checked before the graph is opened, so a profile or deployment that cannot be served never takes the
   // graph's lock.
   assertSceneRoutes(profile.routes ?? [])

@@ -1,7 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Reviewer } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { type Reviewer } from '@episteme/application'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -32,7 +34,7 @@ async function proposeConfidence(level: string): Promise<string> {
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-reviews-'))
   filePath = join(directory, 'graph.db')
-  session = await CognitiveSession.open({ filePath })
+  session = await openTestSession({ filePath })
   await session.addNode({ id: 'q_order', label: 'Why order?', kind: 'question' })
 })
 
@@ -71,7 +73,7 @@ describe('review records', () => {
     const events = session.eventCount
     await session.close()
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.reviews()).toMatchObject([{ suggestionId: dismissed, outcome: 'dismissed' }])
     expect(session.eventCount).toBe(events)
   })

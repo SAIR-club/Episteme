@@ -9,14 +9,15 @@ page included, is a client of it.
 ## Starting it
 
 ```bash
-pnpm --filter @episteme/service serve -- --graph ~/.episteme/learn.db
+pnpm --filter @episteme/service serve -- --scene ./my-scene.js --graph ~/.episteme/learn.db
 ```
 
 | option                  | meaning                                                                                            |
 | ----------------------- | -------------------------------------------------------------------------------------------------- |
 | `-g, --graph <path>`    | the graph to own, a SQLite file (`--file`, `-f` and `EPISTEME_FILE` also work); default `~/.episteme/learn.db` |
+| `--scene <path>`        | a module exporting `profile`; required, since Episteme ships no default scene (ADR 0019)          |
 | `-p, --port <port>`     | the port on `127.0.0.1` (`PORT` also works); default `4321`                                        |
-| `-t, --topic <path>`    | a topic file to seed on first start, instead of the demonstration topic                            |
+| `-t, --topic <path>`    | a topic file to seed on first start, overriding `profile.seed`                                    |
 | `--blank`               | seed nothing                                                                                       |
 | `-w, --workspace <dir>` | serve a prebuilt Workspace from this directory at `/`                                              |
 | `--mode shared`         | serve the people in a user file, over the network, behind an HTTPS proxy (ADR 0012)                |
@@ -27,8 +28,8 @@ pnpm --filter @episteme/service serve -- --graph ~/.episteme/learn.db
 
 It prints the MCP address, the REST address, the graph it owns, and the Workspace address when it serves one.
 In local mode it also prints the person's token for this run (see _Trust_).
-While it runs it holds the graph's lock, so a second service or the Learn terminal on the same graph is refused
-with the holder's process id.
+While it runs it holds the graph's lock, so a second service on the same graph is refused with the holder's
+process id.
 
 `startService(options)` starts the same service from code, and `close()` releases the graph.
 

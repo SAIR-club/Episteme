@@ -1,7 +1,8 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Suggestion } from '@episteme/application'
+import type { Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { storedText } from './stored.js'
 import { asId, type DimensionId, type NodeId } from '@episteme/core'
@@ -40,7 +41,7 @@ afterEach(async () => {
 
 describe('the distillation loop', () => {
   it('takes a real fragment through distillation and review into the graph, and keeps only what was decided', async () => {
-    let session = await CognitiveSession.open({ filePath })
+    let session = await openTestSession({ filePath })
     await seedTopic(session)
     const nodesBefore = session.listNodes().length
 
@@ -120,7 +121,7 @@ describe('the distillation loop', () => {
     await session.close()
 
     // ── After a restart ──
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
 
     // The nodes: what was accepted, with which suggestion and which words it came from.
     for (const [id, suggestion, text] of [
@@ -171,7 +172,7 @@ describe('the distillation loop', () => {
   })
 
   it('records an accepted change of understanding as the learner’s, confirmed by them', async () => {
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     await seedTopic(session)
     const outcome = await session.distill({ text: FRAGMENT })
     if (!outcome.ok) throw new Error(outcome.refusal.message)

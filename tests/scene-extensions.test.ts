@@ -1,13 +1,12 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  CognitiveSession,
   SessionRefusal,
-  defaultDistillationPolicy,
-  defaultSessionPack,
   recordableDimensions,
   sceneViewOf,
+  type CognitiveSession,
   type SceneView,
   type SessionScene,
 } from '@episteme/application'
@@ -27,7 +26,9 @@ import {
   type SceneTool,
 } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { testPack } from './fixtures.js'
 import { mcpWire, type McpWire } from './mcp-wire.js'
+import { testScene } from './test-scene.js'
 
 /**
  * The application takes its scene from the profile, and a scene can add MCP tools and REST routes that never
@@ -45,10 +46,10 @@ const STANCE: StateDimensionDefinition = {
 
 const DEBATE_SCENE: SessionScene = {
   name: 'debate',
-  // The session still writes the node and edge types of the default pack, so the scene composes with it and
+  // The session still writes the node and edge types of the test pack, so the scene composes with it and
   // adds its own dimension. Which dimensions are recordable is the scene's alone.
-  packs: [defaultSessionPack, defineDomainPack('debate', { stateDimensions: [STANCE] })],
-  distillationPolicy: defaultDistillationPolicy,
+  packs: [testPack, defineDomainPack('debate', { stateDimensions: [STANCE] })],
+  distillationPolicy: testScene.distillationPolicy,
   recordableDimensions: recordableDimensions(
     [STANCE],
     [
@@ -334,7 +335,7 @@ describe('what a view reads of two people on one graph', () => {
 
   beforeEach(async () => {
     shared = await mkdtemp(join(tmpdir(), 'episteme-scene-view-'))
-    owner = await CognitiveSession.open({ filePath: join(shared, 'shared.db'), sharing: true })
+    owner = await openTestSession({ filePath: join(shared, 'shared.db'), sharing: true })
     lin = owner.forActor('actor_human_lin', 'Lin')
     wei = owner.forActor('actor_human_wei', 'Wei')
   })
@@ -595,7 +596,7 @@ describe('a scene with custom evaluationPolicy', () => {
       evaluationPolicy: customPolicy,
     }
 
-    const session = await CognitiveSession.open({ scene: sceneWithPolicy })
+    const session = await openTestSession({ scene: sceneWithPolicy })
     const claim = await session.addNode({ kind: 'claim', label: 'Custom evaluation node' })
     await session.record(claim.nodeId, { stance: 'agree' })
 

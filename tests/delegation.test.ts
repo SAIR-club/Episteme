@@ -1,8 +1,11 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Proposal } from '@episteme/application'
-import { startService, type EpistemeService } from '@episteme/service'
+import type { CognitiveSession } from '@episteme/application'
+import { type Proposal } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -24,7 +27,7 @@ const state = (target: string, dimension: string, level: string): Proposal => ({
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-delegation-'))
-  session = await CognitiveSession.open({ filePath: join(directory, 'graph.db'), sharing: true })
+  session = await openTestSession({ filePath: join(directory, 'graph.db'), sharing: true })
   await session.addNode({ id: 'q_order', label: 'Why order?', kind: 'question' })
 })
 
@@ -127,8 +130,8 @@ describe('over the service', () => {
 
   beforeEach(async () => {
     await session.close()
-    session = await CognitiveSession.open({})
-    service = await startService({ port: 0, graph: join(directory, 'served.db') })
+    session = await openTestSession({})
+    service = await startTestService({ port: 0, graph: join(directory, 'served.db') })
   })
 
   afterEach(async () => {

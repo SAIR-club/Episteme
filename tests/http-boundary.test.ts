@@ -1,8 +1,9 @@
+import { startTestService } from './test-service.js'
 import { request as httpRequest } from 'node:http'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -20,7 +21,7 @@ let server: EpistemeService
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-boundary-'))
-  server = await startService({ port: 0, graph: join(directory, 'learn.db') })
+  server = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

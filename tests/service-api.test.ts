@@ -1,7 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 let directory: string
@@ -66,7 +67,7 @@ function claimId(body: Json): string {
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-http-'))
   filePath = join(directory, 'learn.db')
-  server = await startService({ port: 0, graph: filePath })
+  server = await startTestService({ port: 0, graph: filePath })
 })
 
 afterEach(async () => {
@@ -82,7 +83,7 @@ describe('serving the interface', () => {
       join(workspaceDir, 'index.html'),
       '<!doctype html><title>Episteme</title><script>fetch("/api/v1/state")</script>',
     )
-    const served = await startService({
+    const served = await startTestService({
       port: 0,
       graph: join(directory, 'served.db'),
       workspace: workspaceDir,
