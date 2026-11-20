@@ -1,8 +1,4 @@
-import {
-  SessionRefusal,
-  recordableDimensions,
-  type SessionScene,
-} from '@episteme/application'
+import { SessionRefusal, recordableDimensions, type SessionScene } from '@episteme/application'
 import {
   asId,
   defineDomainPack,
@@ -45,7 +41,13 @@ const HYPOTHESIS_PACK = defineDomainPack('hypothesis', {
     { id: EVIDENCE, label: 'Evidence' },
   ],
   edgeTypes: [
-    { id: SUPPORTS, label: 'supports', category: 'epistemic', from: [CLAIM, EVIDENCE], to: [CLAIM] },
+    {
+      id: SUPPORTS,
+      label: 'supports',
+      category: 'epistemic',
+      from: [CLAIM, EVIDENCE],
+      to: [CLAIM],
+    },
     {
       id: CONTRADICTS,
       label: 'contradicts',
