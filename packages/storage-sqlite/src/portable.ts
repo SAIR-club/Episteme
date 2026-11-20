@@ -62,10 +62,6 @@ export class GraphExportError extends Error {
   }
 }
 
-function digestOf(records: GraphExport['records'], companions: GraphExport['companions']): string {
-  return createHash('sha256').update(JSON.stringify({ records, companions })).digest('hex')
-}
-
 /** How much an export gathers before writing it out. */
 const WRITE_CHUNK = 1 << 20
 
@@ -77,19 +73,11 @@ const WRITE_CHUNK = 1 << 20
  * exclusive transaction so they read the same graph. The file is byte for byte what serializing it whole would give,
  * which no single string could hold once a graph passes about half a gigabyte.
  */
-export function exportGraph(
+export async function exportGraph(
   graph: string,
   target: string,
   options: { readonly build: string; readonly now?: () => Date },
 ): Promise<GraphExportHead> {
-  return Promise.resolve().then(() => exportNow(graph, target, options))
-}
-
-function exportNow(
-  graph: string,
-  target: string,
-  options: { readonly build: string; readonly now?: () => Date },
-): GraphExportHead {
   if (!existsSync(graph)) throw new GraphExportError('no_graph', `no graph at "${graph}"`)
   if (existsSync(target)) {
     throw new GraphExportError('target_exists', `"${target}" already exists; it was not replaced`)
@@ -208,7 +196,10 @@ export async function readGraphExport(file: string): Promise<GraphExport> {
       `"${file}" was written in a format this build does not read`,
     )
   }
-  if (digestOf(parsed.records, parsed.companions) !== parsed.sha256) {
+  const digest = createHash('sha256')
+    .update(JSON.stringify({ records: parsed.records, companions: parsed.companions }))
+    .digest('hex')
+  if (digest !== parsed.sha256) {
     throw new GraphExportError('damaged', `"${file}" does not match its checksum`)
   }
   return parsed as GraphExport
