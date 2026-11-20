@@ -62,6 +62,12 @@ importers:
       '@episteme/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
+      '@hono/node-server':
+        specifier: ^2.1.8
+        version: 2.1.8(hono@4.13.18)
+      hono:
+        specifier: ^4.13.18
+        version: 4.13.18
 
   packages/agent:
     dependencies:
@@ -104,6 +110,14 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/epi-format: {}
+
+  packages/epi-reader:
+    dependencies:
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../epi-format
+
   packages/mcp:
     dependencies:
       '@episteme/application':
@@ -133,6 +147,12 @@ importers:
       '@episteme/core':
         specifier: workspace:*
         version: link:../core
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../epi-format
+      '@episteme/storage-memory':
+        specifier: workspace:*
+        version: link:../storage-memory
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -158,6 +178,12 @@ importers:
       '@episteme/embeddings-http':
         specifier: workspace:*
         version: link:../packages/embeddings-http
+      '@episteme/epi-format':
+        specifier: workspace:*
+        version: link:../packages/epi-format
+      '@episteme/epi-reader':
+        specifier: workspace:*
+        version: link:../packages/epi-reader
       '@episteme/hypothesis':
         specifier: workspace:*
         version: link:../apps/hypothesis
@@ -412,6 +438,12 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@hono/node-server@2.1.8':
+    resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4 || ^5.0.0-0
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -944,6 +976,13 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
+    engines: {node: '>=16.9.0'}
+
+  ieee754@1.2.1:
+    resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
 
   ignore@5.2.0:
     resolution: {integrity: sha512-CmxgYGiEPCLhfLnpPp1MoRmifwEIOgjcHXxOBjv7mY96c+eWScsOP9c112ZyLdWHi0FxHjI+4uVhKYp/gcdRmQ==}
@@ -1481,6 +1520,10 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
+  '@hono/node-server@2.1.8(hono@4.13.18)':
+    dependencies:
+      hono: 4.13.18
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -1994,6 +2037,10 @@ snapshots:
   globrex@0.1.2: {}
 
   has-flag@4.0.0: {}
+
+  hono@4.13.18: {}
+
+  ieee754@1.2.1: {}
 
   ignore@5.2.0: {}
 

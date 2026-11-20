@@ -11,6 +11,8 @@
     "@episteme/agent": "workspace:*",
     "@episteme/application": "workspace:*",
     "@episteme/core": "workspace:*",
+    "@episteme/epi-format": "workspace:*",
+    "@episteme/epi-reader": "workspace:*",
     "@episteme/distillation": "workspace:*",
     "@episteme/embeddings-http": "workspace:*",
     "@episteme/mcp": "workspace:*",

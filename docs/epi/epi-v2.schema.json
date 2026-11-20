@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SAIR-club/Episteme/main/docs/epi/epi-v2.schema.json",
+  "title": "Episteme Knowledge File (.epi) v2",
+  "description": "The .epi v2 container (ADR 0023). One file type, two named capabilities: 'archive' carries the v1 portable export byte-for-byte and can restore the whole graph; 'knowledge' carries an ontology manifest plus a derived, receipt-carrying knowledge projection that reads without Episteme. Checksums are sha256; section digests for archive follow the v1 JSON.stringify rule, knowledge and ontology digests cover the canonical JSON of the section without its own sha256 field.",
+  "type": "object",
+  "required": ["format", "version", "exportedAt", "source", "profiles"],
+  "properties": {
+    "format": { "const": "episteme-knowledge" },
+    "version": { "const": 2 },
+    "exportedAt": { "$ref": "#/$defs/isoUtc" },
+    "source": {
+      "type": "object",
+      "required": ["file", "build"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "The source database's file name only; nothing of its location travels."
+        },
+        "build": { "type": "string" }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["archive", "knowledge"] },
+      "description": "What the file claims. A claimed section that is absent, or a checksum that fails, is a refusal — never a warning."
+    },
+    "archive": {
+      "type": "object",
+      "required": ["history"],
+      "properties": {
+        "history": { "$ref": "#/$defs/v1GraphExport" }
+      }
+    },
+    "ontology": {
+      "type": "object",
+      "required": ["packs", "sha256"],
+      "properties": {
+        "packs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "revision", "definitions"],
+            "properties": {
+              "name": { "type": "string" },
+              "revision": {
+                "type": "string",
+                "description": "A writer-chosen hash identifying the registered definitions."
+              },
+              "definitions": {
+                "type": "object",
+                "properties": {
+                  "nodeTypes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["id"],
+                      "properties": { "id": { "type": "string" }, "label": { "type": "string" } }
+                    }
+                  },
+                  "edgeTypes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["id"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "label": { "type": "string" },
+                        "category": { "type": "string" },
+                        "from": { "type": "array", "items": { "type": "string" } },
+                        "to": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                  },
+                  "stateDimensions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["id", "kind"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "label": { "type": "string" },
+                        "kind": { "type": "string" },
+                        "ordered": { "type": "boolean" },
+                        "levels": { "type": "array", "items": { "type": "string" } },
+                        "legacyLevels": { "type": "array", "items": { "type": "string" } }
+                      }
+                    }
+                  },
+                  "tagNamespaces": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["namespace"],
+                      "properties": {
+                        "namespace": { "type": "string" },
+                        "label": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "sha256": { "type": "string", "description": "sha256 over the canonical JSON of packs." }
+      }
+    },
+    "knowledge": {
+      "type": "object",
+      "required": [
+        "derivedFrom",
+        "derivedAt",
+        "nodes",
+        "edges",
+        "branches",
+        "state",
+        "publications",
+        "sources",
+        "sha256"
+      ],
+      "properties": {
+        "derivedFrom": {
+          "type": "object",
+          "required": ["ontologySha256", "filter"],
+          "properties": {
+            "historySha256": {
+              "type": "string",
+              "description": "Present when the projection was derived from the history this same file carries; a mismatch is refused as projection_mismatch."
+            },
+            "ontologySha256": { "type": "string" },
+            "filter": {
+              "type": "object",
+              "description": "The projection filter that selected what the projection holds."
+            }
+          }
+        },
+        "derivedAt": { "$ref": "#/$defs/isoUtc" },
+        "nodes": { "type": "array", "items": { "type": "object", "required": ["id", "type"] } },
+        "edges": {
+          "type": "array",
+          "items": { "type": "object", "required": ["id", "from", "to", "type"] }
+        },
+        "branches": { "type": "array" },
+        "state": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["target", "actor", "dimensions"],
+            "properties": {
+              "target": { "type": "string" },
+              "actor": { "type": "string" },
+              "dimensions": { "type": "object" }
+            }
+          }
+        },
+        "publications": { "type": "array" },
+        "sources": { "type": "array" },
+        "sha256": {
+          "type": "string",
+          "description": "sha256 over the canonical JSON of the section without this field."
+        }
+      }
+    },
+    "views": {
+      "type": "array",
+      "description": "Derived presentation over the knowledge section: layout and organization only, never a second truth. A reader drops a broken entry rather than letting it gate the knowledge.",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "over", "layout"],
+        "properties": {
+          "name": { "type": "string" },
+          "kind": { "type": "string" },
+          "over": { "type": "object" },
+          "layout": { "type": "object" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "profiles": { "contains": { "const": "archive" } } } },
+      "then": { "required": ["archive"] }
+    },
+    {
+      "if": { "properties": { "profiles": { "contains": { "const": "knowledge" } } } },
+      "then": { "required": ["ontology", "knowledge"] }
+    }
+  ],
+  "$defs": {
+    "isoUtc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$"
+    },
+    "v1GraphExport": {
+      "type": "object",
+      "description": "The v1 portable export (ADR 0022), unchanged: what @episteme/storage-sqlite writes today. Its sha256 covers JSON.stringify({records, companions}).",
+      "required": [
+        "format",
+        "version",
+        "exportedAt",
+        "source",
+        "storedAs",
+        "sha256",
+        "counts",
+        "records",
+        "companions"
+      ],
+      "properties": {
+        "format": { "const": "episteme-graph-export" },
+        "version": { "const": 1 },
+        "exportedAt": { "$ref": "#/$defs/isoUtc" },
+        "source": {
+          "type": "object",
+          "required": ["file", "build"],
+          "properties": { "file": { "type": "string" }, "build": { "type": "string" } }
+        },
+        "storedAs": {
+          "type": "object",
+          "required": ["sqliteFormat", "recordSchema"],
+          "properties": {
+            "sqliteFormat": { "type": "number" },
+            "recordSchema": { "type": "number" }
+          }
+        },
+        "sha256": { "type": "string" },
+        "counts": {
+          "type": "object",
+          "required": ["records", "companions"],
+          "properties": {
+            "records": { "type": "number" },
+            "companions": { "type": "object", "additionalProperties": { "type": "number" } }
+          }
+        },
+        "records": { "type": "array", "items": { "type": "string" } },
+        "companions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "seq", "body"],
+            "properties": {
+              "name": { "type": "string" },
+              "seq": { "type": "number" },
+              "body": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

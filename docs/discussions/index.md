@@ -14,3 +14,4 @@ it came from.
 
 | date | topic | source | related decisions |
 | ---- | ----- | ------ | ----------------- |
+| 2026-11-18 | `.epi` native knowledge format (v2) | [raw/2026-11-18-epi-native-format.md](raw/2026-11-18-epi-native-format.md) | [0022](../decisions/0022-epi-file-format.md) (proposed) |
