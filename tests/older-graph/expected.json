@@ -1,0 +1,292 @@
+{
+  "nodes": [
+    {
+      "nodeId": "question_1",
+      "label": "为什么 Transformer 需要位置编码？",
+      "type": "question",
+      "tier": "thought",
+      "tags": ["topic:general", "scene:cognitive", "scope:space_a"],
+      "fromSuggestion": "sug_af2dce66-eab8-42a6-8dd8-e2824eaf4b20"
+    },
+    {
+      "nodeId": "claim_1",
+      "label": "校验和不对时必须停止重放",
+      "type": "claim",
+      "tier": "thought",
+      "tags": ["topic:general", "scene:cognitive"]
+    },
+    {
+      "nodeId": "concept_1",
+      "label": "日志保留",
+      "type": "concept",
+      "tier": "reference",
+      "tags": ["topic:general", "scene:cognitive"]
+    }
+  ],
+  "understanding": [
+    [],
+    [
+      {
+        "id": "confidence",
+        "level": "high"
+      }
+    ],
+    []
+  ],
+  "history": [
+    [],
+    [
+      {
+        "id": "evt_1",
+        "branchId": "br_1",
+        "target": "claim_1",
+        "actorId": "actor_human",
+        "dimensions": [
+          [
+            "confidence",
+            {
+              "level": "medium"
+            }
+          ]
+        ],
+        "createdAt": 1793713548868,
+        "reason": "自己讲了一遍",
+        "source": "learn-surface"
+      },
+      {
+        "id": "evt_2",
+        "branchId": "br_1",
+        "target": "claim_1",
+        "actorId": "actor_human",
+        "dimensions": [
+          [
+            "confidence",
+            {
+              "level": "high"
+            }
+          ]
+        ],
+        "createdAt": 1793713548872,
+        "parent": "evt_1",
+        "reason": "又讲了一遍",
+        "source": "learn-surface"
+      }
+    ],
+    []
+  ],
+  "sources": [
+    {
+      "id": "src_43154f5a-b493-41d9-8eea-f69cbb481619",
+      "owner": "actor_human",
+      "title": "位置编码",
+      "text": "[00:05] 学生：为什么 Transformer 需要位置编码？\n[00:12] 老师：因为自注意力本身不区分词的顺序。例如把句子里的词打乱，注意力的输出只是跟着重新排列。\n[00:40] 学生：我明白了。",
+      "kind": "dialogue",
+      "episodes": [
+        {
+          "id": "src_43154f5a-b493-41d9-8eea-f69cbb481619#e1",
+          "span": {
+            "start": 0,
+            "end": 105
+          },
+          "time": {
+            "from": 5,
+            "to": 40
+          }
+        }
+      ],
+      "addedAt": 1793713548841,
+      "reader": "episteme",
+      "digest": "a752851d60533cdfd1e6e0598abf7e5803ca90f894b4ff3d632b2150f4fb47d0"
+    }
+  ],
+  "threads": [
+    {
+      "thread": {
+        "id": "thr_9f6c0f80-e66b-4578-b1f7-2c797324750d",
+        "owner": "actor_human",
+        "title": "第一天",
+        "scope": "space_a",
+        "createdAt": 1793713548875
+      },
+      "turns": [
+        {
+          "id": "turn_8ca027a4-df4b-4850-b2bb-9d47a6119270",
+          "thread": "thr_9f6c0f80-e66b-4578-b1f7-2c797324750d",
+          "seq": 1,
+          "speaker": "learner",
+          "text": "校验和不对时跳过这条",
+          "by": "actor_human",
+          "at": 1793713548876
+        },
+        {
+          "id": "turn_87f65b6e-c88a-4b7b-800f-3728e9f43886",
+          "thread": "thr_9f6c0f80-e66b-4578-b1f7-2c797324750d",
+          "seq": 2,
+          "speaker": "agent",
+          "text": "协议要求遇到错误就停下",
+          "by": "actor_human",
+          "at": 1793713548877
+        }
+      ]
+    }
+  ],
+  "pending": [
+    {
+      "id": "sug_697bb49c-5442-4848-8ef7-4451f49a6085",
+      "proposal": {
+        "kind": "node",
+        "nodeType": "evidence",
+        "label": "例如把句子里的词打乱，注意力的输出只是跟着重新排列。",
+        "properties": {
+          "text": "例如把句子里的词打乱，注意力的输出只是跟着重新排列。",
+          "kind": "example"
+        }
+      },
+      "owner": "actor_human",
+      "scope": "space_a",
+      "rationale": "用来支撑某个说法的例子或依据",
+      "proposedBy": "actor_agent_rule-based-distiller",
+      "proposedAt": 1793713548841,
+      "origin": {
+        "sourceId": "src_43154f5a-b493-41d9-8eea-f69cbb481619",
+        "episodeId": "src_43154f5a-b493-41d9-8eea-f69cbb481619#e1",
+        "span": {
+          "start": 62,
+          "end": 88
+        },
+        "excerpt": "例如把句子里的词打乱，注意力的输出只是跟着重新排列。",
+        "time": {
+          "from": 5,
+          "to": 40
+        },
+        "speaker": "老师"
+      },
+      "basis": "inferred"
+    },
+    {
+      "id": "sug_2371cfc0-a70b-481a-9a98-88d9c4db2536",
+      "proposal": {
+        "kind": "link",
+        "from": "cand:sug_b4f196da-c2ec-4757-8404-099458bfe3a3",
+        "to": "cand:sug_af2dce66-eab8-42a6-8dd8-e2824eaf4b20",
+        "relation": "answers"
+      },
+      "owner": "actor_human",
+      "scope": "space_a",
+      "rationale": "它出现在对这个问题的回答里",
+      "proposedBy": "actor_agent_rule-based-distiller",
+      "proposedAt": 1793713548841,
+      "origin": {
+        "sourceId": "src_43154f5a-b493-41d9-8eea-f69cbb481619",
+        "episodeId": "src_43154f5a-b493-41d9-8eea-f69cbb481619#e1",
+        "span": {
+          "start": 46,
+          "end": 62
+        },
+        "excerpt": "因为自注意力本身不区分词的顺序。",
+        "time": {
+          "from": 5,
+          "to": 40
+        },
+        "speaker": "老师"
+      },
+      "basis": "inferred"
+    },
+    {
+      "id": "sug_a33f77c2-edf7-4940-b826-5a19796af7a4",
+      "proposal": {
+        "kind": "link",
+        "from": "cand:sug_697bb49c-5442-4848-8ef7-4451f49a6085",
+        "to": "cand:sug_b4f196da-c2ec-4757-8404-099458bfe3a3",
+        "relation": "supports"
+      },
+      "owner": "actor_human",
+      "scope": "space_a",
+      "rationale": "它是为这个说法举出的例子或依据",
+      "proposedBy": "actor_agent_rule-based-distiller",
+      "proposedAt": 1793713548841,
+      "origin": {
+        "sourceId": "src_43154f5a-b493-41d9-8eea-f69cbb481619",
+        "episodeId": "src_43154f5a-b493-41d9-8eea-f69cbb481619#e1",
+        "span": {
+          "start": 62,
+          "end": 88
+        },
+        "excerpt": "例如把句子里的词打乱，注意力的输出只是跟着重新排列。",
+        "time": {
+          "from": 5,
+          "to": 40
+        },
+        "speaker": "老师"
+      },
+      "basis": "inferred"
+    },
+    {
+      "id": "sug_4a1b0403-7ed5-418f-935a-d0019c89064b",
+      "proposal": {
+        "kind": "state",
+        "target": "cand:sug_af2dce66-eab8-42a6-8dd8-e2824eaf4b20",
+        "dimension": "confidence",
+        "level": "medium"
+      },
+      "owner": "actor_human",
+      "scope": "space_a",
+      "rationale": "你在材料里说「我明白了。」",
+      "proposedBy": "actor_agent_rule-based-distiller",
+      "proposedAt": 1793713548841,
+      "origin": {
+        "sourceId": "src_43154f5a-b493-41d9-8eea-f69cbb481619",
+        "episodeId": "src_43154f5a-b493-41d9-8eea-f69cbb481619#e1",
+        "span": {
+          "start": 100,
+          "end": 105
+        },
+        "excerpt": "我明白了。",
+        "time": {
+          "from": 5,
+          "to": 40
+        },
+        "speaker": "学生"
+      },
+      "basis": "inferred"
+    }
+  ],
+  "reviews": [
+    {
+      "owner": "actor_human",
+      "suggestionId": "sug_af2dce66-eab8-42a6-8dd8-e2824eaf4b20",
+      "outcome": "accepted",
+      "channel": "learn-review",
+      "decidedAt": 1793713548852,
+      "operationId": "dec_7143a063-dd66-4fff-bda5-a964f1559942"
+    },
+    {
+      "owner": "actor_human",
+      "suggestionId": "sug_b4f196da-c2ec-4757-8404-099458bfe3a3",
+      "outcome": "dismissed",
+      "channel": "learn-review",
+      "decidedAt": 1793713548854
+    }
+  ],
+  "delegations": [
+    {
+      "id": "del_3687cb4d-d699-4993-b2db-c26e4f0abb78",
+      "owner": "actor_human",
+      "scope": "space_a",
+      "grantedAt": 1793713548878
+    }
+  ],
+  "sceneRecords": [
+    {
+      "namespace": "learn",
+      "owner": "actor_human",
+      "key": "note_1",
+      "value": {
+        "text": "场景自己的记录"
+      },
+      "by": "actor_human",
+      "at": 1793713548880,
+      "version": 1
+    }
+  ]
+}
