@@ -1079,6 +1079,7 @@ export class CognitiveSession {
           ]),
         ),
         ...(options.reason === undefined ? {} : { reason: options.reason }),
+        // Earlier builds wrote 'learn-surface' here. Those events keep it: a source is provenance, never rewritten.
         source: options.source ?? 'session',
       })
       await this.#persist()
@@ -2158,9 +2159,18 @@ export class CognitiveSession {
     })
   }
 
-  /** Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). */
+  /**
+   * Every decision on a suggestion, dismissals included, oldest first (ADR 0012, decision 5). A channel an earlier
+   * build named differently reads under its current name; the stored record keeps the name it was written with.
+   */
   reviews(): readonly Review[] {
-    return this.#suggestions.reviews().filter((review) => ownerOf(review) === this.#actor)
+    return this.#suggestions
+      .reviews()
+      .filter((review) => ownerOf(review) === this.#actor)
+      .map((review) => {
+        const channel = currentChannel(review.channel)
+        return channel === review.channel ? review : { ...review, channel }
+      })
   }
 
   /** The drafts proposed for this person. Another person's drafts are not theirs to see or decide. */
@@ -2217,13 +2227,14 @@ export class CognitiveSession {
   decide(
     suggestionId: string,
     decision: Decision,
-    channel: DecisionChannel,
+    channel: DecisionChannel | LegacyDecisionChannel,
     /** Who decided, as the caller's channel established it; kept in the review record (ADR 0012). */
     reviewer?: Reviewer,
   ): Promise<DecisionResult> {
+    const named = currentChannel(channel) as DecisionChannel
     // One decision at a time, from reading the draft to removing it: of two decisions on the same draft,
     // whichever is queued first wins, and the second finds it already decided.
-    return this.#exclusive(() => this.#decideNow(suggestionId, decision, channel, reviewer))
+    return this.#exclusive(() => this.#decideNow(suggestionId, decision, named, reviewer))
   }
 
   async #decideNow(
@@ -3231,6 +3242,21 @@ export class CognitiveSession {
 
 /** Where a human made a decision, recorded with whatever it committed. */
 export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
+
+/**
+ * A channel name an earlier build wrote. Still taken as input, and written as the name it now has.
+ *
+ * @deprecated Use `'review'`.
+ */
+export type LegacyDecisionChannel = 'learn-review'
+
+/**
+ * The current name of a decision channel, for a record written under an earlier name or a filter that uses one.
+ * Records on disk are never rewritten, so every comparison of a channel goes through this.
+ */
+export function currentChannel(channel: string): string {
+  return channel === 'learn-review' ? 'review' : channel
+}
 
 /** What a human decided about a pending suggestion. */
 export type Decision =
