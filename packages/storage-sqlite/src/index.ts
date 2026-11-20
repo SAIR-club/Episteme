@@ -8,6 +8,8 @@ import { RecordStorage, deserializeRecord, serializeRecord, type LoadedState } f
 export * from './convert.js'
 export * from './records.js'
 export * from './portable.js'
+export * from './knowledge.js'
+export * from './scoped.js'
 
 /**
  * The layout of the file, kept in SQLite's own `user_version`. 0 is a file this backend has never written, which it

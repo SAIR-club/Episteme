@@ -10,6 +10,7 @@ import {
   type SerializedStateEvent,
   defineDomainPack,
   type DomainPack,
+  type DomainPackDefinitions,
   type ActorId,
   type DimensionId,
   type DimensionIndex,
@@ -134,11 +135,17 @@ function defaultTags(topic = 'general', scope?: string): readonly Tag[] {
 
 /**
  * What the application itself registers for every scene: the `scope` tag namespace, which marks the partition
- * scope a node belongs to (ADR 0015, decision 6).
+ * scope a node belongs to (ADR 0015, decision 6). Kept as data too, so a `.epi` file's ontology manifest
+ * records it beside a scene's own vocabulary (ADR 0023).
  */
-const applicationPack: DomainPack = defineDomainPack('episteme-application', {
+export const applicationPackDefinitions: DomainPackDefinitions = {
   tagNamespaces: [{ namespace: 'scope', label: 'Scope' }],
-})
+}
+
+const applicationPack: DomainPack = defineDomainPack(
+  'episteme-application',
+  applicationPackDefinitions,
+)
 
 function defaultResponder(
   input: { readonly text: string },

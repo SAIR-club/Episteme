@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@episteme/core": "workspace:*",
+    "@episteme/epi-format": "workspace:*",
+    "@episteme/storage-memory": "workspace:*",
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {

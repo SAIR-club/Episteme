@@ -14,6 +14,7 @@ import {
   type CoreGraph,
   type DimensionId,
   type DomainPack,
+  type DomainPackDefinitions,
   type EdgeTypeId,
   type EmbeddingAdapter,
   type EmbeddingCache,
@@ -221,7 +222,7 @@ export const TEST_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
   },
 ]
 
-export const testPack: DomainPack = defineDomainPack('test-pack', {
+export const TEST_PACK_VOCABULARY: Omit<DomainPackDefinitions, 'guards'> = {
   tagNamespaces: [
     { namespace: 'topic', label: 'Topic' },
     { namespace: 'scene', label: 'Scene' },
@@ -284,6 +285,10 @@ export const testPack: DomainPack = defineDomainPack('test-pack', {
     { id: EDGE.exemplifies, label: 'exemplifies', category: 'epistemic' },
   ],
   stateDimensions: TEST_STATE_DIMENSIONS,
+}
+
+export const testPack: DomainPack = defineDomainPack('test-pack', {
+  ...TEST_PACK_VOCABULARY,
   guards: [thoughtRequiresSourceGuard, anchorMustExistGuard],
 })
 
