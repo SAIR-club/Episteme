@@ -11,11 +11,17 @@ import { GraphLockedError, SQLITE_FORMAT_VERSION, openSqliteStorage } from './in
  *
  * Bodies stay the exact strings the graph wrote, because companion logs are not this package's to reparse, and what
  * comes back must be what went out. Everything in the graph is in here, private material and drafts included, and
- * no credentials: tokens live in the user file, never in the graph.
+ * no credentials: tokens live in the user file, never in the graph. Its file type is `.epi` (ADR 0022).
  */
 
 export const GRAPH_EXPORT_FORMAT = 'episteme-graph-export'
 export const GRAPH_EXPORT_VERSION = 1
+
+/**
+ * The file type a portable export is named by (ADR 0022). A name is only a convention for people and their
+ * operating systems: identity is the `format` field above, so import reads any file and judges what is inside it.
+ */
+export const GRAPH_EXPORT_EXTENSION = '.epi'
 
 export interface GraphExport {
   readonly format: typeof GRAPH_EXPORT_FORMAT
