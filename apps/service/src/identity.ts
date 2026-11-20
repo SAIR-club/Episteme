@@ -423,19 +423,34 @@ export class BrowserSessions {
   }
 }
 
-/** The credential a request carries: a Bearer token, or else a session cookie. */
-export function credentialOf(headers: {
-  readonly authorization?: string | undefined
-  readonly cookie?: string | undefined
-}): { readonly token: string } | { readonly session: string } | undefined {
+/** The caller a request's credential stands for, or an invalid token that must be refused. */
+export type CallerResolution =
+  | { readonly ok: true; readonly caller: Caller | undefined }
+  | { readonly ok: false; readonly message: string }
+
+/** Resolves a request's credential once, so REST and MCP cannot drift on what a stale or revoked token means. */
+export function resolveCaller(
+  headers: { readonly authorization?: string | undefined; readonly cookie?: string | undefined },
+  directory: Directory,
+  browsers: BrowserSessions,
+): CallerResolution {
   const authorization = headers.authorization
   if (authorization !== undefined) {
-    const match = /^Bearer\s+(\S+)$/i.exec(authorization.trim())
-    return { token: match?.[1] ?? '' }
+    const token = /^Bearer\s+(\S+)$/i.exec(authorization.trim())?.[1] ?? ''
+    const caller = directory.resolve(token)
+    return caller === undefined
+      ? { ok: false, message: 'this token is not valid' }
+      : { ok: true, caller }
   }
+  let session: string | undefined
   for (const part of (headers.cookie ?? '').split(';')) {
     const [name, ...value] = part.trim().split('=')
-    if (name === SESSION_COOKIE) return { session: value.join('=') }
+    if (name === SESSION_COOKIE) session = value.join('=')
   }
-  return undefined
+  if (session === undefined) return { ok: true, caller: undefined }
+  const caller = browsers.resolve(session)
+  return {
+    ok: true,
+    caller: caller !== undefined && directory.isLive(caller.credentialId) ? caller : undefined,
+  }
 }

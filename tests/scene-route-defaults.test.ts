@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { baseScene } from '@episteme/application'
 import {
   addPerson,
   addToken,
@@ -12,6 +11,7 @@ import {
   type SceneRoute,
 } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { testScene } from './test-scene.js'
 
 /**
  * Who may use a scene's routes when the scene says nothing about them (ADR 0020): its writes stay the person's, its
@@ -69,7 +69,7 @@ describe('a scene that says nothing about its routes', () => {
   const profile = (overrides: Partial<SceneProfile> = {}): SceneProfile => ({
     name: 'plain',
     seed: BLANK_TOPIC,
-    scene: baseScene,
+    scene: testScene,
     routes: [ECHO, { method: 'GET', path: '/state', handle: () => ({ ok: true }) }],
     ...overrides,
   })

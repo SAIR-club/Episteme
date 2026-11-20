@@ -1,7 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addPerson, addToken, startService, type EpistemeService } from '@episteme/service'
+import { addPerson, addToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -76,7 +77,7 @@ describe('shared mode', () => {
     const mei = await addPerson(users, 'Mei')
     meiHuman = await addToken(users, mei, 'human', 'workspace')
     meiAgent = await addToken(users, mei, 'agent', 'codex')
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'shared.db'),
       mode: 'shared',
@@ -273,7 +274,7 @@ describe('shared mode', () => {
 
 describe('local mode', () => {
   beforeEach(async () => {
-    service = await startService({ port: 0, graph: join(directory, 'learn.db') })
+    service = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
   })
 
   it('needs the person’s token, and then refuses: there is no user file to manage', async () => {

@@ -1,3 +1,5 @@
+import { openTestSession } from './test-session.js'
+import { startTestService, testProfile } from './test-service.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,13 +10,11 @@ import type {
   CognitiveAgent,
   Suggestion,
 } from '@episteme/agent'
-import {
-  CognitiveSession,
-  defaultDistillationPolicy as learnDistillationPolicy,
-} from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { RuleBasedDistiller, distill, type Candidate } from '@episteme/distillation'
-import { BLANK_TOPIC, defaultProfile, startService } from '@episteme/service'
+import { BLANK_TOPIC } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { testScene } from './test-scene.js'
 
 /**
  * Strict quotes and the foundations host-assisted distillation stands on (ADR 0011, #21, PR-A).
@@ -94,7 +94,7 @@ async function run(
   const result = await distill({
     material: { sourceId: 'src', text },
     agent,
-    policy: learnDistillationPolicy,
+    policy: testScene.distillationPolicy,
     actorId: 'actor_human',
     known: [],
     ...(learner === undefined ? {} : { learner }),
@@ -128,7 +128,7 @@ describe('the canonical text, and spans that point into it', () => {
     const sent = '学生：café 是什么意思？\r\n老师：Café 的 crème 来自法语。\r\n'.replace(/é/gu, 'é')
     const quote = 'crème 来自法语'
     const graph = join(directory, 'learn.db')
-    let session = await CognitiveSession.open({ filePath: graph })
+    let session = await openTestSession({ filePath: graph })
     const outcome = await session.distill(
       { text: sent },
       { agent: reader({ structure: { 1: [claim('c1', 'Crème comes from French', quote)] } }) },
@@ -146,7 +146,7 @@ describe('the canonical text, and spans that point into it', () => {
     }
     check(session)
     await session.close()
-    session = await CognitiveSession.open({ filePath: graph })
+    session = await openTestSession({ filePath: graph })
     check(session)
     await session.close()
   })
@@ -249,7 +249,7 @@ describe('a quote is located or refused, never widened', () => {
 
 describe('the rule-based reader under strict quotes', () => {
   it('names which time the learner said the same words, and keeps both', async () => {
-    const candidates = await run(new RuleBasedDistiller({ policy: learnDistillationPolicy }))
+    const candidates = await run(new RuleBasedDistiller({ policy: testScene.distillationPolicy }))
     const confused = candidates.filter(
       (candidate) =>
         candidate.suggestion.kind === 'state' && candidate.suggestion.quote === '我还是不明白。',
@@ -262,7 +262,7 @@ describe('the rule-based reader under strict quotes', () => {
   })
 
   it('keeps a one-character term, resting it on the line it stands in', async () => {
-    const candidates = await run(new RuleBasedDistiller({ policy: learnDistillationPolicy }))
+    const candidates = await run(new RuleBasedDistiller({ policy: testScene.distillationPolicy }))
     const term = candidates.find(
       (candidate) => candidate.suggestion.kind === 'node' && candidate.suggestion.label === '熵',
     )
@@ -271,7 +271,7 @@ describe('the rule-based reader under strict quotes', () => {
   })
 
   it('leaves everything it reads inferred unless it is told who the learner is', async () => {
-    const reading = new RuleBasedDistiller({ policy: learnDistillationPolicy })
+    const reading = new RuleBasedDistiller({ policy: testScene.distillationPolicy })
     const untold = await run(reading)
     expect(new Set(untold.map((candidate) => candidate.suggestion.basis))).toEqual(
       new Set(['inferred']),
@@ -356,7 +356,7 @@ describe('in the session', () => {
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-strict-session-'))
     graph = join(directory, 'learn.db')
-    session = await CognitiveSession.open({ filePath: graph })
+    session = await openTestSession({ filePath: graph })
     await session.addNode({ label: '自注意力不区分顺序', kind: 'claim' })
     await session.flush()
   })
@@ -466,10 +466,10 @@ describe('in the session', () => {
 describe('what the review and query interfaces show', () => {
   it('carries basis and speaker in pending suggestions, and suspected among the levels', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'episteme-strict-api-'))
-    const service = await startService({
+    const service = await startTestService({
       port: 0,
       graph: join(directory, 'learn.db'),
-      profile: defaultProfile(BLANK_TOPIC),
+      profile: testProfile(BLANK_TOPIC),
     })
     try {
       const posted = await fetch(`${service.apiUrl}/distill`, {

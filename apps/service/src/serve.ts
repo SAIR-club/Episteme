@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   GraphConversionError,
   GraphLockedError,
@@ -9,7 +10,7 @@ import {
 } from '@episteme/application'
 import { describeEmbeddings, EmbeddingSettingsError } from './embeddings.js'
 import { addPerson, addToken, revokeToken, type CredentialKind } from './identity.js'
-import { BLANK_TOPIC, defaultProfile, type SeedTopic } from './profile.js'
+import { BLANK_TOPIC, type SceneProfile, type SeedTopic } from './profile.js'
 import { DEFAULT_GRAPH, startService, type EpistemeService } from './server.js'
 
 const DEFAULT_USERS = join(homedir(), '.episteme', 'users.json')
@@ -18,6 +19,14 @@ async function loadTopicFile(filePath: string): Promise<SeedTopic> {
   const { readFile } = await import('node:fs/promises')
   const content = await readFile(filePath, 'utf8')
   return JSON.parse(content) as SeedTopic
+}
+
+async function loadProfile(filePath: string): Promise<SceneProfile> {
+  const module = (await import(pathToFileURL(resolve(filePath)).href)) as {
+    profile?: SceneProfile
+  }
+  if (module.profile === undefined) throw new Error(`"${filePath}" does not export a scene profile`)
+  return module.profile
 }
 
 /**
@@ -36,8 +45,9 @@ if (argv.includes('--help') || argv.includes('-h')) {
       `\n  用法：pnpm serve [选项]\n` +
       `\n  选项：\n` +
       `    -g, --graph <路径>      指定图谱文件，一个 SQLite 数据库（默认 ${DEFAULT_GRAPH}；--file / -f 等效）\n` +
+      `        --scene <路径>      场景模块，必须导出 profile；Episteme 不内置场景\n` +
       `    -p, --port <端口>       监听端口（默认 4321）\n` +
-      `    -t, --topic <路径>      首次启动时载入你自己的主题文件，而不是内置的示例主题\n` +
+      `    -t, --topic <路径>      首次启动时载入你自己的主题文件，覆盖场景的 seed\n` +
       `        --blank             从空图谱开始，什么都不载入\n` +
       `    -w, --workspace <目录>  在 / 托管一个已构建的 Workspace\n` +
       `        --mode shared       共享部署：多人、走网络，放在 HTTPS 反向代理后面（ADR 0012）\n` +
@@ -112,11 +122,17 @@ if (argv[0] === 'users' || argv[0] === 'tokens') {
 if (argv[0] === 'graph') {
   const [, action, from, to] = argv
   if (action !== 'convert' || from === undefined || to === undefined) {
-    process.stderr.write('用法：pnpm serve graph convert <旧图谱> <新图谱>\n')
+    process.stderr.write('用法：pnpm serve graph convert <旧图谱> <新图谱> --scene <路径>\n')
+    process.exit(1)
+  }
+  const scenePath = optionValue(argv, '--scene')
+  if (scenePath === undefined) {
+    process.stderr.write('必须用 --scene <路径> 指定导出 profile 的场景模块。\n')
     process.exit(1)
   }
   try {
-    const done = await convertGraph(from, to)
+    const profile = await loadProfile(scenePath)
+    const done = await convertGraph(from, to, profile.scene)
     const counts = (found: Readonly<Record<string, number | undefined>>): string =>
       Object.entries(found)
         .map(([name, count]) => `${name} ${count ?? 0}`)
@@ -175,8 +191,14 @@ const graph =
 const portText = optionValue(argv, '--port', '-p') ?? process.env.PORT ?? '4321'
 const port = Number.parseInt(portText, 10)
 const topicPath = optionValue(argv, '--topic', '-t')
+const scenePath = optionValue(argv, '--scene')
 const workspacePath = optionValue(argv, '--workspace', '-w')
 const blank = argv.includes('--blank')
+
+if (scenePath === undefined) {
+  process.stderr.write('必须用 --scene <路径> 指定导出 profile 的场景模块。\n')
+  process.exit(1)
+}
 const shared = optionValue(argv, '--mode') === 'shared'
 const publicOrigin = optionValue(argv, '--public-origin')
 const host = optionValue(argv, '--host')
@@ -201,12 +223,20 @@ try {
   process.exit(1)
 }
 
+let profile: SceneProfile
+try {
+  profile = await loadProfile(scenePath)
+} catch (error) {
+  process.stderr.write(`${(error as Error).message}\n`)
+  process.exit(1)
+}
+
 let service: EpistemeService
 try {
   service = await startService({
     graph,
     port,
-    profile: defaultProfile(topic),
+    profile: topic === undefined ? profile : { ...profile, seed: topic },
     ...(workspacePath === undefined ? {} : { workspace: resolve(workspacePath) }),
     ...(host === undefined ? {} : { host }),
     sharing: argv.includes('--sharing'),

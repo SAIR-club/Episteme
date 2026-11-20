@@ -1,8 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CognitiveSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { writeStoredRecords } from './stored.js'
 
@@ -59,7 +60,7 @@ async function readGraph(open: (filePath: string) => Promise<CognitiveSession>) 
 describe('the v0.1.0 golden graph', () => {
   it('reads exactly as it did', async () => {
     const expected: unknown = JSON.parse(await readFile(join(GOLDEN, 'expected.json'), 'utf8'))
-    const read = await readGraph((filePath) => CognitiveSession.open({ filePath }))
+    const read = await readGraph((filePath) => openTestSession({ filePath }))
     expect(JSON.parse(JSON.stringify(read))).toEqual(expected)
   })
 })

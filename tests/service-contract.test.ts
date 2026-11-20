@@ -1,7 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type McpWire } from './mcp-wire.js'
 
@@ -55,7 +56,7 @@ async function structured(name: string, args: Record<string, unknown>) {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-contract-'))
-  service = await startService({ port: 0, graph: join(directory, 'learn.db') })
+  service = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
   agent = mcpWire(() => service.mcpUrl, { name: 'Contract Agent', version: '1' })
 })
 
@@ -88,7 +89,7 @@ describe('the same question over REST and MCP', () => {
 
   it('distils the same material into the same suggestions', async () => {
     // Two graphs, one per protocol, so neither run sees the other's suggestions.
-    const second = await startService({ port: 0, graph: join(directory, 'second.db') })
+    const second = await startTestService({ port: 0, graph: join(directory, 'second.db') })
     try {
       const overRest = await rest<{ suggestions: { proposal: unknown; excerpt?: string }[] }>(
         '/distill',

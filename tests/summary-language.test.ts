@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { openTestSession } from './test-session.js'
 
 /**
  * A scene may be English or Chinese. The one-line summaries of recall and progress used to be Chinese only, so an
@@ -14,7 +15,7 @@ let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-summary-'))
-  session = await CognitiveSession.open({ filePath: join(directory, 'graph.db') })
+  session = await openTestSession({ filePath: join(directory, 'graph.db') })
 })
 
 afterEach(async () => {

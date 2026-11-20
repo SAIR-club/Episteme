@@ -1,9 +1,4 @@
-import {
-  baseScene,
-  type SceneView,
-  type SceneWrites,
-  type SessionScene,
-} from '@episteme/application'
+import type { SceneView, SceneWrites, SessionScene } from '@episteme/application'
 import type { SceneTool } from '@episteme/mcp'
 
 /**
@@ -33,50 +28,6 @@ export interface SeedTopic {
 }
 
 export const BLANK_TOPIC: SeedTopic = Object.freeze({ title: 'blank', nodes: [] })
-
-/** A demonstration topic: how a Transformer handles order. The service starts from it when no profile is given. */
-export const TRANSFORMERS: SeedTopic = Object.freeze({
-  title: 'Transformer 如何处理顺序',
-  id: 'transformer',
-  source: 'paper:arxiv:1706.03762',
-  about:
-    'Transformer 架构中与序列顺序有关的部分：为什么仅靠注意力无法表达顺序，以及为此加入了什么。',
-  nodes: [
-    { id: 'c_transformer', label: 'Transformer', kind: 'concept' as const },
-    { id: 'c_self_attention', label: '自注意力（Self-Attention）', kind: 'concept' as const },
-    {
-      id: 'c_positional_encoding',
-      label: '位置编码（Positional Encoding）',
-      kind: 'concept' as const,
-    },
-    {
-      id: 'c_permutation_invariance',
-      label: '置换不变性（Permutation Invariance）',
-      kind: 'concept' as const,
-    },
-    { id: 'c_rope', label: 'RoPE（旋转位置编码）', kind: 'concept' as const },
-    { id: 'c_attention_head', label: '注意力头（Attention Head）', kind: 'concept' as const },
-    {
-      id: 'q_why_order',
-      label: '为什么 Transformer 必须被告知序列顺序？',
-      kind: 'question' as const,
-    },
-    { id: 'q_how_position', label: '位置信息是怎么给到模型的？', kind: 'question' as const },
-    { id: 'q_heads', label: '应该用多少个注意力头？', kind: 'question' as const },
-  ],
-  edges: [
-    { from: 'q_why_order', to: 'c_permutation_invariance', relation: 'refers_to' },
-    { from: 'q_why_order', to: 'c_self_attention', relation: 'refers_to' },
-    { from: 'q_how_position', to: 'c_positional_encoding', relation: 'refers_to' },
-    { from: 'q_how_position', to: 'c_rope', relation: 'refers_to' },
-    { from: 'c_rope', to: 'c_positional_encoding', relation: 'refers_to' },
-    { from: 'c_positional_encoding', to: 'c_self_attention', relation: 'refers_to' },
-    { from: 'c_permutation_invariance', to: 'c_self_attention', relation: 'refers_to' },
-    { from: 'c_self_attention', to: 'c_transformer', relation: 'refers_to' },
-    { from: 'c_attention_head', to: 'c_self_attention', relation: 'refers_to' },
-    { from: 'q_heads', to: 'c_attention_head', relation: 'refers_to' },
-  ],
-})
 
 export interface SceneProfile {
   readonly name: string
@@ -145,9 +96,4 @@ export function assertSceneRoutes(routes: readonly SceneRoute[]): void {
     if (seen.has(key)) throw new Error(`scene route ${key} is declared twice`)
     seen.add(key)
   }
-}
-
-/** A profile on the base scene, starting from `seed` or from an empty graph. A scene's own launcher supplies its profile. */
-export function defaultProfile(seed: SeedTopic = BLANK_TOPIC): SceneProfile {
-  return { name: 'default', seed, scene: baseScene }
 }

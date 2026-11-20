@@ -1,7 +1,7 @@
 # Deploying a shared service
 
 How to run one Episteme service that a course's students share (ADR 0012, shared mode), with publishing on
-(ADR 0014). For a single person on their own machine, `pnpm serve` is all there is; nothing here applies.
+(ADR 0014). For a single person on their own machine, `pnpm serve --scene <path>` is all there is; nothing here applies.
 
 **What has been verified and what has not.** The service in shared mode, the user and token commands and the
 smoke test below were run end to end on a developer machine (2026-10-18): all six smoke checks passed. The

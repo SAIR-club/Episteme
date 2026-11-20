@@ -6,6 +6,8 @@ import type {
   TagNamespaceDefinition,
 } from './definitions.js'
 import type { DimensionId } from '../ontology/ids.js'
+import type { ProjectionFilter } from '../projection/index.js'
+import type { HybridWeights } from '../retrieval/hybrid.js'
 
 /**
  * A registry keyed by registered id.
@@ -14,7 +16,7 @@ import type { DimensionId } from '../ontology/ids.js'
  * error rather than an overwrite: silently swapping a definition would invalidate
  * every node already stored under it.
  */
-class Registry<TDefinition extends { readonly id: string }> {
+export class Registry<TDefinition extends { readonly id: string }> {
   readonly #definitions = new Map<string, TDefinition>()
   readonly #label: string
 
@@ -248,4 +250,24 @@ export class TagNamespaceRegistry {
       )
     }
   }
+}
+
+/** A named record stream. Only `understanding` events fold into current understanding. */
+export interface StreamDefinition {
+  readonly id: string
+  readonly label: string
+  readonly reducesUnderstanding: boolean
+}
+
+/** A named projection rule, so a scene can select a view without embedding a filter in Core. */
+export interface ProjectionRuleDefinition {
+  readonly id: string
+  readonly label: string
+  readonly filter: ProjectionFilter
+}
+
+/** A named retrieval weight set, so a scene can choose explainable ranking without changing a retriever. */
+export interface RetrievalWeightsDefinition {
+  readonly id: string
+  readonly weights: HybridWeights
 }

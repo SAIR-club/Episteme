@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { EpistemeError, type EventLogState } from '@episteme/core'
 import Database from 'better-sqlite3'
@@ -8,6 +8,8 @@ import { RecordStorage, deserializeRecord, serializeRecord, type LoadedState } f
 export * from './convert.js'
 export * from './records.js'
 export * from './portable.js'
+export * from './knowledge.js'
+export * from './scoped.js'
 
 /**
  * The layout of the file, kept in SQLite's own `user_version`. 0 is a file this backend has never written, which it
@@ -167,12 +169,10 @@ export class SqliteStorageAdapter extends RecordStorage {
   }
 
   /**
-   * A file with a log beside it is rewritten by being opened, so unless its header says it is a graph of this format,
-   * the look happens on a copy. A graph of this format recovers its own log as it always has.
+   * A file with a log beside it can be changed by being opened, so the look happens on a copy.
    */
   #lookBeforeOpening(): void {
     if (!existsSync(this.#filePath) || !hasLog(this.#filePath)) return
-    if (formatInHeader(this.#filePath) === SQLITE_FORMAT_VERSION) return
     readThroughCopy(this.#filePath, (db) => {
       this.#refuseWhatIsNotAGraph(db)
     })
@@ -297,17 +297,6 @@ export class CompanionLog {
         `companion log "${this.location}" was used after its graph was closed`,
       )
     }
-  }
-}
-
-/** The format a SQLite file's header states, or `undefined` for a file too short to state one. */
-function formatInHeader(file: string): number | undefined {
-  const header = Buffer.alloc(64)
-  const descriptor = openSync(file, 'r')
-  try {
-    return readSync(descriptor, header, 0, 64, 0) === 64 ? header.readUInt32BE(60) : undefined
-  } finally {
-    closeSync(descriptor)
   }
 }
 

@@ -3,16 +3,16 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
 import { EmbeddingError, type EmbeddingAdapter } from '@episteme/core'
 import {
   EmbeddingSettingsError,
   embeddingsFromEnvironment,
-  startService,
   type EpistemeService,
 } from '@episteme/service'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 
 /**
  * Semantic recall is off unless an embedding endpoint is configured. When the configured provider fails, a recall
@@ -40,7 +40,7 @@ const unreachable: EmbeddingAdapter = {
 
 describe('a session whose embedding provider fails', () => {
   it('still recalls by words and says that meaning was left out', async () => {
-    const session = await CognitiveSession.open({ adapter: unreachable })
+    const session = await openTestSession({ adapter: unreachable })
     cleanups.push(() => session.close())
     const { nodeId } = await session.addNode({
       label: 'Attention needs position information',
@@ -61,7 +61,7 @@ describe('a session whose embedding provider fails', () => {
   })
 
   it('reports nothing when the provider works', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     cleanups.push(() => session.close())
     await session.addNode({ label: 'Attention needs position information', kind: 'claim' })
     const recalled = await session.recall('why does attention need position information')
@@ -153,7 +153,7 @@ describe('the service with an embedding endpoint', () => {
     const directory = await temporaryDirectory()
     const provider = await embeddingServer()
     cleanups.push(provider.close)
-    const service: EpistemeService = await startService({
+    const service: EpistemeService = await startTestService({
       port: 0,
       graph: join(directory, 'graph.db'),
       embeddings: {
@@ -200,7 +200,7 @@ describe('the service with an embedding endpoint', () => {
 
   it('is off when the environment configures nothing', async () => {
     const directory = await temporaryDirectory()
-    const service = await startService({ port: 0, graph: join(directory, 'graph.db') })
+    const service = await startTestService({ port: 0, graph: join(directory, 'graph.db') })
     cleanups.push(() => service.close())
     expect(service.embeddings).toBeUndefined()
   })

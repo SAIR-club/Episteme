@@ -1,7 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addPerson, addToken, startService, type EpistemeService } from '@episteme/service'
+import { addPerson, addToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -71,7 +72,7 @@ beforeEach(async () => {
   }
   lin = await person('Lin')
   wei = await person('Wei')
-  service = await startService({
+  service = await startTestService({
     port: 0,
     graph: join(directory, 'shared.db'),
     mode: 'shared',

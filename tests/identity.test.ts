@@ -1,13 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  addPerson,
-  addToken,
-  revokeToken,
-  startService,
-  type EpistemeService,
-} from '@episteme/service'
+import { addPerson, addToken, revokeToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -78,7 +73,7 @@ describe('local mode', () => {
     const workspace = join(directory, 'workspace')
     await mkdir(workspace)
     await writeFile(join(workspace, 'index.html'), '<!doctype html><title>Workspace</title>')
-    service = await startService({ port: 0, graph: join(directory, 'learn.db'), workspace })
+    service = await startTestService({ port: 0, graph: join(directory, 'learn.db'), workspace })
   })
 
   it('reads, proposes and distills without a token, as every host does today', async () => {
@@ -182,7 +177,7 @@ describe('shared mode', () => {
     actorId = await addPerson(users, 'Lin')
     human = await addToken(users, actorId, 'human', 'workspace')
     agent = await addToken(users, actorId, 'agent', 'claude-code')
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'shared.db'),
       mode: 'shared',
@@ -194,9 +189,9 @@ describe('shared mode', () => {
   it('refuses to start without a user file or a public origin', async () => {
     const graph = join(directory, 'other.db')
     await expect(
-      startService({ port: 0, graph, mode: 'shared', publicOrigin: 'https://e.example' }),
+      startTestService({ port: 0, graph, mode: 'shared', publicOrigin: 'https://e.example' }),
     ).rejects.toThrow(/user file/)
-    await expect(startService({ port: 0, graph, mode: 'shared', users })).rejects.toThrow(
+    await expect(startTestService({ port: 0, graph, mode: 'shared', users })).rejects.toThrow(
       /public origin/,
     )
   })

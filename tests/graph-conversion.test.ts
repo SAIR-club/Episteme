@@ -11,7 +11,8 @@ import {
   convertGraph,
   currentChannel,
 } from '@episteme/application'
-import { startService } from '@episteme/service'
+import { startTestService } from './test-service.js'
+import { testScene } from './test-scene.js'
 import {
   SQLITE_FORMAT_VERSION,
   convertLegacyGraph,
@@ -94,7 +95,7 @@ async function olderSqliteWithLiveLog(to: string): Promise<void> {
 
 /** Reads a new graph the way the application does and holds it to what the older build showed. */
 async function expectTheOlderBuildsReading(graph: string): Promise<void> {
-  const session = await CognitiveSession.open({ filePath: graph })
+  const session = await CognitiveSession.open({ filePath: graph, scene: testScene })
   try {
     const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value ?? null))
     const nodes = session.listNodes()
@@ -159,7 +160,7 @@ describe('the fixture itself', () => {
 
 describe('a JSONL graph', () => {
   it('comes over with its relations, history, sources, drafts, threads and scene records', async () => {
-    const done = await convertGraph(older, target)
+    const done = await convertGraph(older, target, testScene)
 
     expect(done.sourceFormat).toBe('jsonl')
     const kinds = recordLines().map((line) => (JSON.parse(line) as { readonly kind: string }).kind)
@@ -176,7 +177,7 @@ describe('a JSONL graph', () => {
   })
 
   it('keeps every record and companion body exactly as it was', async () => {
-    await convertGraph(older, target)
+    await convertGraph(older, target, testScene)
 
     const db = new Database(target, { readonly: true })
     expect(db.pragma('user_version', { simple: true })).toBe(SQLITE_FORMAT_VERSION)
@@ -201,7 +202,7 @@ describe('a JSONL graph', () => {
 
   it('leaves the older files byte for byte, adds nothing beside them, and leaves one new file', async () => {
     const before = everything()
-    const done = await convertGraph(older, target)
+    const done = await convertGraph(older, target, testScene)
 
     const after = everything()
     expect(after[target.slice(directory.length + 1)]).toBeDefined()
@@ -211,32 +212,32 @@ describe('a JSONL graph', () => {
   })
 
   it('stays apart from the new graph afterwards', async () => {
-    await convertGraph(older, target)
+    await convertGraph(older, target, testScene)
     const before = readFileSync(older)
 
-    const session = await CognitiveSession.open({ filePath: target })
+    const session = await CognitiveSession.open({ filePath: target, scene: testScene })
     await session.addNode({ label: '转换之后才学到的', kind: 'claim' })
     await session.close()
 
     expect(readFileSync(older).equals(before)).toBe(true)
-    const again = await CognitiveSession.open({ filePath: target })
+    const again = await CognitiveSession.open({ filePath: target, scene: testScene })
     expect(again.listNodes().map(({ label }) => label)).toContain('转换之后才学到的')
     await again.close()
   })
 
   it('opens under the service once converted, where the older file alone is refused', async () => {
-    await expect(startService({ port: 0, graph: target })).rejects.toBeInstanceOf(
+    await expect(startTestService({ port: 0, graph: target })).rejects.toBeInstanceOf(
       UnreadableGraphError,
     )
-    await convertGraph(older, target)
-    const service = await startService({ port: 0, graph: target })
+    await convertGraph(older, target, testScene)
+    const service = await startTestService({ port: 0, graph: target })
     await service.close()
   })
 
   it('needs only the graph: a graph without companion files converts too', async () => {
     const alone = join(directory, 'alone.jsonl')
     await copyFile(older, alone)
-    const done = await convertGraph(alone, join(directory, 'alone.db'))
+    const done = await convertGraph(alone, join(directory, 'alone.db'), testScene)
     expect(done.companions).toEqual({})
   })
 })
@@ -254,7 +255,7 @@ describe('a format 1 SQLite graph', () => {
     expect(readFileSync(`${oldDb}-wal`).length).toBeGreaterThan(0)
     const before = everything()
 
-    const done = await convertGraph(oldDb, target)
+    const done = await convertGraph(oldDb, target, testScene)
 
     expect(done.sourceFormat).toBe('sqlite-1')
     await expectTheOlderBuildsReading(target)
@@ -269,8 +270,10 @@ describe('a format 1 SQLite graph', () => {
 
     await expect(openSqliteStorage(oldDb)).rejects.toBeInstanceOf(UnreadableGraphError)
     await expect(openSqliteStorage(oldDb)).rejects.toThrow(/format version 1/)
-    await expect(CognitiveSession.open({ filePath: oldDb })).rejects.toThrow(/nothing was changed/)
-    await expect(startService({ port: 0, graph: oldDb })).rejects.toThrow(/graph convert/)
+    await expect(CognitiveSession.open({ filePath: oldDb, scene: testScene })).rejects.toThrow(
+      /nothing was changed/,
+    )
+    await expect(startTestService({ port: 0, graph: oldDb })).rejects.toThrow(/graph convert/)
 
     expect(everything()).toEqual(before)
   })
@@ -281,10 +284,10 @@ describe('what is refused, leaving no target and the older files as they were', 
     from: string,
     to: string,
     code: string,
-    run: (from: string, to: string) => Promise<unknown> = convertGraph,
+    run: (from: string, to: string, scene: typeof testScene) => Promise<unknown> = convertGraph,
   ): Promise<void> {
     const before = everything()
-    await expect(run(from, to)).rejects.toEqual(refusal(code))
+    await expect(run(from, to, testScene)).rejects.toEqual(refusal(code))
     expect(everything()).toEqual(before)
   }
 
@@ -390,7 +393,7 @@ describe('a lock left behind by a process that is gone', () => {
     writeFileSync(lock, `${JSON.stringify({ pid: 2 ** 30 })}\n`)
     const before = readFileSync(lock)
 
-    const done = await convertGraph(older, target)
+    const done = await convertGraph(older, target, testScene)
 
     expect(done.notes.join(' ')).toContain('learn.jsonl.lock')
     expect(readFileSync(lock).equals(before)).toBe(true)

@@ -1,8 +1,11 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
-import { CognitiveSession, type DecisionResult, type Suggestion } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
+import type { CognitiveSession } from '@episteme/application'
+import { type DecisionResult, type Suggestion } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { asId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -34,7 +37,7 @@ afterEach(async () => {
 })
 
 async function openSeeded(): Promise<CognitiveSession> {
-  const session = await CognitiveSession.open({ filePath: join(directory, 'learn.db') })
+  const session = await openTestSession({ filePath: join(directory, 'learn.db') })
   await seedTopic(session)
   return session
 }
@@ -123,7 +126,7 @@ describe('the Learn queue and the MCP form, deciding the same draft at once', ()
   })
 
   it('records exactly one decision', async () => {
-    server = await startService({ port: 0, graph: join(directory, 'learn.db') })
+    server = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
     const agent = mcpWire(() => server.mcpUrl, {
       name: 'Race Host',
       version: '1',
@@ -208,7 +211,7 @@ describe('the queue itself', () => {
     const closing = session.close()
     await Promise.all([recording, closing])
 
-    const reopened = await CognitiveSession.open({ filePath: join(directory, 'learn.db') })
+    const reopened = await openTestSession({ filePath: join(directory, 'learn.db') })
     expect(reopened.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'high' }])
     await reopened.close()
   })

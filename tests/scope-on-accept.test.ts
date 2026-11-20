@@ -1,8 +1,11 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Suggestion } from '@episteme/application'
-import { startService, type EpistemeService } from '@episteme/service'
+import type { CognitiveSession } from '@episteme/application'
+import { type Suggestion } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -19,7 +22,7 @@ let session: CognitiveSession
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-scope-'))
-  session = await CognitiveSession.open({
+  session = await openTestSession({
     filePath: join(directory, 'graph.db'),
   })
 })
@@ -200,7 +203,7 @@ describe('filing a draft made outside any scope', () => {
     const suggestion = await unscoped()
     const id = await nodeOf(suggestion, { action: 'accept', scope: 'workbench:space_a' })
     await session.close()
-    session = await CognitiveSession.open({ filePath: join(directory, 'graph.db') })
+    session = await openTestSession({ filePath: join(directory, 'graph.db') })
     expect(tagsOf(id)).toContain('scope:workbench:space_a')
     expect(session.pendingSuggestions()).toEqual([])
   })
@@ -321,7 +324,7 @@ describe('over the wire', () => {
   let service: EpistemeService
 
   beforeEach(async () => {
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'served.db'),
     })

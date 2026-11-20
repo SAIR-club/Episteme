@@ -40,12 +40,6 @@ export interface Turn {
   readonly at: EpochMillis
 }
 
-/** The credential a turn arrived with, as far as anyone can tell: older turns whose `by` is an agent were relayed. */
-export function writtenWithOf(turn: Pick<Turn, 'by' | 'writtenWith'>): Turn['writtenWith'] {
-  if (turn.writtenWith !== undefined) return turn.writtenWith
-  return turn.by.startsWith('actor_agent_') ? 'agent' : undefined
-}
-
 export interface TurnSummary {
   readonly turn: string
   readonly text: string

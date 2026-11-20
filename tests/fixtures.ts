@@ -14,6 +14,7 @@ import {
   type CoreGraph,
   type DimensionId,
   type DomainPack,
+  type DomainPackDefinitions,
   type EdgeTypeId,
   type EmbeddingAdapter,
   type EmbeddingCache,
@@ -27,6 +28,7 @@ import {
   type NodeTypeId,
   type PersistentEventStore,
   type Registries,
+  type StateDimensionDefinition,
   type StateValue,
   type Tag,
 } from '@episteme/core'
@@ -169,7 +171,58 @@ export const anchorMustExistGuard = {
   },
 }
 
-export const testPack: DomainPack = defineDomainPack('test-pack', {
+export const TEST_STATE_DIMENSIONS: readonly StateDimensionDefinition[] = [
+  {
+    id: DIMENSION.confidence,
+    label: 'Confidence',
+    kind: 'ordinal',
+    levels: ['low', 'medium', 'high'],
+    ordered: true,
+  },
+  {
+    id: DIMENSION.exposure,
+    label: 'Exposure',
+    kind: 'ordinal',
+    levels: ['none', 'seen', 'studied', 'worked', 'revisited'],
+    ordered: true,
+  },
+  {
+    id: DIMENSION.evidence,
+    label: 'Evidence',
+    kind: 'categorical',
+    levels: ['none', 'anecdotal', 'reproduced', 'proven', 'weak', 'derived'],
+    legacyLevels: ['weak', 'derived'],
+  },
+  {
+    id: DIMENSION.articulation,
+    label: 'Articulation',
+    kind: 'ordinal',
+    levels: ['low', 'medium', 'high'],
+    ordered: true,
+  },
+  {
+    id: DIMENSION.transfer,
+    label: 'Transfer',
+    kind: 'ordinal',
+    levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
+    ordered: true,
+    legacyLevels: ['none', 'near', 'far'],
+  },
+  {
+    id: DIMENSION.conflict,
+    label: 'Conflict',
+    kind: 'categorical',
+    levels: ['none', 'suspected', 'open', 'resolved'],
+  },
+  {
+    id: DIMENSION.source,
+    label: 'Source',
+    kind: 'categorical',
+    levels: ['self', 'peer', 'authority', 'synthetic', 'agent', 'paper', 'discussion', 'course'],
+  },
+]
+
+export const TEST_PACK_VOCABULARY: Omit<DomainPackDefinitions, 'guards'> = {
   tagNamespaces: [
     { namespace: 'topic', label: 'Topic' },
     { namespace: 'scene', label: 'Scene' },
@@ -231,54 +284,11 @@ export const testPack: DomainPack = defineDomainPack('test-pack', {
     { id: EDGE.sameAs, label: 'same as', category: 'identity' },
     { id: EDGE.exemplifies, label: 'exemplifies', category: 'epistemic' },
   ],
-  stateDimensions: [
-    {
-      id: DIMENSION.confidence,
-      label: 'Confidence',
-      kind: 'ordinal',
-      levels: ['low', 'medium', 'high'],
-      ordered: true,
-    },
-    {
-      id: DIMENSION.exposure,
-      label: 'Exposure',
-      kind: 'ordinal',
-      levels: ['none', 'seen', 'studied', 'worked', 'revisited'],
-      ordered: true,
-    },
-    {
-      id: DIMENSION.evidence,
-      label: 'Evidence',
-      kind: 'categorical',
-      levels: ['none', 'anecdotal', 'reproduced', 'proven', 'weak', 'derived'],
-    },
-    {
-      id: DIMENSION.articulation,
-      label: 'Articulation',
-      kind: 'ordinal',
-      levels: ['low', 'medium', 'high'],
-      ordered: true,
-    },
-    {
-      id: DIMENSION.transfer,
-      label: 'Transfer',
-      kind: 'ordinal',
-      levels: ['low', 'medium', 'high', 'none', 'near', 'far'],
-      ordered: true,
-    },
-    {
-      id: DIMENSION.conflict,
-      label: 'Conflict',
-      kind: 'categorical',
-      levels: ['none', 'suspected', 'open', 'resolved'],
-    },
-    {
-      id: DIMENSION.source,
-      label: 'Source',
-      kind: 'categorical',
-      levels: ['self', 'peer', 'authority', 'synthetic', 'agent', 'paper', 'discussion', 'course'],
-    },
-  ],
+  stateDimensions: TEST_STATE_DIMENSIONS,
+}
+
+export const testPack: DomainPack = defineDomainPack('test-pack', {
+  ...TEST_PACK_VOCABULARY,
   guards: [thoughtRequiresSourceGuard, anchorMustExistGuard],
 })
 

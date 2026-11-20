@@ -1,9 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addPerson, addToken, startService, type EpistemeService } from '@episteme/service'
+import { addPerson, addToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire, type ToolResult } from './mcp-wire.js'
+import { startTestService } from './test-service.js'
 
 /**
  * Whose graph an agent works in over MCP, in a shared deployment, spoken over real HTTP (ADR 0012, ADR 0014).
@@ -22,7 +23,7 @@ let lin: { actor: string; human: string; agent: string }
 let mei: { actor: string; human: string; agent: string }
 
 async function start(): Promise<void> {
-  service = await startService({
+  service = await startTestService({
     port: 0,
     graph: join(directory, 'shared.db'),
     mode: 'shared',

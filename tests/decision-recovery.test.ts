@@ -1,8 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { CognitiveSession } from '@episteme/application'
 import {
-  CognitiveSession,
   SuggestionStore,
   type Proposal,
   type Resolution,
@@ -54,7 +55,7 @@ const LINK: Proposal = {
 
 /** A seeded graph with one pending draft, both written and released. */
 async function withDraft(proposal: Proposal): Promise<Suggestion> {
-  const session = await CognitiveSession.open({ filePath })
+  const session = await openTestSession({ filePath })
   await seedTopic(session)
   const result = await session.propose(proposal, {
     proposedBy: 'actor_agent_recovery',
@@ -102,7 +103,7 @@ describe('a crash after the graph was written and before the draft was removed',
       const draftsBefore = storedRecords(filePath, 'suggestions')
 
       // The real decision, run to completion: this is the graph a crash after its write leaves behind.
-      const deciding = await CognitiveSession.open({ filePath })
+      const deciding = await openTestSession({ filePath })
       const decided = await deciding.decide(suggestion.id, { action: 'accept' }, 'review')
       if (!decided.ok || decided.outcome === 'dismissed') throw new Error('expected a commit')
       const landed = shapeOf(deciding)
@@ -126,7 +127,7 @@ describe('a crash after the graph was written and before the draft was removed',
         channel: 'review',
       })
 
-      const recovered = await CognitiveSession.open({ filePath })
+      const recovered = await openTestSession({ filePath })
       expect(recovered.recovered).toEqual([
         {
           operationId: decided.operationId,
@@ -143,7 +144,7 @@ describe('a crash after the graph was written and before the draft was removed',
       await recovered.close()
 
       // And the settlement itself was written: the next start finds nothing to recover.
-      const later = await CognitiveSession.open({ filePath })
+      const later = await openTestSession({ filePath })
       expect(later.recovered).toEqual([])
       expect(shapeOf(later)).toEqual({ ...landed, pending: 0 })
       await later.close()
@@ -163,7 +164,7 @@ describe('a crash after the decision was begun and before the graph was written'
       channel: 'mcp-elicitation',
     })
 
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     expect(session.recovered).toEqual([
       { operationId: 'dec_never_landed', suggestionId: suggestion.id, settled: 'rolled_back' },
     ])
@@ -179,7 +180,7 @@ describe('a crash after the decision was begun and before the graph was written'
 describe('a decision whose graph write failed', () => {
   it('is settled, not repeated, when the same draft is decided again', async () => {
     const suggestion = await withDraft(STATE)
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
 
     // The graph's save fails once, as a full disk would, after the decision was recorded in the drafts.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- kept to be put back, and called with its own `this`
@@ -201,7 +202,7 @@ describe('a decision whose graph write failed', () => {
     ).toHaveLength(1)
     await session.close()
 
-    const reopened = await CognitiveSession.open({ filePath })
+    const reopened = await openTestSession({ filePath })
     expect(reopened.recovered).toEqual([])
     expect(reopened.understandingOf('q_why_order')).toEqual([{ id: 'confidence', level: 'high' }])
     expect(reopened.pendingSuggestions()).toEqual([])
@@ -217,7 +218,7 @@ describe('the drafts', () => {
     )
     await writeStoredRecords(filePath, { logs: { suggestions: v1 } })
 
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     expect(session.pendingSuggestions().map((pending) => pending.id)).toEqual([suggestion.id])
     await session.close()
   })

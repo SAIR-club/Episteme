@@ -2,10 +2,13 @@ import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CognitiveSession, convertGraph, currentChannel } from '@episteme/application'
-import { type EpistemeService, startService } from '@episteme/service'
+import { convertGraph, currentChannel } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { testScene } from './test-scene.js'
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 
 /**
  * The review channel is now `review` and a session's own events are `session`, as on the team's main line.
@@ -27,7 +30,7 @@ beforeEach(async () => {
     await copyFile(join(FIXTURE, `learn.jsonl${suffix}`), `${older}${suffix}`)
   }
   graph = join(directory, 'learn.db')
-  await convertGraph(older, graph)
+  await convertGraph(older, graph, testScene)
 })
 
 afterEach(async () => {
@@ -72,7 +75,7 @@ describe('channel names', () => {
       'learn-review',
     ])
 
-    const session = await CognitiveSession.open({ filePath: graph })
+    const session = await openTestSession({ filePath: graph })
     try {
       expect(session.reviews().map((review) => review.channel)).toEqual(['review', 'review'])
     } finally {
@@ -86,7 +89,7 @@ describe('channel names', () => {
   })
 
   it('writes the current names: `review` for a decision, `session` for a recorded level', async () => {
-    const session = await CognitiveSession.open({ filePath: graph })
+    const session = await openTestSession({ filePath: graph })
     try {
       const [draft] = session.pendingSuggestions()
       expect(draft).toBeDefined()
@@ -113,7 +116,7 @@ describe('channel names', () => {
     let open = false
 
     beforeEach(async () => {
-      service = await startService({ port: 0, graph })
+      service = await startTestService({ port: 0, graph })
       open = true
     })
 

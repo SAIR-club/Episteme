@@ -1,5 +1,8 @@
-import { CognitiveSession, SCOPE_BOOST } from '@episteme/application'
-import { startService, type EpistemeService } from '@episteme/service'
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
+import type { CognitiveSession } from '@episteme/application'
+import { SCOPE_BOOST } from '@episteme/application'
+import { type EpistemeService } from '@episteme/service'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +17,7 @@ import { mcpWire } from './mcp-wire.js'
 let session: CognitiveSession
 
 beforeEach(async () => {
-  session = await CognitiveSession.open({})
+  session = await openTestSession({})
   await session.addNode({
     id: 'k_general',
     label: 'Attention needs position information',
@@ -90,7 +93,7 @@ describe('over MCP', () => {
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-layered-'))
-    service = await startService({ port: 0, graph: join(directory, 'graph.db') })
+    service = await startTestService({ port: 0, graph: join(directory, 'graph.db') })
   })
 
   afterEach(async () => {

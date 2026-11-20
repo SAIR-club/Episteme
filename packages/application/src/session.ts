@@ -10,6 +10,7 @@ import {
   type SerializedStateEvent,
   defineDomainPack,
   type DomainPack,
+  type DomainPackDefinitions,
   type ActorId,
   type DimensionId,
   type DimensionIndex,
@@ -80,7 +81,6 @@ import {
 import { agentActor, humanActor, openEpisteme, type Episteme } from '@episteme/sdk'
 import { MAX_SCENE_RECORD_BYTES, SceneRecordStore, type SceneRecord } from './scene-records.js'
 import { ThreadStore, type Thread, type Turn, type TurnSummary } from './threads.js'
-import { baseScene } from './base-scene.js'
 import type { RecordableDimension, SessionScene } from './scene.js'
 import { openSqliteStorage } from '@episteme/storage-sqlite'
 
@@ -135,11 +135,17 @@ function defaultTags(topic = 'general', scope?: string): readonly Tag[] {
 
 /**
  * What the application itself registers for every scene: the `scope` tag namespace, which marks the partition
- * scope a node belongs to (ADR 0015, decision 6).
+ * scope a node belongs to (ADR 0015, decision 6). Kept as data too, so a `.epi` file's ontology manifest
+ * records it beside a scene's own vocabulary (ADR 0023).
  */
-const applicationPack: DomainPack = defineDomainPack('episteme-application', {
+export const applicationPackDefinitions: DomainPackDefinitions = {
   tagNamespaces: [{ namespace: 'scope', label: 'Scope' }],
-})
+}
+
+const applicationPack: DomainPack = defineDomainPack(
+  'episteme-application',
+  applicationPackDefinitions,
+)
 
 function defaultResponder(
   input: { readonly text: string },
@@ -541,9 +547,9 @@ export interface SessionOptions {
   readonly weights?: ConstructorParameters<typeof HybridRetriever>[4]
   /**
    * The scene the session serves: its packs, distillation policy and recordable dimensions (ADR 0013).
-   * Without one, the deprecated built-in Learn scene, for one release.
+   * Required: the application holds no scene of its own.
    */
-  readonly scene?: SessionScene
+  readonly scene: SessionScene
   /**
    * Whether people may publish (ADR 0014). Off by default: a graph that holds a publication cannot be opened by
    * a build from before publications, so turning it on is a deliberate choice.
@@ -642,10 +648,10 @@ export class CognitiveSession {
    * The ordering — load, then compose — is the rule `@episteme/sdk` exists to hold, so this does not
    * repeat it.
    */
-  static async open(options: SessionOptions = {}): Promise<CognitiveSession> {
+  static async open(options: SessionOptions): Promise<CognitiveSession> {
     const actors = [humanActor(HUMAN), agentActor(SCAFFOLD)]
     const adapter = options.adapter ?? new DeterministicEmbeddingAdapter()
-    const scene = options.scene ?? baseScene
+    const scene = options.scene
     const packs = [applicationPack, ...(options.packs ?? scene.packs)]
 
     // One embedding cache for every person's retriever: what a text means does not depend on who asks.
@@ -3251,15 +3257,12 @@ export type DecisionChannel = 'review' | 'mcp-elicitation' | 'delegation'
  */
 export type LegacyDecisionChannel = 'learn-review'
 
-/** The names earlier builds wrote, and what each is called now. Records keep the old name; reading maps it. */
-const RENAMED_CHANNELS: Readonly<Record<string, DecisionChannel>> = { 'learn-review': 'review' }
-
 /**
  * The current name of a decision channel, for a record written under an earlier name or a filter that uses one.
  * Records on disk are never rewritten, so every comparison of a channel goes through this.
  */
 export function currentChannel(channel: string): string {
-  return RENAMED_CHANNELS[channel] ?? channel
+  return channel === 'learn-review' ? 'review' : channel
 }
 
 /** What a human decided about a pending suggestion. */

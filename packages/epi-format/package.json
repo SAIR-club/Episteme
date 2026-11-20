@@ -1,0 +1,22 @@
+{
+  "name": "@episteme/epi-format",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The .epi knowledge-file container: canonical JSON, section checksums, envelope validation and typed refusals. No dependencies.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  }
+}

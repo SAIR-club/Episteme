@@ -1,8 +1,9 @@
+import { startTestService } from './test-service.js'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, workspaceFile, type EpistemeService } from '@episteme/service'
+import { workspaceFile, type EpistemeService } from '@episteme/service'
 import { SqliteStorageAdapter } from '@episteme/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -46,7 +47,7 @@ afterEach(async () => {
 
 describe('without a Workspace', () => {
   beforeEach(async () => {
-    service = await startService({ port: 0, graph: join(directory, 'learn.db') })
+    service = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
   })
 
   it('starts, and says at / where to connect instead of serving a page', async () => {
@@ -62,7 +63,7 @@ describe('without a Workspace', () => {
     const { status, body } = await get('/api/v1/state')
     expect(status).toBe(200)
     expect(typeof body['revision']).toBe('number')
-    expect(body['scene']).toBe('default')
+    expect(body['scene']).toBe('test')
     expect((body['nodes'] as unknown[]).length).toBeGreaterThan(0)
   })
 
@@ -174,7 +175,7 @@ describe('with a Workspace', () => {
     await mkdir(root, { recursive: true })
     await writeFile(join(root, 'index.html'), '<!doctype html><title>Workspace</title>')
     await writeFile(join(directory, 'secret.txt'), 'outside the workspace')
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'learn.db'),
       workspace: root,
