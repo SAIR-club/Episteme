@@ -1,8 +1,11 @@
+import { openTestSession } from './test-session.js'
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, MAX_SCENE_RECORD_BYTES, isRefusal } from '@episteme/application'
-import { addPerson, addToken, startService, type EpistemeService } from '@episteme/service'
+import type { CognitiveSession } from '@episteme/application'
+import { MAX_SCENE_RECORD_BYTES, isRefusal } from '@episteme/application'
+import { addPerson, addToken, type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mcpWire } from './mcp-wire.js'
 
@@ -31,7 +34,7 @@ async function refusalOf(work: Promise<unknown>): Promise<string | undefined> {
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-threads-'))
   filePath = join(directory, 'graph.db')
-  session = await CognitiveSession.open({ filePath })
+  session = await openTestSession({ filePath })
 })
 
 afterEach(async () => {
@@ -121,7 +124,7 @@ describe('a thread', () => {
     await session.putSceneRecord('mindlink', 'project/p1', { goal: 'speedrun' })
     await session.close()
 
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(session.threadView(thread.id)?.turns[0]).toMatchObject({
       text: 'keep these words',
       summary: { text: 'kept' },
@@ -214,7 +217,7 @@ describe('threads in a shared service', () => {
       agent: await addToken(users, linId, 'agent', 'claude-code'),
     }
     wei = { human: await addToken(users, weiId, 'human', 'workspace') }
-    service = await startService({
+    service = await startTestService({
       port: 0,
       graph: join(directory, 'shared.db'),
       mode: 'shared',

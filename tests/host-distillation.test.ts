@@ -1,8 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { CognitiveSession } from '@episteme/application'
 import {
-  CognitiveSession,
   SourceStore,
   SuggestionStore,
   payloadDigest,
@@ -88,7 +89,7 @@ let session: CognitiveSession
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-host-'))
   graph = join(directory, 'learn.db')
-  session = await CognitiveSession.open({ filePath: graph })
+  session = await openTestSession({ filePath: graph })
 })
 
 afterEach(async () => {
@@ -140,7 +141,7 @@ async function whileClosed<T>(read: () => T): Promise<T> {
   try {
     return read()
   } finally {
-    session = await CognitiveSession.open({ filePath: graph })
+    session = await openTestSession({ filePath: graph })
   }
 }
 
@@ -478,7 +479,7 @@ describe('drafts that failed to land (fault injection)', () => {
   })
   const restart = async () => {
     await session.close()
-    session = await CognitiveSession.open({ filePath: graph })
+    session = await openTestSession({ filePath: graph })
   }
   const landingRecords = () =>
     whileClosed(() =>

@@ -1,7 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, MAX_PENDING, type Suggestion } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { MAX_PENDING, type Suggestion } from '@episteme/application'
 import { CompanionLog } from '@episteme/storage-sqlite'
 import { seedTopic } from './fixtures.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -45,7 +47,7 @@ const revokedClaims = (session: CognitiveSession) =>
 
 describe('a claim about a candidate', () => {
   it('waits for the candidate, then is accepted about the node it became, leaving nothing revoked', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const proposed = await session.propose(
@@ -72,7 +74,7 @@ describe('a claim about a candidate', () => {
   })
 
   it('is refused, leaving nothing revoked, once the candidate was dismissed', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const proposed = await session.propose(
@@ -92,7 +94,7 @@ describe('a claim about a candidate', () => {
 
 describe('a distilled node put in the learner’s own words', () => {
   it('keeps its text with the label as decided', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     const question = questionOf(await distilled(session))
     const decided = await session.decide(
@@ -114,7 +116,7 @@ describe('a distilled node put in the learner’s own words', () => {
 
 describe('the pending limit', () => {
   it('refuses a run that would take the queue past it, keeping nothing', async () => {
-    const session = await CognitiveSession.open()
+    const session = await openTestSession()
     await seedTopic(session)
     for (let index = 0; index < MAX_PENDING - 1; index += 1) {
       const proposed = await session.propose({ kind: 'claim', label: `claim ${index}` }, agent)
@@ -139,7 +141,7 @@ describe('a distillation whose drafts fail to be written', () => {
 
   it('keeps no draft in memory that the file does not hold', async () => {
     const filePath = join(directory, 'learn.db')
-    const session = await CognitiveSession.open({ filePath })
+    const session = await openTestSession({ filePath })
     await seedTopic(session)
     CompanionLog.prototype.replace = function (this: CompanionLog, bodies) {
       if (this.location.endsWith('(suggestions)')) {
@@ -152,7 +154,7 @@ describe('a distillation whose drafts fail to be written', () => {
 
     CompanionLog.prototype.replace = realReplace
     await session.close()
-    const reopened = await CognitiveSession.open({ filePath })
+    const reopened = await openTestSession({ filePath })
     expect(reopened.pendingSuggestions()).toEqual([])
     await reopened.close()
   })

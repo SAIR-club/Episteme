@@ -1,7 +1,8 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { startService, type EpistemeService } from '@episteme/service'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { answer, mcpWire, type McpWire, type ToolResult } from './mcp-wire.js'
 import { storedRecords } from './stored.js'
@@ -23,7 +24,7 @@ let server: EpistemeService
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-flow-'))
   filePath = join(directory, 'learn.db')
-  server = await startService({ port: 0, graph: filePath })
+  server = await startTestService({ port: 0, graph: filePath })
 })
 
 afterEach(async () => {
@@ -43,7 +44,7 @@ function plainHost(name: string): McpWire {
 
 async function restartHost(): Promise<void> {
   await server.close()
-  server = await startService({ port: 0, graph: filePath })
+  server = await startTestService({ port: 0, graph: filePath })
 }
 
 async function learn<T>(path: string, body?: unknown): Promise<{ status: number; body: T }> {
@@ -87,7 +88,7 @@ async function eventsOnDisk(): Promise<
 > {
   await server.close()
   const lines = storedRecords(filePath)
-  server = await startService({ port: 0, graph: filePath })
+  server = await startTestService({ port: 0, graph: filePath })
   return lines
     .map(
       (line) =>

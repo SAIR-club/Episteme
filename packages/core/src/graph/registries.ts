@@ -3,6 +3,10 @@ import {
   EdgeTypeRegistry,
   StateDimensionRegistry,
   TagNamespaceRegistry,
+  Registry,
+  type StreamDefinition,
+  type ProjectionRuleDefinition,
+  type RetrievalWeightsDefinition,
 } from './registry.js'
 import { GuardRegistry } from '../guards/index.js'
 import type { MutationGuard, GuardGraphView } from '../guards/index.js'
@@ -28,24 +32,39 @@ export interface Registries {
   readonly stateDimensions: StateDimensionRegistry
   readonly tagNamespaces: TagNamespaceRegistry
   readonly guards: GuardRegistry
+  readonly streams: Registry<StreamDefinition>
+  readonly projections: Registry<ProjectionRuleDefinition>
+  readonly retrievalWeights: Registry<RetrievalWeightsDefinition>
 }
 
+export const CANONICAL_STREAMS: readonly StreamDefinition[] = Object.freeze([
+  { id: 'understanding', label: 'Understanding', reducesUnderstanding: true },
+  { id: 'review', label: 'Review', reducesUnderstanding: false },
+  { id: 'conversation', label: 'Conversation', reducesUnderstanding: false },
+  { id: 'system', label: 'System', reducesUnderstanding: false },
+])
+
 export function createRegistries(): Registries {
-  return {
+  const registries: Registries = {
     nodeTypes: new NodeTypeRegistry(),
     edgeTypes: new EdgeTypeRegistry(),
     stateDimensions: new StateDimensionRegistry(),
     tagNamespaces: new TagNamespaceRegistry(),
     guards: new GuardRegistry(),
+    streams: new Registry<StreamDefinition>('stream'),
+    projections: new Registry<ProjectionRuleDefinition>('projection rule'),
+    retrievalWeights: new Registry<RetrievalWeightsDefinition>('retrieval weights'),
   }
+  for (const stream of CANONICAL_STREAMS) registries.streams.register(stream)
+  return registries
 }
 
 /**
  * What a domain extension contributes to Core.
  *
- * A pack is the only sanctioned way to add vocabulary — node types, edge types, state
- * dimensions, tag namespaces and guards — keeping domain-specific application semantics
- * out of Core while still letting them share one graph.
+ * A pack is the only sanctioned way to add vocabulary and view rules — node types, edge types,
+ * state dimensions, tag namespaces, guards, streams, projections and retrieval weights — keeping
+ * domain-specific application semantics out of Core while still letting them share one graph.
  */
 export interface DomainPack {
   readonly name: string
@@ -66,6 +85,9 @@ export interface DomainPackDefinitions {
   readonly stateDimensions?: readonly StateDimensionDefinition[]
   readonly tagNamespaces?: readonly TagNamespaceDefinition[]
   readonly guards?: readonly MutationGuard[]
+  readonly streams?: readonly StreamDefinition[]
+  readonly projections?: readonly ProjectionRuleDefinition[]
+  readonly retrievalWeights?: readonly RetrievalWeightsDefinition[]
 }
 
 /**
@@ -92,6 +114,15 @@ export function defineDomainPack(name: string, definitions: DomainPackDefinition
       }
       for (const guard of definitions.guards ?? []) {
         registries.guards.register(guard)
+      }
+      for (const stream of definitions.streams ?? []) {
+        registries.streams.registerIfAbsent(stream)
+      }
+      for (const rule of definitions.projections ?? []) {
+        registries.projections.registerIfAbsent(rule)
+      }
+      for (const weights of definitions.retrievalWeights ?? []) {
+        registries.retrievalWeights.registerIfAbsent(weights)
       }
     },
   }

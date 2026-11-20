@@ -3,7 +3,6 @@ export * from './scene.js'
 export * from './scene-view.js'
 export * from './threads.js'
 export * from './scene-records.js'
-export * from './learn-scene.js'
 export * from './suggestions.js'
 export * from './sources.js'
 /** What a host's model may submit as its reading of material (ADR 0011), for the surfaces that accept it. */

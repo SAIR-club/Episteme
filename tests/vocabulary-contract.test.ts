@@ -1,8 +1,9 @@
+import { startTestService } from './test-service.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { asId, createRegistries, type DimensionId, type EpistemeError } from '@episteme/core'
-import { startService, type EpistemeService } from '@episteme/service'
+import { type EpistemeService } from '@episteme/service'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -53,7 +54,7 @@ async function post(path: string, body: unknown): Promise<Response> {
 
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'episteme-vocabulary-'))
-  service = await startService({ port: 0, graph: join(directory, 'learn.db') })
+  service = await startTestService({ port: 0, graph: join(directory, 'learn.db') })
 })
 
 afterEach(async () => {

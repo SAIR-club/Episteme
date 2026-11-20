@@ -1,7 +1,9 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession, type Proposal } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
+import { type Proposal } from '@episteme/application'
 import { asId, isEpistemeError, type EdgeId, type NodeId } from '@episteme/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -104,7 +106,7 @@ describe('the application', () => {
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'episteme-ids-'))
     filePath = join(directory, 'learn.db')
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     await seedTopic(session)
   })
 
@@ -135,7 +137,7 @@ describe('the application', () => {
 
     // And both survive a save and a reload: nothing was replaced in place.
     await session.close()
-    session = await CognitiveSession.open({ filePath })
+    session = await openTestSession({ filePath })
     expect(between('c_rope', 'c_transformer')).toHaveLength(2)
   })
 

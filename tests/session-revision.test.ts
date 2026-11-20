@@ -1,7 +1,8 @@
+import { openTestSession } from './test-session.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CognitiveSession } from '@episteme/application'
+import type { CognitiveSession } from '@episteme/application'
 import { seedTopic } from './fixtures.js'
 import { describe, expect, it } from 'vitest'
 
@@ -11,7 +12,7 @@ import { describe, expect, it } from 'vitest'
  */
 
 async function seeded(): Promise<CognitiveSession> {
-  const session = await CognitiveSession.open()
+  const session = await openTestSession()
   await seedTopic(session)
   return session
 }
@@ -65,13 +66,13 @@ describe('the session revision', () => {
     const directory = await mkdtemp(join(tmpdir(), 'episteme-epoch-'))
     const filePath = join(directory, 'learn.db')
     try {
-      const first = await CognitiveSession.open({ filePath })
+      const first = await openTestSession({ filePath })
       await seedTopic(first)
       await first.record('q_why_order', { confidence: 'low' })
       const before = { epoch: first.epoch, revision: first.revision }
       await first.close()
 
-      const second = await CognitiveSession.open({ filePath })
+      const second = await openTestSession({ filePath })
       await second.record('q_why_order', { confidence: 'high' })
       await second.batch(() => undefined)
       // Counting again from zero can land on the same number for a different state.
