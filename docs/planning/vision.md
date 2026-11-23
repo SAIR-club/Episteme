@@ -33,7 +33,7 @@ Source: [`README.md`](../../README.md).
   understanding.
 
 Sources: [`README.md`](../../README.md), [roadmap (archived): Positioning](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-19/docs/planning/roadmap.md#positioning-a-layer-agents-attach-to-not-another-agent),
-[ADR 0008](../decisions/0008-agent-plugin-surface.md).
+ADR 0008.
 
 ## Product direction
 
@@ -65,8 +65,8 @@ What Episteme is not: a chat assistant, a knowledge base, a course generator or 
 model of its own.
 
 Hard constraints are the project invariants in
-[`AGENTS.md`](../../AGENTS.md#project-invariants). Changing one requires an ADR in
-[`docs/decisions/`](../decisions/).
+[`AGENTS.md`](../../AGENTS.md#project-invariants). Changing one is an architecture decision
+recorded in [`decision-log.md`](decision-log.md).
 
 Explicitly out of scope for now, because scope creep is the main risk to this project:
 

@@ -3,7 +3,7 @@
 An `.epi` file (Episteme Knowledge File) carries one graph's understanding in a single JSON
 document: what the knowledge is, what vocabulary it uses, how one or more people understand it, how
 that understanding evolved, and what has been deliberately shared. The format's contract is
-[ADR 0023](../decisions/0023-epi-knowledge-format.md); this page shows how to use it.
+ADR 0023; this page shows how to use it.
 
 ## The two capabilities
 

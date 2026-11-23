@@ -9,9 +9,9 @@ it came from.
   recorded in [`../planning/decision-log.md`](../planning/decision-log.md) with this file as its
   source, and whatever it left open becomes an issue.
 - A raw discussion is a draft, not documentation. Do not link to it from code or from the
-  architecture docs; link to the decision or ADR instead.
+  architecture docs; link to the decision log instead.
 - Remove anything private (credentials, personal data) before committing a discussion.
 
 | date | topic | source | related decisions |
 | ---- | ----- | ------ | ----------------- |
-| 2026-11-18 | `.epi` native knowledge format (v2) | [raw/2026-11-18-epi-native-format.md](raw/2026-11-18-epi-native-format.md) | [0022](../decisions/0022-epi-file-format.md) (proposed) |
+| 2026-11-18 | `.epi` native knowledge format (v2) | [raw/2026-11-18-epi-native-format.md](raw/2026-11-18-epi-native-format.md) | design draft |

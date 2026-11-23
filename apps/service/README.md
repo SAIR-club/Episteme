@@ -1,7 +1,7 @@
 # @episteme/service
 
 The Episteme service: the single owner of a graph, serving MCP to agents and a versioned REST API to
-human-facing clients, behind one boundary. See [ADR 0010](../../docs/decisions/0010-episteme-service.md).
+human-facing clients, behind one boundary. See ADR 0010.
 
 It is an application because it is a process, and it depends on no other application. A Workspace, the Learn
 page included, is a client of it.
@@ -54,7 +54,7 @@ Read this before connecting anything.
 - **Agents can only propose. Deciding needs the person's own token, which an agent's token cannot replace.**
   This stops accidents and makes a bypass deliberate and visible. It does not stop an agent that runs as you,
   with a shell, from using your token: run such agents with a host policy that forbids calling the decision
-  routes ([ADR 0012](../../docs/decisions/0012-human-review-security.md)).
+  routes (ADR 0012).
 - **Who a request is for comes from its credential**, `Authorization: Bearer <token>` or the Workspace's session
   cookie, never from its body. Deciding a suggestion, recording understanding and adding a node need a `human`
   credential; an `agent` credential can read, propose and distill.

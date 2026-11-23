@@ -1,7 +1,7 @@
 # @episteme/storage-sqlite
 
 Episteme's durable storage: one SQLite file per graph, behind the graph and event-log ports. See
-[ADR 0017](../../docs/decisions/0017-sqlite-storage.md) and [ADR 0018](../../docs/decisions/0018-sqlite-only.md).
+ADR 0017 and ADR 0018.
 
 What one file holds:
 

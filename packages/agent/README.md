@@ -2,9 +2,9 @@
 
 The cognitive agent interface, plus a scripted mock. **AI suggests; the human confirms.**
 
-Episteme ships no model of its own: an agent host supplies it ([ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md)),
+Episteme ships no model of its own: an agent host supplies it (ADR 0008),
 and a host's reading of material enters through the host reader of `@episteme/distillation`
-([ADR 0011](../../docs/decisions/0011-host-assisted-distillation.md)). The mock stays because the loop's proofs
+(ADR 0011). The mock stays because the loop's proofs
 need an agent that is held constant: an agent that could not be held constant would make the
 project's central claim — "the response changed _because_ of stored understanding" — impossible to
 verify. The mock answers from the workspace it is handed, so a test can vary only the history and

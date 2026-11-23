@@ -2,7 +2,7 @@
 
 The most consequential shape in Episteme, and the reason it is not a chat log with a database behind
 it. Read [data-model.md](data-model.md) for the surrounding nouns and
-[ADR 0002](../decisions/0002-event-sourced-cognitive-state.md) for why this model was chosen.
+ADR 0002 for why this model was chosen.
 
 ## The record
 
@@ -108,7 +108,7 @@ log.stateOf(claimId, actorId, { branchId }) // one line of inquiry
 A named branch reads by stitching its ancestry: each ancestor contributes the prefix ending where the
 next branch forked from it, and the branch contributes everything it recorded. A fork from an earlier
 event therefore does **not** inherit changes made afterwards on the original line. See
-[ADR 0005](../decisions/0005-fork-lineage.md).
+ADR 0005.
 
 ## Retraction without erasure
 

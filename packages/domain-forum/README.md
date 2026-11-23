@@ -55,7 +55,7 @@ has been drawn in the wrong place.
 
 ## Prerequisites before implementing
 
-- [ADR 0001](../../docs/decisions/0001-core-boundary.md) — the Core boundary this pack depends on.
+- ADR 0001 — the Core boundary this pack depends on.
 - The `learn` pack, as the reference implementation of a pack.
 - An access/policy layer, since discussion content is contributed rather than private by default.
 

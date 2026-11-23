@@ -1,10 +1,10 @@
 # .epi native knowledge format (v2) — design draft
 
-Date: 2026-11-18. Status: **first cut implemented**; see [ADR 0023](../decisions/0023-epi-knowledge-format.md)
+Date: 2026-11-18. Status: **first cut implemented**; see ADR 0023
 for the contract that landed (`packages/epi-format`, `buildEpiFile` in `@episteme/storage-sqlite`).
 This draft stays as the discussion record; where it and ADR 0023 differ, the ADR is the contract.
-Related: [ADR 0022](../decisions/0022-epi-file-format.md) (proposed), [ADR 0018](../decisions/0018-sqlite-only.md),
-[ADR 0013](../decisions/0013-repository-boundary.md), [ADR 0014](../decisions/0014-publication-and-reuse.md).
+Related: ADR 0022 (proposed), ADR 0018,
+ADR 0013, ADR 0014.
 
 ## Goal
 

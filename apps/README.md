@@ -1,7 +1,7 @@
 # Applications
 
 Two exist: `apps/service`, the Episteme service that owns a graph and serves MCP and REST
-([ADR 0010](../docs/decisions/0010-episteme-service.md)), and `apps/learn`, the Learn terminal and the page
+(ADR 0010), and `apps/learn`, the Learn terminal and the page
 the service serves as a Workspace. The rest of this file records the intended application surfaces, so the
 layer boundary is visible.
 
@@ -56,6 +56,6 @@ the loop is proven would be a guess about the thing that matters least right now
 ## Prerequisites before implementing
 
 - Phase 0 complete: the loop in the [README](../../README.md) verified end to end.
-- A decision on frontend stack, recorded as an ADR — it is a replaceable choice, so it should be made
+- A decision on frontend stack, recorded in the [decision log](../../docs/planning/decision-log.md) — it is a replaceable choice, so it should be made
   deliberately rather than by default.
 - `@episteme/sdk`, so an application does not wire Core together by hand.

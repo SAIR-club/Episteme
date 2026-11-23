@@ -1,7 +1,7 @@
 # Architecture overview
 
 This document describes what Episteme is made of, which layer owns which decision, and why the
-seams are where they are. It is the durable companion to [ADR 0001](../decisions/0001-core-boundary.md),
+seams are where they are. It is the durable companion to ADR 0001,
 which records the boundary decision itself.
 
 ## The problem the layering solves
@@ -121,8 +121,8 @@ The event-sourced record of changing understanding, and the only place two invar
    event; a change of direction is a new branch.
 
 `commit`, `fork`, `history`, `reduce`, `stateOf`, `revokeStateEvent`, `tips` and `branchAncestry` are
-the whole surface. See [ADR 0002](../decisions/0002-event-sourced-cognitive-state.md) and
-[ADR 0005](../decisions/0005-fork-lineage.md) for the model's details, and
+the whole surface. See ADR 0002 and
+ADR 0005 for the model's details, and
 [state-events.md](state-events.md) for how to work with it.
 
 ### Guards

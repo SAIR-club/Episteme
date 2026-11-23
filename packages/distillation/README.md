@@ -1,7 +1,7 @@
 # @episteme/distillation
 
 Distillation turns learning material into candidate understanding, and produces suggestions only
-([ADR 0009](../../docs/decisions/0009-distillation.md)). It never writes the graph: everything it finds is
+(ADR 0009). It never writes the graph: everything it finds is
 proposed to the learner, who accepts, modifies or dismisses it.
 
 It is domain-agnostic. It knows what a dialogue turn, a paragraph, a question and an example look like, and
@@ -32,7 +32,7 @@ earlier question. It returns every candidate it found and **writes nothing**.
   `cand:e2.q1`, and the engine rewrites the agent's local names to these.
 - **Canonical text.** The material is read in canonical form (`canonicalText`: line breaks as `\n`, then
   Unicode NFC), and every span points into that text, in UTF-16 offsets. A caller stores that text, so a span
-  never needs mapping back ([ADR 0011](../../docs/decisions/0011-host-assisted-distillation.md)).
+  never needs mapping back (ADR 0011).
 - **Origin.** A candidate with a `quote` rests on exactly those words:
   - the engine finds them in the episode the suggestion names in `quoteAt`, or else in the one being read;
   - when the words occur there more than once, `quoteAt.occurrence` (1-based) says which;
@@ -99,7 +99,7 @@ belongs to a model-backed agent behind the same interface.
 ## A host's reading
 
 `prepareHostReading({ sourceId, text, items, policy, actorId })` takes what a host's model read
-([ADR 0011](../../docs/decisions/0011-host-assisted-distillation.md)). It checks what can be checked before
+(ADR 0011). It checks what can be checked before
 reading:
 
 - each item's shape;

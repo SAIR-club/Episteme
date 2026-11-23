@@ -7,7 +7,6 @@ The durable material that exists today lives elsewhere and should not be duplica
 
 - the pitch and core ideas — [`README.md`](../../README.md);
 - the layering and the decision rule — [`architecture/overview.md`](../architecture/overview.md);
-- why the architecture is the way it is — [`decisions/`](../decisions/);
 - the Learn scene's vocabulary — [`packages/domain-learn`](../../packages/domain-learn/README.md).
 
 ## What belongs here

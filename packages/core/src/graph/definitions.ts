@@ -16,7 +16,7 @@ export interface NodeTypeDefinition {
    * Property keys every instance must provide.
    *
    * v0 validates presence, not shape — a deliberately replaceable choice recorded in
-   * ADR 0001 (see `docs/decisions/0001-core-boundary.md`). A schema library can be
+   * ADR 0001. A schema library can be
    * plugged in later behind this same definition without touching Core call sites.
    */
   readonly requiredProperties?: readonly string[]

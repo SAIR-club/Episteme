@@ -54,7 +54,7 @@ event-sourced system "when did this happen" is recorded data rather than an impl
 `properties` is intentionally open: the registered node type declares which keys are required, and the
 graph stays agnostic so a new domain needs no Core change. v0 validates the _presence_ of required
 keys and nothing more — a deliberately replaceable choice (see
-[ADR 0001](../decisions/0001-core-boundary.md)); a schema library can be plugged in behind
+ADR 0001); a schema library can be plugged in behind
 `NodeTypeDefinition` without touching a call site.
 
 **`GraphEdge`** — `id`, `type`, `from`, `to`, optional `confidence`. Directed. `confidence` here is
