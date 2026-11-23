@@ -47,7 +47,7 @@ what a particular person has come to understand from that material, as structure
 What was submitted to be read, a learning material or an excerpt of a conversation, is kept beside the graph
 as a source, never in it. Conversations are kept the same way: their raw turns are an archive only their owner
 reads, beside the graph and never in it, and only their summaries can be shared
-([ADR 0015](docs/decisions/0015-threads-and-scene-records.md)). Nothing an agent infers becomes part of
+(ADR 0015). Nothing an agent infers becomes part of
 the graph until the person decides on it. The graph records what the person accepted as a description of
 their understanding at that time. It does not prove they have mastered anything.
 
@@ -179,7 +179,7 @@ episteme/
 │   ├── semantic-session/   Phase 2: a paraphrase reaching stored cognition
 │   └── distill-session/    Distillation: a learning dialogue in, only what the learner accepts kept
 ├── tests/                  Cross-package tests, including the North Star, restart and paraphrase suites
-└── docs/                   architecture, concepts, decisions (ADRs), roadmap
+└── docs/                   architecture, concepts, planning, roadmap
 ```
 
 Only packages that do something exist as code. The rest are documented placeholders rather
@@ -260,17 +260,6 @@ opt-in.
 - [Projection](docs/architecture/projection.md)
 - [Retrieval](docs/architecture/retrieval.md)
 - [Validation sessions and diagnosis](docs/testing/diagnosis.md)
-- [ADR 0001 — The Core boundary](docs/decisions/0001-core-boundary.md)
-- [ADR 0002 — Event-sourced cognitive state](docs/decisions/0002-event-sourced-cognitive-state.md)
-- [ADR 0003 — Storage abstraction](docs/decisions/0003-storage-abstraction.md)
-- [ADR 0004 — Domain extension boundary](docs/decisions/0004-domain-extension-boundary.md)
-- [ADR 0005 — Fork lineage](docs/decisions/0005-fork-lineage.md)
-- [ADR 0006 — Persistence format](docs/decisions/0006-persistence-format.md)
-- [ADR 0007 — Semantic retrieval](docs/decisions/0007-semantic-retrieval.md)
-- [ADR 0008 — Episteme as a plugin for other agents](docs/decisions/0008-agent-plugin-surface.md)
-- [ADR 0009 — Distillation](docs/decisions/0009-distillation.md)
-- [ADR 0010 — The Episteme service](docs/decisions/0010-episteme-service.md)
-- [ADR 0011 — Host-assisted distillation](docs/decisions/0011-host-assisted-distillation.md)
 - [Vision](docs/planning/vision.md) · [Decision log](docs/planning/decision-log.md) ·
   [Discussions](docs/discussions/index.md)
 - [MindLink product spec](https://github.com/SAIR-club/Episteme/blob/archive/docs-2026-10-30/docs/planning/mindlink-spec.md) (archived: it is MindLink's plan, not Episteme's)
@@ -284,7 +273,7 @@ opt-in.
 - **Deciding needs the person's token, but a same-user agent can read it.** An agent's token cannot decide,
   and a decision without the person's token is refused. An agent that runs as you, with a shell, can still use
   your token: run such agents with a host policy that forbids calling the decision routes
-  ([ADR 0012](docs/decisions/0012-human-review-security.md)).
+  (ADR 0012).
 - **The Workspace does not show a suggestion's basis or speaker** yet. The data is in the API
   ([#26](https://github.com/SAIR-club/Episteme/issues/26)).
 - **Retrieval uses a deterministic embedding adapter.** A question phrased very differently from what was
@@ -301,7 +290,7 @@ federation, institutional deployment, payments, complex governance, educational-
 experiments, and full Lean integration.
 
 Episteme ships no model of its own. The host's agent supplies the model, and `packages/agent` keeps a scripted
-mock as the deterministic test double the loop's proofs depend on ([ADR 0008](docs/decisions/0008-agent-plugin-surface.md)).
+mock as the deterministic test double the loop's proofs depend on (ADR 0008).
 
 ## What comes next
 

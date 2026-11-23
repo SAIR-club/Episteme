@@ -6,7 +6,7 @@
 
 ### 不兼容的变化
 
-- **存储只用 SQLite**（[ADR 0018](docs/decisions/0018-sqlite-only.md)）：一个图谱就是一个 SQLite 文件，旁边的建议、材料、对话和场景记录也存在这个文件里，不再有 `.jsonl` 文件和 `.lock` 文件。`@episteme/storage-local`（JSONL）已删除，`graph import` / `graph export` 一并删除；旧的 JSONL 图谱不能再打开，也没有导入工具。默认图谱改为 `~/.episteme/learn.db`。
+- **存储只用 SQLite**（ADR 0018）：一个图谱就是一个 SQLite 文件，旁边的建议、材料、对话和场景记录也存在这个文件里，不再有 `.jsonl` 文件和 `.lock` 文件。`@episteme/storage-local`（JSONL）已删除，`graph import` / `graph export` 一并删除；旧的 JSONL 图谱不能再打开，也没有导入工具。默认图谱改为 `~/.episteme/learn.db`。
 - **需要 Node 22 或更高版本**：Node 20 已于 2026 年 4 月停止维护；SQLite 驱动升级到 `better-sqlite3` 13。
 
 ## [0.1.0] - 2026-10-09

@@ -5,8 +5,8 @@ part of it is built. [overview.md](overview.md) describes the layers that exist;
 whole they belong to.
 
 Use it in two ways. Before adding a module or moving a boundary, find the module here and check its tier and
-constraints. When a change does not fit, either the change is drifting or this document is wrong, and an ADR
-decides which. An accepted ADR wins over this document, which is then updated to match it.
+constraints. When a change does not fit, either the change is drifting or this document is wrong, and the
+[decision log](../planning/decision-log.md) decides which. A logged decision wins over this document, which is then updated to match it.
 
 ![Target architecture](../images/target-architecture.webp)
 
@@ -67,9 +67,9 @@ from turning into a different product.
 
 1. **Agents propose, people confirm.** Nothing an agent sends can confirm a candidate or name who confirmed
    it. The agent-facing interface has no confirm operation. Confirmation comes from the Workspace, or from a
-   form shown by a host trusted to show it to the person ([ADR 0008](../decisions/0008-agent-plugin-surface.md),
+   form shown by a host trusted to show it to the person (ADR 0008,
    _Trust boundaries_). Which protocol a request uses is not authorization: a decision needs a person's
-   credential, and an agent's credential cannot replace it ([ADR 0012](../decisions/0012-human-review-security.md)).
+   credential, and an agent's credential cannot replace it (ADR 0012).
    That stops accidents and makes a bypass deliberate and visible. It does not stop an agent that runs as the
    person, with a shell, from using their credential, and that is documented as a limitation rather than
    presented as a guarantee.
@@ -78,8 +78,8 @@ from turning into a different product.
    authoritatively by the service in the artifact store, append-only and referenced by provenance. A
    Workspace projects them as a tree and never owns them. An imported conversation keeps its source, and is
    not stored as a complete tree when its branches were not supplied. Nothing in a conversation enters the
-   understanding graph except through review ([ADR 0009](../decisions/0009-distillation.md),
-   [ADR 0010](../decisions/0010-episteme-service.md)).
+   understanding graph except through review (ADR 0009,
+   ADR 0010).
 3. **Understanding events are their own stream.** The event log holds several streams: understanding events,
    which are append-only and the only source of current understanding; review records, which say who
    decided what about which candidate; and conversation and system events (messages, imports, syncs,
@@ -131,7 +131,7 @@ on something named.
 ## Order
 
 1. **Make it usable where the user already works.** Separate the service from the Learn surface, build
-   host-model extraction, and package the Claude Code plugin. Each starts with its own ADR. This is what
+   host-model extraction, and package the Claude Code plugin. Each starts with its own decision-log entry. This is what
    lets the loop be used, and measured, inside Obsidian and Claude Code.
 2. **The Workspace's first views.** Review centre, understanding graph, understanding timeline. The data for
    the timeline already exists as each actor's event history.

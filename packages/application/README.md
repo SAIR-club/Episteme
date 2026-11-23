@@ -5,7 +5,7 @@ The use-case layer: what a learner can do with their own graph, independent of t
 `CognitiveSession` (formerly `CognitiveSession`, kept as a deprecated alias) opens a graph for one scene, answers a question from the retrieval it displays, records what the human now
 understands, adds and links nodes, and summarises progress. The terminal and web surfaces in
 [`apps/learn`](../../apps/learn/README.md) drive it, and so will the MCP endpoint described in
-[ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md).
+ADR 0008.
 
 It lives in a package rather than in an app so that no surface depends on another one. The MCP endpoint must
 not look like it depends on the Learn web app, because it does not. Both depend on this.
@@ -45,7 +45,7 @@ second scene exists would be an abstraction without a second case to fit.
 
 ## Distillation
 
-`distill({ title, text })` turns learning material into pending suggestions ([ADR 0009](../../docs/decisions/0009-distillation.md)).
+`distill({ title, text })` turns learning material into pending suggestions (ADR 0009).
 It changes no understanding.
 
 - **The material** is kept in the graph's database (its `sources` log), beside the graph and outside it. It has

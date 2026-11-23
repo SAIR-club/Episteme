@@ -1,7 +1,7 @@
 # @episteme/mcp
 
 The MCP surface of an Episteme host. It lets an agent `recall`, `propose`, `reflect` and `distill` over one
-learner's graph, and nothing else. See [ADR 0008](../../docs/decisions/0008-agent-plugin-surface.md).
+learner's graph, and nothing else. See ADR 0008.
 
 It is a package rather than an app because the host that serves it is the same process that serves the Learn
 surface. That process owns the graph file, and no app depends on another app.

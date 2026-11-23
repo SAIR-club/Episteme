@@ -155,7 +155,7 @@ retrieval-quality       ranking is wrong but the mechanism is sound
 abstraction is wrong    evidence that an existing boundary should move
 ```
 
-Prefer the smallest fix. An abstraction changing is an architecture decision and needs an ADR, not a patch.
+Prefer the smallest fix. An abstraction changing is an architecture decision and needs an entry in the [decision log](../planning/decision-log.md), not a patch.
 
 ## Fix policy
 

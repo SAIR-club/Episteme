@@ -49,4 +49,4 @@ A future pack would plausibly register:
   likeliest place to start, since it can express many relational claims about a graph cheaply.
 - An `Evidence` representation that can hold a machine-checkable artefact as a source.
 
-See [ADR 0001](../../docs/decisions/0001-core-boundary.md) for why this is not in Core.
+See ADR 0001 for why this is not in Core.
