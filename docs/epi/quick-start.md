@@ -73,6 +73,19 @@ timelineView(epi)          // another: the revision thread, in the archive's com
 Views are derived presentation: they reference the file's own stable ids, copy no knowledge, and
 rebuild identically from the knowledge section alone.
 
+## Reading from another language
+
+Run the [Python reference reader](reference/read_epi.py) with Python 3.10+ and its standard library.
+
+```sh
+python3 docs/epi/reference/read_epi.py docs/epi/example.epi
+```
+
+The reader prints one JSON object with node IDs grouped by type (`nodesByType`), `{from, to, type}`
+relations, state rows grouped by actor (`states`), and the carried `publications` array. An
+archive-only file yields empty results. The example checks the structure needed for these queries.
+Hash integrity and replay verification are described below.
+
 ## Two different verifications
 
 Checksums and replay prove different things, and neither stands in for the other:
