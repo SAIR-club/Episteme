@@ -1,0 +1,345 @@
+{
+  "nodes": [
+    {
+      "id": "n01",
+      "kind": "concept",
+      "label": "自注意力（Self-Attention）",
+      "tags": ["topic:transformer", "topic:注意力"]
+    },
+    {
+      "id": "n02",
+      "kind": "concept",
+      "label": "位置编码（Positional Encoding）",
+      "tags": ["topic:transformer", "topic:序列"]
+    },
+    {
+      "id": "n03",
+      "kind": "claim",
+      "label": "Self-attention does not encode sequence order",
+      "tags": ["topic:transformer"]
+    },
+    {
+      "id": "n04",
+      "kind": "claim",
+      "label": "Sinusoidal positional encoding uses fixed frequencies",
+      "tags": ["topic:transformer"]
+    },
+    {
+      "id": "n05",
+      "kind": "concept",
+      "label": "Rotary Position Embedding (RoPE)",
+      "tags": ["topic:transformer"]
+    },
+    {
+      "id": "n06",
+      "kind": "claim",
+      "label": "多头注意力并行关注不同特征",
+      "tags": ["topic:transformer", "topic:注意力"]
+    },
+    { "id": "n07", "kind": "concept", "label": "分词器（Tokenizer）", "tags": ["topic:文本"] },
+    {
+      "id": "n08",
+      "kind": "concept",
+      "label": "梯度裁剪（Gradient Clipping）",
+      "tags": ["topic:optimization", "topic:训练"]
+    },
+    {
+      "id": "n09",
+      "kind": "concept",
+      "label": "数据库索引（Database Index）",
+      "tags": ["topic:database", "topic:索引"]
+    },
+    { "id": "n10", "kind": "concept", "label": "B-tree Range Scan", "tags": ["topic:database"] },
+    {
+      "id": "n11",
+      "kind": "concept",
+      "label": "事务隔离（Transaction Isolation）",
+      "tags": ["topic:database", "topic:事务"]
+    },
+    {
+      "id": "n12",
+      "kind": "claim",
+      "label": "Repeatable Read holds a consistent snapshot",
+      "tags": ["topic:database"]
+    },
+    {
+      "id": "n13",
+      "kind": "concept",
+      "label": "Write-Ahead Logging (WAL)",
+      "tags": ["topic:database", "topic:持久化"]
+    },
+    {
+      "id": "n14",
+      "kind": "claim",
+      "label": "崩溃恢复会重放已提交的修改",
+      "tags": ["topic:持久化"]
+    },
+    { "id": "n15", "kind": "claim", "label": "复合索引遵循最左前缀规则", "tags": ["topic:索引"] },
+    {
+      "id": "n16",
+      "kind": "concept",
+      "label": "查询计划（Query Plan）",
+      "tags": ["topic:database", "topic:优化"]
+    },
+    {
+      "id": "n17",
+      "kind": "concept",
+      "label": "域名系统（DNS）",
+      "tags": ["topic:networking", "topic:域名"]
+    },
+    {
+      "id": "n18",
+      "kind": "claim",
+      "label": "DNS records expire at their TTL",
+      "tags": ["topic:networking"]
+    },
+    {
+      "id": "n19",
+      "kind": "concept",
+      "label": "TCP 三次握手",
+      "tags": ["topic:networking", "topic:连接"]
+    },
+    {
+      "id": "n20",
+      "kind": "concept",
+      "label": "Congestion Control",
+      "tags": ["topic:networking", "topic:拥塞"]
+    },
+    {
+      "id": "n21",
+      "kind": "concept",
+      "label": "HTTP 缓存（HTTP Cache）",
+      "tags": ["topic:networking", "topic:缓存"]
+    },
+    {
+      "id": "n22",
+      "kind": "claim",
+      "label": "ETag supports conditional validation",
+      "tags": ["topic:networking"]
+    },
+    {
+      "id": "n23",
+      "kind": "concept",
+      "label": "TLS Certificate Chain",
+      "tags": ["topic:networking", "topic:证书"]
+    },
+    {
+      "id": "n24",
+      "kind": "concept",
+      "label": "负载均衡（Load Balancing）",
+      "tags": ["topic:networking", "topic:流量"]
+    }
+  ],
+  "edges": [
+    { "from": "n03", "to": "n01" },
+    { "from": "n04", "to": "n02" },
+    { "from": "n05", "to": "n02" },
+    { "from": "n06", "to": "n01" },
+    { "from": "n10", "to": "n09" },
+    { "from": "n12", "to": "n11" },
+    { "from": "n14", "to": "n13" },
+    { "from": "n15", "to": "n09" },
+    { "from": "n18", "to": "n17" },
+    { "from": "n20", "to": "n19" },
+    { "from": "n22", "to": "n21" }
+  ],
+  "queries": [
+    {
+      "id": "direct-01",
+      "category": "direct",
+      "text": "自注意力",
+      "relevance": { "n01": 2, "n03": 1, "n06": 1 }
+    },
+    {
+      "id": "direct-02",
+      "category": "direct",
+      "text": "sinusoidal positional encoding",
+      "relevance": { "n04": 2, "n02": 1 }
+    },
+    {
+      "id": "direct-03",
+      "category": "direct",
+      "text": "gradient clipping",
+      "relevance": { "n08": 2 }
+    },
+    {
+      "id": "direct-04",
+      "category": "direct",
+      "text": "事务隔离",
+      "relevance": { "n11": 2, "n12": 1 }
+    },
+    {
+      "id": "direct-05",
+      "category": "direct",
+      "text": "B-tree range scan",
+      "relevance": { "n10": 2, "n09": 1 }
+    },
+    {
+      "id": "direct-06",
+      "category": "direct",
+      "text": "数据库查询计划",
+      "relevance": { "n16": 2 }
+    },
+    {
+      "id": "direct-07",
+      "category": "direct",
+      "text": "TLS certificate chain",
+      "relevance": { "n23": 2 }
+    },
+    { "id": "direct-08", "category": "direct", "text": "负载均衡", "relevance": { "n24": 2 } },
+    { "id": "short-01", "category": "short-zh", "text": "分词", "relevance": { "n07": 2 } },
+    {
+      "id": "short-02",
+      "category": "short-zh",
+      "text": "顺序",
+      "relevance": { "n03": 2, "n02": 1, "n04": 1, "n05": 1 }
+    },
+    {
+      "id": "short-03",
+      "category": "short-zh",
+      "text": "索引",
+      "relevance": { "n09": 2, "n10": 1, "n15": 1 }
+    },
+    {
+      "id": "short-04",
+      "category": "short-zh",
+      "text": "日志",
+      "relevance": { "n13": 2, "n14": 1 }
+    },
+    { "id": "short-05", "category": "short-zh", "text": "握手", "relevance": { "n19": 2 } },
+    {
+      "id": "short-06",
+      "category": "short-zh",
+      "text": "过期",
+      "relevance": { "n18": 2, "n21": 1 }
+    },
+    { "id": "short-07", "category": "short-zh", "text": "证书", "relevance": { "n23": 2 } },
+    {
+      "id": "para-01",
+      "category": "paraphrase",
+      "text": "Can the model tell which word comes first?",
+      "relevance": { "n03": 2, "n02": 1 }
+    },
+    {
+      "id": "para-02",
+      "category": "paraphrase",
+      "text": "模型为什么要在训练时限制参数更新幅度？",
+      "relevance": { "n08": 2 }
+    },
+    {
+      "id": "para-03",
+      "category": "paraphrase",
+      "text": "Why is the input split into smaller pieces before training?",
+      "relevance": { "n07": 2 }
+    },
+    {
+      "id": "para-04",
+      "category": "paraphrase",
+      "text": "Can one reader see another writer's unfinished changes?",
+      "relevance": { "n11": 2, "n12": 1 }
+    },
+    {
+      "id": "para-05",
+      "category": "paraphrase",
+      "text": "进程断电重启后怎么找回刚保存的记录？",
+      "relevance": { "n14": 2, "n13": 1 }
+    },
+    {
+      "id": "para-06",
+      "category": "paraphrase",
+      "text": "Why does the first column matter when searching by several fields?",
+      "relevance": { "n15": 2, "n09": 1 }
+    },
+    {
+      "id": "para-07",
+      "category": "paraphrase",
+      "text": "浏览器如何把网址里的主机名变成 IP 地址？",
+      "relevance": { "n17": 2 }
+    },
+    {
+      "id": "para-08",
+      "category": "paraphrase",
+      "text": "How can the browser check if a saved copy is still fresh without downloading it?",
+      "relevance": { "n22": 2, "n21": 1 }
+    },
+    {
+      "id": "mixed-01",
+      "category": "mixed",
+      "text": "RoPE 怎么表示相对位置？",
+      "relevance": { "n05": 2, "n02": 1 }
+    },
+    {
+      "id": "mixed-02",
+      "category": "mixed",
+      "text": "Transformer 为什么需要位置编码？",
+      "relevance": { "n02": 2, "n03": 2, "n04": 1, "n05": 1 }
+    },
+    {
+      "id": "mixed-03",
+      "category": "mixed",
+      "text": "multi-head 注意力各头有什么作用？",
+      "relevance": { "n06": 2, "n01": 1 }
+    },
+    {
+      "id": "mixed-04",
+      "category": "mixed",
+      "text": "SQLite WAL 怎么恢复数据？",
+      "relevance": { "n13": 2, "n14": 2 }
+    },
+    {
+      "id": "mixed-05",
+      "category": "mixed",
+      "text": "Repeatable Read 和事务隔离",
+      "relevance": { "n12": 2, "n11": 2 }
+    },
+    {
+      "id": "mixed-06",
+      "category": "mixed",
+      "text": "DNS 缓存多久才过期？",
+      "relevance": { "n18": 2, "n17": 1 }
+    },
+    {
+      "id": "mixed-07",
+      "category": "mixed",
+      "text": "TCP 遇到网络拥塞怎么办？",
+      "relevance": { "n20": 2, "n19": 1 }
+    },
+    {
+      "id": "neighbor-01",
+      "category": "neighbor",
+      "text": "Which broader technique uses fixed frequencies?",
+      "relevance": { "n02": 2, "n04": 1 }
+    },
+    {
+      "id": "neighbor-02",
+      "category": "neighbor",
+      "text": "What mechanism makes Repeatable Read possible?",
+      "relevance": { "n11": 2, "n12": 1 }
+    },
+    {
+      "id": "neighbor-03",
+      "category": "neighbor",
+      "text": "What is ETag used for?",
+      "relevance": { "n22": 2, "n21": 1 }
+    },
+    { "id": "none-01", "category": "no-answer", "text": "葡萄牙的首都是哪里？", "relevance": {} },
+    {
+      "id": "none-02",
+      "category": "no-answer",
+      "text": "How do monarch butterflies migrate?",
+      "relevance": {}
+    },
+    {
+      "id": "none-03",
+      "category": "no-answer",
+      "text": "茶叶应该用多少度的水泡？",
+      "relevance": {}
+    },
+    {
+      "id": "none-04",
+      "category": "no-answer",
+      "text": "What was the retail price of the first iPhone?",
+      "relevance": {}
+    }
+  ]
+}

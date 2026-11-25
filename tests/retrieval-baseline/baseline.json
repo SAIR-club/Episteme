@@ -1,0 +1,79 @@
+{
+  "queryCount": 37,
+  "answerableCount": 33,
+  "ranking": {
+    "recallAt1": 0.47474747474747475,
+    "recallAt3": 0.75,
+    "recallAt5": 0.7727272727272727,
+    "recallAt10": 0.7727272727272727,
+    "mrr": 0.7676767676767677,
+    "ndcgAt10": 0.7321976386929516
+  },
+  "byCategory": {
+    "direct": {
+      "queryCount": 8,
+      "ranking": {
+        "recallAt1": 0.7291666666666666,
+        "recallAt3": 1,
+        "recallAt5": 1,
+        "recallAt10": 1,
+        "mrr": 1,
+        "ndcgAt10": 1
+      }
+    },
+    "short-zh": {
+      "queryCount": 7,
+      "ranking": {
+        "recallAt1": 0.5119047619047619,
+        "recallAt3": 0.6428571428571429,
+        "recallAt5": 0.7142857142857143,
+        "recallAt10": 0.7142857142857143,
+        "mrr": 0.7142857142857143,
+        "ndcgAt10": 0.662099079672541
+      }
+    },
+    "paraphrase": {
+      "queryCount": 8,
+      "ranking": {
+        "recallAt1": 0.1875,
+        "recallAt3": 0.3125,
+        "recallAt5": 0.3125,
+        "recallAt10": 0.3125,
+        "mrr": 0.2916666666666667,
+        "ndcgAt10": 0.26721322202351167
+      }
+    },
+    "mixed": {
+      "queryCount": 7,
+      "ranking": {
+        "recallAt1": 0.4642857142857143,
+        "recallAt3": 0.9642857142857143,
+        "recallAt5": 1,
+        "recallAt10": 1,
+        "mrr": 1,
+        "ndcgAt10": 0.9709582258557867
+      }
+    },
+    "neighbor": {
+      "queryCount": 3,
+      "ranking": {
+        "recallAt1": 0.5,
+        "recallAt3": 1,
+        "recallAt5": 1,
+        "recallAt10": 1,
+        "mrr": 1,
+        "ndcgAt10": 0.8644717206603377
+      }
+    }
+  },
+  "noAnswer": {
+    "queryCount": 4,
+    "emptyCount": 0,
+    "returnedCount": 9
+  },
+  "latency": {
+    "sampleCount": 555,
+    "p50Ms": 0.9953000000000429,
+    "p95Ms": 1.4406000000003587
+  }
+}
